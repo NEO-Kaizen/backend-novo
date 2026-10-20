@@ -11,3 +11,11 @@ São usados os labels canônicos padrão: `needs-triage`, `needs-info`, `ready-f
 ### Domain docs
 
 Layout single-context: `GLOSSARY.md` na raiz e `docs/adr/`. Consulte `docs/agents/domain.md`.
+
+## Convenções de Git
+
+- Branches: `<tipo>/<slug-em-portugues>` — ex.: `docs/padroes-de-codigo`, `feat/relatorio-de-vendas`.
+- Commits: `<tipo>: <descrição no imperativo, em português>` — ex.: `docs: adiciona convenções de Git`.
+- O tipo do Conventional Commits permanece em inglês (`feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`); slug e descrição ficam em português.
+- Corpo e footer do commit em português.
+- Título do PR igual à mensagem do commit principal; descrição em português.
