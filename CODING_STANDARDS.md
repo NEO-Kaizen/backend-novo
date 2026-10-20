@@ -102,7 +102,7 @@ const [user, orders] = await Promise.all([
 - `catch` recebe `unknown`; estreite com `isAppError`/`toAppError`.
 - Não engula erro. Se recuperar, registre o motivo e o que foi feito.
 - Logue a causa uma vez, na borda; não faça log-and-rethrow em cada camada.
-- Resposta de erro: `{ error: { code, message, requestId } }`. `message` só é exposta quando `expose` é true; o resto vira `internal_error`.
+- Resposta de erro: `{ error: { code, message, requestId } }`. `code` é estável em `snake_case` e não é traduzido; `message` é em português e só é exposta quando `expose` é true — o resto vira `internal_error` com mensagem genérica.
 - Nunca devolva stack, SQL, path, nome de tabela ou versão interna.
 - Use exceção para condição excepcional; validação de entrada retorna 400, não lança erro genérico.
 
@@ -181,12 +181,12 @@ const errorHandler: ErrorRequestHandler = (err, req, res, next) => {
   if (res.headersSent) return next(err);
 
   const appErr = toAppError(err);
-  req.log.error({ err, code: appErr.code }, "request failed");
+  req.log.error({ err, code: appErr.code }, "falha ao processar requisição");
 
   res.status(appErr.status).json({
     error: {
       code: appErr.code,
-      message: appErr.expose ? appErr.message : "internal_error",
+      message: appErr.expose ? appErr.message : "Erro interno do servidor",
       requestId: req.id,
     },
   });
