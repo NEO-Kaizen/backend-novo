@@ -6,42 +6,29 @@ Este documento define como as partes do backend MAAT se relacionam e qual é a r
 
 A arquitetura separa:
 
-- **HTTP** (rotas, controllers, middlewares);
-- **regras de aplicação** (services);
-- **persistência** (repositories, Knex);
-- **infraestrutura** (banco, log, configuração, criptografia).
+- **HTTP** — rotas, controllers, middlewares;
+- **regras de aplicação** — services;
+- **persistência** — repositories, Knex;
+- **infraestrutura** — banco, log, configuração, criptografia.
 
 O objetivo é manter a estrutura modular, com dependências explícitas e banco de dados substituível, sem criar camadas que não paguem o custo de existir.
 
-Documentos relacionados: [`01-Overview.md`](./01-Overview.md) (contexto), [`../GLOSSARY.md`](../GLOSSARY.md) (vocabulário), [`adr/`](./adr/) (decisões).
+Documentos relacionados: [`01-Overview.md`](./01-Overview.md) · [`../GLOSSARY.md`](../GLOSSARY.md) · [`adr/`](./adr/).
 
 ---
 
 ## 2. Guiding Principles
 
-**P1 — O domínio é a unidade de modularização.**
-O código é organizado por domínio (`requests`, `triage`, `audit`…), não por camada técnica. Tudo que pertence a um domínio — rotas, controller, service, repository, schemas — vive na pasta dele.
-
-**P2 — Dependências apontam para dentro.**
-`core` não conhece ninguém. `domains` conhecem `core`. `platform` conhece `core`. Só o *composition root* conhece todos.
-
-**P3 — Portas e adaptadores nas bordas.**
-Regras de negócio nunca conhecem Knex, Express ou `fetch`. A infraestrutura é injetada por trás de interfaces.
-
-**P4 — Injeção por construtor, sem framework.**
-Toda dependência chega pelo construtor. Não há container de injeção, decorator ou registro global.
-
-**P5 — Persistência portátil.**
-O SQL é escrito com o subset portátil do query builder. Detalhe específico de engine vive isolado em um `Dialect`.
-
-**P6 — A borda fala HTTP; o domínio fala regra.**
-Controller traduz requisição em chamada de serviço e resposta em HTTP. Service decide. Repository persiste.
-
-**P7 — Uma transação, um dono.**
-Só a camada de serviço abre transação. Repositório nunca abre e nunca recebe `trx` como parâmetro.
-
-**P8 — Auditoria acompanha a mudança.**
-Toda alteração relevante publica um evento; a auditoria é gravada na mesma transação da alteração que a originou.
+| # | Princípio | Regra | Detalhado em |
+| --- | --- | --- | --- |
+| P1 | O domínio é a unidade de modularização | Tudo que pertence a um domínio vive na pasta dele | [§ 4](#4-directory-structure) · [§ 5](#5-domain-catalog) |
+| P2 | Dependências apontam para dentro | `core` não conhece ninguém; só o composition root conhece todos | [§ 19](#19-allowed-dependencies) |
+| P3 | Portas e adaptadores nas bordas | Regra de negócio nunca conhece Knex, Express ou `fetch` | [§ 10.1](#101-the-database-port) · [§ 10.2](#102-the-dialect) |
+| P4 | Injeção por construtor, sem framework | Sem container de DI, sem decorator, sem registro global | [§ 8](#8-dependency-injection) |
+| P5 | Persistência portátil | Query builder + `Dialect`; nada de SQL literal em repositório | [§ 10.3](#103-portability-rules) |
+| P6 | A borda fala HTTP, o domínio fala regra | Controller traduz, service decide, repository persiste | [§ 6](#6-layer-responsibilities) |
+| P7 | Uma transação, um dono | Service abre via `execute`; repositório exige transação corrente | [§ 11](#11-transactions) |
+| P8 | Auditoria acompanha a mudança | Evento publicado; trilha gravada na mesma transação | [§ 9.3](#93-change-audit-via-domain-events) |
 
 ---
 
@@ -56,17 +43,28 @@ O domínio fala português; o código fala inglês. A conversão é fixa e vale 
 | Solicitante | `requester` |
 | Anexo | `attachment` |
 | Fila | `queue` |
+| Status | `status` |
+| Categoria | `category` |
+| Prioridade | `priority` |
 | Triagem | `triage` |
+| Veredito | `verdict` |
 | Mapeamento | `mapping` |
+| Análise de viabilidade | `viability-analysis` |
 | Priorização | `prioritization` |
+| Critério | `criterion` |
 | Pendência | `pending-item` |
 | Nota interna | `internal-note` |
+| Linha do tempo | `timeline` |
 | Auditoria | `audit` |
+| Tentativa | `attempt` |
 | Perfil | `profile` |
+| Admin Root | `admin-root` |
 | Responsável | `assignee` |
 | Modo de acesso | `access-mode` |
 
 Valores de domínio (status, prioridades, vereditos) permanecem em português, porque são exibidos ao usuário e gravados como dado de negócio.
+
+> **Exceção:** nomes de campo do contrato público seguem o formato já acordado em `tirador-pedidos-NEO/contratos/`. Quando o contrato existente usa um termo, o contrato prevalece sobre a tabela acima.
 
 ---
 
@@ -79,20 +77,26 @@ src/
 ├── container.ts               # composition root: monta e conecta tudo
 │
 ├── core/                      # kernel — não conhece domains nem platform
-│   ├── errors/                # AppError, DomainError, mapeamento HTTP
+│   ├── actor.ts               # quem está agindo na requisição
+│   ├── errors/                # AppError, DomainError, registro de códigos
 │   ├── http/                  # BaseController, HttpContext, envelopes
 │   ├── service/               # BaseService, Clock, IdGenerator, Logger
 │   ├── repository/            # BaseRepository, Database, Dialect, TransactionManager
-│   ├── authorization/         # permissões, perfis, AuthorizationService
+│   ├── authorization/         # Permission, perfis, AuthorizationService
+│   ├── audit/                 # AttemptRecorder, AttemptRecord
+│   ├── crypto/                # ProtocolGenerator
+│   ├── config/                # Config
 │   ├── events/                # DomainEvent, DomainEventPublisher
-│   ├── pagination/            # PageQuery, Page
-│   └── actor.ts               # quem está agindo na requisição
+│   └── pagination/            # PageQuery, Page
 │
 ├── platform/                  # adaptadores concretos — conhecem core
-│   ├── database/              # KnexDatabase, Dialect, TransactionManager
+│   ├── database/              # KnexDatabase, PostgresDialect, SqliteDialect, MySqlDialect
 │   ├── http/                  # middlewares: request-id, auth, access-mode, erro
 │   ├── events/                # publicador de eventos em memória
 │   ├── logging/               # adapter do logger
+│   ├── authorization/         # StaticAuthorizationService
+│   ├── clock/                 # SystemClock
+│   ├── ids/                   # UuidGenerator
 │   ├── crypto/                # hash de senha, gerador de protocolo
 │   └── config/                # leitura e validação de ambiente
 │
@@ -115,7 +119,7 @@ src/
     ├── prioritization/
     ├── pending-items/
     ├── internal-notes/
-    ├── audit/
+    ├── audit/                  # dono das tabelas audit e attempt
     ├── reports/
     └── portal-config/
 
@@ -124,32 +128,33 @@ seeds/<domain>/                # seeds donos por cada domínio
 knexfile.ts
 ```
 
-> Pastas e arquivos são criados conforme a necessidade. Um domínio não precisa ter todos os arquivos listados: um domínio sem auditoria não tem `schema/`, um domínio sem rotas públicas não precisa de subpastas.
+> Pastas e arquivos são criados conforme a necessidade. Um domínio sem tabelas próprias não tem `schema/`; um domínio sem rotas públicas não precisa de subpastas.
 
 ---
 
 ## 5. Domain Catalog
 
-| Domínio | Responsabilidade | Tabelas (previsão) | Portas publicadas |
+| Domínio | Responsabilidade | Tabelas | Portas publicadas |
 | --- | --- | --- | --- |
 | `auth` | Login, logout, sessão, troca de senha | credenciais, sessões | `AuthReader` |
-| `users` | Cadastro, perfil, estado, avatar | usuários, perfis | `UserReader` |
-| `requests` | Ciclo de vida da solicitação, protocolo, anexos, status | solicitações, solicitantes, categorias, status, anexos | `RequestReader` |
+| `users` | Cadastro, perfil, dados do usuário, avatar | usuários, perfis | `UserReader` |
+| `requests` | Ciclo de vida da solicitação, protocolo, anexos | solicitações, solicitantes, anexos | `RequestReader` |
 | `triage` | Triagem: aderência, escopo, veredito | triagens | `TriageReader` |
 | `mapping` | Sessão de mapeamento, participantes, agenda | mapeamentos, participantes | `MappingReader` |
 | `queue` | Fila centralizada e métricas | — (lê de `requests`) | `QueueReader` |
-| `prioritization` | Critérios, pesos, pontuação | critérios, priorizações | `PrioritizationReader` |
+| `prioritization` | Critérios, pesos e a Prioridade resultante | critérios, priorizações | `PrioritizationReader` |
 | `pending-items` | Pendências de campo e de observação | pendências, respostas | `PendingItemReader` |
-| `internal-notes` | Notas internas e linha do tempo | notas internas, estados de leitura | `InternalNoteReader` |
-| `audit` | Trilha de auditoria imutável | auditoria | `AuditReader` |
+| `internal-notes` | Notas internas, marcas de leitura, linha do tempo | notas internas, marcas de leitura | `InternalNoteReader` |
+| `audit` | Trilha de auditoria imutável | auditoria, tentativas | `AuditReader` · `AttemptRecorder` |
 | `reports` | Dashboard, métricas, exportações | — (lê de vários domínios) | — |
-| `portal-config` | Configuração do portal, temas, modo de acesso | configurações, temas | `PortalConfigReader` |
+| `portal-config` | Configuração do portal, categorias, status, aparência, modo de acesso | configurações, categorias, status, aparências | `PortalConfigReader` |
 
 Regras do catálogo:
 
 - **Um domínio é dono das suas tabelas.** Nenhum outro domínio escreve nelas.
 - **`queue` e `reports` não têm tabelas.** São projeções de leitura sobre outros domínios e consomem as portas publicadas por eles.
-- **Toda porta publicada é um contrato de leitura.** O acesso de escrita entre domínios não existe: quem escreve é o dono da tabela.
+- **Toda porta publicada é um contrato de leitura**, com uma única exceção: `AttemptRecorder`, que é uma porta de escrita controlada pela borda — ver [§ 9.4](#94-audit-and-log-what-each-one-guarantees).
+- **Projeções de leitura não escrevem.** `queue` e `reports` recebem apenas portas `*Reader`; por isso não estendem `BaseService` e não têm transação.
 
 ---
 
@@ -185,11 +190,11 @@ O retorno percorre o caminho inverso, e o erro é traduzido **uma única vez**, 
 
 ## 7. Base Classes
 
-As três classes base existem para concentração de comportamento compartilhado. Elas são profundas: escondem muita coisa atrás de uma interface pequena. Uma classe de domínio **herda** da base correspondente quando usa esse comportamento.
+As três classes base concentram comportamento compartilhado atrás de uma interface pequena. Uma classe de domínio **herda** da base correspondente quando usa esse comportamento.
 
 ### 7.1 BaseController
 
-Resolve: o contrato de resposta HTTP (envelope de erro, envelope de paginação, status code) e a tradução de requisição em contexto.
+Resolve o contrato de resposta HTTP — envelope de erro, envelope de paginação, status code — e a tradução de requisição em contexto.
 
 ```ts
 // src/core/http/http-context.ts
@@ -207,17 +212,6 @@ export interface HttpContext {
   readonly noContent: () => void;
   readonly paginated: (page: Page<unknown>) => void;
   readonly fail: (error: unknown) => void;
-}
-```
-
-```ts
-// src/core/http/base-controller.ts
-export abstract class BaseController {
-  protected constructor(protected readonly logger: Logger) {}
-
-  protected context(req: Request, res: Response): HttpContext {
-    // ...
-  }
 }
 ```
 
@@ -243,7 +237,7 @@ export class RequestController extends BaseController {
 
 ### 7.2 BaseService
 
-Resolve: as dependências transversais de um caso de uso (log, relógio, gerador de id, transações) e as asserções que se repetem em todo serviço.
+Resolve as dependências transversais de um caso de uso (log, relógio, gerador de id, transações), a **política de transação** e as asserções que se repetem em todo serviço.
 
 ```ts
 // src/core/service/base-service.ts
@@ -252,22 +246,30 @@ export interface ServiceDependencies {
   readonly clock: Clock;
   readonly ids: IdGenerator;
   readonly transactions: TransactionManager;
+  readonly events: DomainEventPublisher;
 }
 
 export abstract class BaseService {
   protected readonly logger: Logger;
   protected readonly clock: Clock;
   protected readonly ids: IdGenerator;
+  protected readonly events: DomainEventPublisher;
   private readonly transactions: TransactionManager;
 
   protected constructor(dependencies: ServiceDependencies) {
     this.logger = dependencies.logger;
     this.clock = dependencies.clock;
     this.ids = dependencies.ids;
+    this.events = dependencies.events;
     this.transactions = dependencies.transactions;
   }
 
-  protected runInTransaction<T>(work: () => Promise<T>): Promise<T> {
+  /**
+   * Único ponto de entrada de operação de escrita.
+   * A transação é aberta aqui: o caso de uso declara a intenção de atomicidade,
+   * e o mecanismo fica atrás da porta `TransactionManager`.
+   */
+  protected async execute<T>(work: () => Promise<T>): Promise<T> {
     return this.transactions.run(work);
   }
 
@@ -281,9 +283,19 @@ export abstract class BaseService {
 }
 ```
 
+O service de domínio acrescenta as próprias dependências (o repositório) a esse objeto — por exemplo `new RequestService({ ...dependencies, repository })`.
+
+A distinção é o **nome do método**:
+
+| Tipo de operação | Forma | Transação |
+| --- | --- | --- |
+| Escrita | `executeChangeStatus()`, `executeCreateRequest()` | Sim, aberta pela classe base |
+| Leitura simples | `findByProtocol()` — uma tabela, um statement | Não |
+| Leitura agregada | `listTimeline()` — agrega várias tabelas | Read-only, com snapshot consistente |
+
 ### 7.3 BaseRepository
 
-Resolve: o trabalho repetitivo de falar com Knex — tabela, mapeamento de linha, paginação, soft delete — e a propagação da transação corrente.
+Resolve o trabalho repetitivo de falar com Knex — tabela, mapeamento de linha, paginação, soft delete — e a propagação da transação corrente.
 
 ```ts
 // src/core/repository/base-repository.ts
@@ -310,13 +322,32 @@ export abstract class BaseRepository<TEntity, TRow> {
 }
 ```
 
-O repositório **nunca** recebe `trx` como parâmetro e **nunca** abre transação. Ele usa `this.database.client`, que já aponta para a transação corrente quando existe (ver [§ Transações](#11-transactions)).
+O repositório **nunca** recebe `trx` como parâmetro e **nunca** abre transação. Ele usa `this.database.client`, que já aponta para a transação corrente quando existe (ver [§ 11](#11-transactions)).
 
-### 7.4 Regra de herança
+**O repositório exige a transação.** Todo método de escrita chama `this.database.assertInTransaction()` antes de gravar:
+
+```ts
+protected async insertOne(values: Record<string, unknown>): Promise<TEntity> {
+  this.database.assertInTransaction();
+  // ...
+}
+```
+
+Assim a garantia é do **repositório**, não da herança: uma escrita fora de transação falha com `transaction_required` (erro interno, não exposto) em vez de fazer commit parcial. Vale para qualquer service, herde ou não — a herança só evita o erro, não o impede.
+
+### 7.4 Inheritance Rule
 
 > _domain_ **herda** da classe base quando usa o comportamento dela. Não existe "classe base obrigatória": uma classe que não usa nada da base é um passe-through e deve ser eliminada, não herdada.
 
-Na prática, quase todo controller, service e repository usa a base — o motivo é que o comportamento compartilhado é grande. A regra existe para que a herança não vire coleta de métodos herdados sem uso.
+O que um service pode fazer depende da **porta que ele recebe**, não da herança:
+
+| Service | Herda `BaseService`? | Portas que recebe | Pode escrever? |
+| --- | --- | --- | --- |
+| Caso de uso | Sim | repositório de escrita | Sim — via `execute()` |
+| Projeção de leitura (fila, relatórios) | Não | apenas `*Reader` publicados | **Não** — não tem o que escrever |
+| Service que não herda por engano | Não | repositório de escrita | Só se abrir transação; se não, `transaction_required` |
+
+Um service de leitura não precisa herdar a base: a incapacidade de escrever é **estrutural**, porque ele não recebe porta de escrita — não é uma regra de disciplina.
 
 ---
 
@@ -324,7 +355,7 @@ Na prática, quase todo controller, service e repository usa a base — o motivo
 
 Não há container de injeção, decorator ou registro global. A injeção é por construtor, e a montagem é explícita.
 
-### 8.1 O composition root
+### 8.1 The Composition Root
 
 `src/container.ts` é o **único** arquivo que sabe quais implementações concretas existem.
 
@@ -335,9 +366,13 @@ export interface Container {
   readonly logger: Logger;
   readonly clock: Clock;
   readonly ids: IdGenerator;
+  readonly protocol: ProtocolGenerator;
+  readonly counter: Counter;
   readonly database: Database;
+  readonly transactions: TransactionManager;
   readonly events: DomainEventPublisher;
   readonly authorization: AuthorizationService;
+  readonly attempts: AttemptRecorder;
   readonly modules: {
     readonly auth: AuthModule;
     readonly users: UsersModule;
@@ -351,19 +386,26 @@ export function createContainer(config: Config): Container {
   const database = createDatabase(config);
   const clock = new SystemClock();
   const ids = new UuidGenerator();
+  const protocol = new FeistelProtocolGenerator(config.protocolSecret);
+  const counter = new KnexCounter(database, logger);
   const events = new InMemoryDomainEventPublisher();
   const authorization = new StaticAuthorizationService();
 
+  // `database` implementa as duas portas de persistência; o container
+  // entrega o mesmo adapter nos dois papéis.
+  const transactions: TransactionManager = database;
+  const attempts = createAuditModule({ database, logger, clock, ids, events, authorization }).attempts;
+
   const modules = {
-    auth: createAuthModule({ database, logger, clock, ids, events, authorization }),
+    auth: createAuthModule({ database, transactions, logger, clock, ids, events, authorization }),
     // ...
   };
 
-  return { config, logger, clock, ids, database, events, authorization, modules };
+  return { config, logger, clock, ids, protocol, counter, database, transactions, events, authorization, attempts, modules };
 }
 ```
 
-### 8.2 Fábrica de módulo
+### 8.2 Module Factory
 
 Cada domínio expõe uma fábrica que recebe as dependências e devolve o que a aplicação precisa montar.
 
@@ -390,14 +432,16 @@ export function createRequestsModule(
 }
 ```
 
-### 8.3 Ciclo de vida
+### 8.3 Lifecycle
 
-- Adaptadores (`database`, `logger`, `clock`, `ids`) são **singletons** — criados uma vez no boot.
-- Services e repositories são **singletons** — são sem estado; o estado do caso de uso vive nas variáveis locais e no contexto da requisição.
-- Controllers são **singletons** — idem, sem estado.
-- Só o que depende da requisição (o `HttpContext`) é criado por requisição.
+| Componente | Ciclo de vida | Por quê |
+| --- | --- | --- |
+| Adaptadores (`database`, `logger`, `clock`, `ids`, `protocol`) | Singleton | Criados uma vez no boot |
+| Services e repositories | Singleton | Sem estado; o estado do caso de uso vive nas variáveis locais |
+| Controllers | Singleton | Idem, sem estado |
+| `HttpContext` | Por requisição | Único objeto que carrega estado da requisição |
 
-### 8.4 Dependências entre domínios
+### 8.4 Cross-Domain Dependencies
 
 Um domínio **nunca** importa o repositório, o service ou o controller de outro domínio. Quando precisa de dados de outro domínio, consome a **porta publicada** por ele:
 
@@ -405,27 +449,22 @@ Um domínio **nunca** importa o repositório, o service ou o controller de outro
 // src/domains/queue/queue.service.ts
 import type { RequestReader } from "../requests/requests.port.js";
 
-export class QueueService extends BaseService {
-  constructor(
-    dependencies: QueueServiceDependencies,
-    private readonly requests: RequestReader,
-  ) {
-    super(dependencies);
-  }
+export class QueueService {
+  constructor(private readonly requests: RequestReader) {}
 }
 ```
 
-O import é de **tipo**. A implementação nunca atravessa a fronteira.
+O import é de **tipo**. A implementação nunca atravessa a fronteira. E como `QueueService` não escreve, ele **não estende** `BaseService` — ver [§ 7.4](#74-inheritance-rule).
 
-### 8.5 Ciclos
+### 8.5 Cycles Between Domains
 
-Um ciclo entre domínios não se resolve com injeção de dependência: se A depende de B e B depende de A, qualquer ordem de construção falha. Ciclos se quebram com **eventos de domínio** (ver [§ Domain Events](#9-domain-events)) ou com portas publishadas que não dependem do outro lado.
+Um ciclo entre domínios não se resolve com injeção de dependência: se A depende de B e B depende de A, qualquer ordem de construção falha. Ciclos se quebram com **eventos de domínio** (ver [§ 9](#9-domain-events)) ou com portas publicadas que não dependem do outro lado.
 
 ---
 
 ## 9. Domain Events
 
-### 9.1 O que é
+### 9.1 Event Definition
 
 Um evento de domínio é um fato já ocorrido, com um payload imutável e autocontido. Eventos são a forma de um domínio avisar outro sem conhecer o outro.
 
@@ -446,16 +485,20 @@ export interface DomainEventPublisher {
 }
 ```
 
-### 9.2 Regras
+> Eventos são o canal **dentro** da transação. Fatos que precisam ser gravados fora dela — como a recusa de uma ação — não são eventos: ver [§ 9.4](#94-audit-and-log-what-each-one-guarantees).
 
-- **O payload é um snapshot, nunca uma referência a entidade.** `RequestStatusChanged` carrega `requestId`, origem, destino e autor — não o objeto `Request`. Sem isso, o consumidor puxa o agregado de volta e o ciclo nasce.
-- **A publicação acontece dentro da transação.** O evento é emitido durante o caso de uso, e quem o consome escreve na mesma transação.
-- **A entrega é síncrona e awaited.** O publicador percorre os assinantes e aguarda cada um. Sem fila, sem `setImmediate`, sem retry assíncrono: um handler que falha aborta a transação.
-- **Eventos são fatos, não comandos.** O nome descreve o que aconteceu (`request.status_changed`), nunca o que deve ser feito.
+### 9.2 Rules
 
-### 9.3 Auditoria orientada a evento
+| Regra | Consequência se ignorada |
+| --- | --- |
+| O payload é um snapshot, nunca uma referência a entidade | O consumidor puxa o agregado de volta e o ciclo nasce |
+| A publicação acontece dentro da transação | A trilha de auditoria fica fora do fato que descreve |
+| A entrega é síncrona e awaited | Falha silenciosa; sem fila, sem `setImmediate`, sem retry assíncrono |
+| Eventos são fatos, não comandos | O nome passa a descrever o que deve ser feito, não o que aconteceu |
 
-A auditoria é o primeiro consumidor de eventos. O domínio que causa a alteração publica; o domínio de auditoria assina e grava.
+### 9.3 Change Audit via Domain Events
+
+A auditoria do que foi **commitado** é o primeiro consumidor de eventos. O domínio que causa a alteração publica; o domínio de auditoria assina e grava.
 
 ```ts
 // src/domains/audit/index.ts
@@ -472,21 +515,123 @@ export function createAuditModule(
     service.recordStatusChange(event.payload),
   );
 
-  return { router: createAuditRouter(service), service };
+  return { router: createAuditRouter(service), service, attempts: service };
 }
 ```
 
-Por que assim e não uma chamada explícita:
+Propriedades:
 
 - o domínio que altera **não conhece** o domínio de auditoria — a dependência é de mão única;
-- a escrita de auditoria acontece na transação do emitente porque o handler roda inline dentro dela;
-- falha do handler de auditoria **desfaz a alteração** — auditoria é obrigatória, não best-effort.
+- a escrita acontece na transação do emitente, porque o handler roda inline dentro dela;
+- falha do handler **desfaz a alteração** — a trilha de alteração é obrigatória, não best-effort.
+
+Ver [ADR-0007](./adr/0007-event-driven-audit.md).
+
+### 9.4 Audit and Log: What Each One Guarantees
+
+Existem **duas trilhas**, com garantias diferentes.
+
+| Trilha | O que registra | Garantia | Onde é gravada | Se a gravação falhar |
+| --- | --- | --- | --- | --- |
+| **Alteração** | O que foi commitado | Atômica com a mudança | Dentro da transação do caso de uso | A mudança é desfeita |
+| **Tentativa** | O que foi recusado | Independente — a recusa aconteceu de fato | Fora da transação | Vira log; a resposta não é bloqueada |
+
+A tentativa **não pode** estar dentro da transação: ela existe justamente porque a transação foi desfeita.
+
+#### Where the Attempt Is Recorded
+
+**Na borda, não no serviço.** O serviço recusa e **lança um erro tipado com contexto**; o erro sobe, a transação se desfaz, e o *error handler* grava a tentativa. Nesse momento o escopo da transação já foi desfeito, então a gravação acontece **fora da transação por construção** — sem mecanismo especial.
+
+```ts
+// src/core/errors/domain-error.ts
+export class DomainError extends Error {
+  readonly code: string;
+  /** Presente quando a tentativa merece rastro. */
+  readonly context?: RefusalContext;
+
+  constructor(
+    code: string,
+    message: string,
+    options: { context?: RefusalContext; cause?: unknown } = {},
+  ) {
+    super(message, { cause: options.cause });
+    this.name = "DomainError";
+    this.code = code;
+    this.context = options.context;
+  }
+}
+
+// src/core/errors/refusal-context.ts
+export interface RefusalContext {
+  readonly action: string;
+  readonly resource: string;
+  readonly resourceId: string;
+}
+```
+
+```ts
+// src/domains/requests/requests.service.ts
+throw new DomainError(
+  "not_the_assignee",
+  "Você não é o responsável por esta solicitação.",
+  { context: { action: "request.status_changed", resource: "request", resourceId: request.id } },
+);
+```
+
+O *error handler* reconhece o erro auditável e delega à porta de escrita:
+
+```ts
+// src/core/audit/attempt-recorder.ts
+export interface AttemptRecord extends RefusalContext {
+  readonly actor: Actor;
+  readonly reason: string;
+  readonly requestId: string;
+  readonly occurredAt: Date;
+}
+
+export interface AttemptRecorder {
+  record(entry: AttemptRecord): Promise<void>;
+}
+```
+
+```ts
+// src/platform/http/error-handler.ts
+if (isAuditable(error)) {
+  await attempts.record({
+    ...error.context,
+    actor: res.locals.actor,
+    reason: error.code,
+    requestId,
+    occurredAt: clock.now(),
+  });
+}
+```
+
+`AttemptRecorder` é a **única porta de escrita publicada por um domínio**. A porta mora em `core/audit/`; o adapter mora em `domains/audit/`, que é o dono da tabela `attempts`. O *error handler* recebe a porta pelo container — ele nunca importa o domínio.
+
+#### What Counts as an Auditable Attempt
+
+| Situação | Auditada? | Por quê |
+| --- | --- | --- |
+| Recusa de autorização (`forbidden`) | Sim | Alguém tentou algo que não podia — tem responsabilidade |
+| Recusa de regra de negócio (status inválido, transição proibida) | Sim | Tentativa deliberada de um humano |
+| Erro de validação (`400`) | Não | Ruído de entrada, alto volume, sem identidade garantida |
+| Falha de autenticação (`401`) | Não, aqui | É log de **segurança** do domínio `auth`, não trilha de negócio |
+
+O critério é **explícito no erro** (`DomainError.context`), não inferido de uma lista na borda: quem recusa decide se a tentativa merece rastro, porque só ele sabe o que tentou.
+
+#### Audit and Log Are Not the Same Thing
+
+- **Auditoria** é o fato: está no banco, dentro ou fora de transação conforme a trilha, e é append-only.
+- **Log** é o **rastro da tentativa**: sai quando a requisição foi atendida, na borda, e pode existir para uma operação que foi desfeita. Uma transação que faz *rollback* pode deixar um log dizendo que o status mudou, sem auditoria correspondente.
+
+Regra: **o log nunca é evidência.** Para saber o que aconteceu, olhe a auditoria. E o log de sucesso sai **depois** do commit — ver [§ 17](#17-logging).
 
 ---
 
 ## 10. Persistence with Knex
 
-### 10.1 A porta `Database`
+### 10.1 The Database Port
 
 O repositório fala com a porta `Database`, não com o Knex diretamente.
 
@@ -496,24 +641,29 @@ export interface Database {
   /** Handle de consulta ativo: a transação em curso, quando existir. */
   readonly client: Knex;
   readonly dialect: Dialect;
+  /** Falha se não houver transação corrente. */
+  assertInTransaction(): void;
   destroy(): Promise<void>;
 }
 
 // src/core/repository/transaction-manager.ts
 export interface TransactionManager {
+  /** Transação de escrita. */
   run<T>(work: () => Promise<T>): Promise<T>;
+  /** Transação de leitura, com snapshot consistente. */
+  runReadOnly<T>(work: () => Promise<T>): Promise<T>;
 }
 ```
 
-`KnexDatabase` (`src/platform/database/knex-database.ts`) é o adapter que implementa as duas portas. Trocar a engine significa trocar o `client` do Knex e o `Dialect` — nenhum repositório muda.
+`KnexDatabase` (`src/platform/database/knex-database.ts`) implementa as duas portas. Trocar a engine significa trocar o `client` do Knex e o `Dialect` — nenhum repositório muda.
 
 ```ts
 const database = createDatabase(config);
-// config.database.client === "postgres" → KnexDatabase com PostgresDialect
-// config.database.client === "sqlite"   → KnexDatabase com SqliteDialect
+// config.database.engine === "postgres" → KnexDatabase com PostgresDialect
+// config.database.engine === "sqlite"   → KnexDatabase com SqliteDialect
 ```
 
-### 10.2 O `Dialect`
+### 10.2 The Dialect
 
 O `Dialect` isola tudo que é específico de uma engine.
 
@@ -533,14 +683,14 @@ export interface Dialect {
 
 Implementações: `PostgresDialect`, `SqliteDialect`, `MySqlDialect`.
 
-### 10.3 Regras de portabilidade
+### 10.3 Portability Rules
 
 Estas regras são o que torna a troca de banco uma realidade e não uma intenção:
 
-| Regra | Porquê |
+| Regra | Por quê |
 | --- | --- |
-| Repositório usa **apenas o query builder** do Knex | `db.raw()` é proibido fora de `Dialect` |
-| **Sem `db.raw()`** em repositório | SQL literal quebra em outra engine |
+| **`db.raw()` proibido fora do `Dialect`** | SQL literal quebra em outra engine |
+| Repositório usa **apenas o query builder** do Knex | Preserva a diferença entre as engines |
 | **IDs gerados pela aplicação** (`crypto.randomUUID()`) | Elimina `nextval()`, `::uuid`, sequences e colunas `serial` |
 | **Sem tipo `ENUM`** | Use `text` com constraint de check ou tabela de lookup |
 | **Sem coluna `ARRAY`** | Use tabela filha (`mapping_participants`, `attachments`) |
@@ -552,11 +702,12 @@ Estas regras são o que torna a troca de banco uma realidade e não uma intenç�
 | **Row lock** (`forUpdate`) só onde `dialect.supportsRowLocks()` | SQLite não bloqueia linha |
 | **Toda consulta tem limite** | `paginate` exige `pageSize` máximo; nunca há query sem `limit` |
 
-### 10.4 Identificadores
+### 10.4 Identifiers
 
 Toda chave primária é um **UUID v4 gerado pela aplicação**, via a porta `IdGenerator`.
 
 ```ts
+// src/core/service/id-generator.ts
 export interface IdGenerator {
   next(): string;
 }
@@ -565,34 +716,58 @@ export interface IdGenerator {
 Consequências:
 
 - o schema não depende de sequence, `serial` ou `auto_increment`;
-- o id é conhecido **antes** do insert — o protocolo pode ser calculado na mesma viagem;
+- o id é conhecido **antes** do insert;
 - a chave é opaca e não revela volume de dados.
 
-### 10.5 Protocolo
+### 10.5 Protocol
 
-O protocolo é o código público que o solicitante usa para acompanhar a solicitação. Ele precisa ser curto, não enumerável e estável.
+O protocolo é o identificador público, curto e não enumerável que o solicitante usa para acompanhar a solicitação.
 
-A proposta é derivá-lo do id por HMAC, não por cifra de Feistel sobre inteiro:
+Ele é derivado por **cifra de Feistel sobre um contador**, não por hash do id:
+
+```text
+counter (inteiro) → Feistel(secret, counter) → 8 caracteres → MAAT-XXXX-XXXX
+```
 
 ```ts
-// src/platform/crypto/hmac-protocol-generator.ts
-export class HmacProtocolGenerator implements ProtocolGenerator {
-  generate(entityId: string): string {
-    const digest = createHmac("sha256", this.secret).update(entityId).digest();
-    const code = encodeBase32(digest, PROTOCOL_LENGTH);
-    return `${PROTOCOL_PREFIX}-${code.slice(0, 4)}-${code.slice(4)}`;
-  }
+// src/core/repository/counter.ts
+export interface Counter {
+  next(name: string): Promise<number>;
+}
+
+// src/core/crypto/protocol-generator.ts
+export interface ProtocolGenerator {
+  generate(value: number): string;
 }
 ```
 
 Propriedades:
 
-- **não enumerável** — sem segredo não se sai do id;
-- **independente da engine** — não precisa de sequence nem de inteiro;
-- **formato preservado** — `MAAT-XXXX-XXXX`, o mesmo que o frontend já valida;
-- **40 bits de espaço** — colisões são possíveis em volume alto, então `protocol` tem constraint `UNIQUE` e o repositório tenta novamente (limite de três) antes de falhar com `protocol_collision`.
+- **sem colisão por construção** — a Feistel é uma bijeção sobre `[0, 2⁴⁰)`; dois contadores diferentes nunca geram o mesmo protocolo. Ver [ADR-0008](./adr/0008-protocol-without-collision-risk.md);
+- **não enumerável** — sem o segredo não se sai do contador;
+- **independente da engine** — o contador vem de uma tabela, não de uma sequence do banco;
+- **formato preservado** — `MAAT-XXXX-XXXX`, o mesmo que o frontend já valida.
 
-### 10.6 Paginação
+O contador vive em uma tabela `code_counters(name, value)`, com uma linha por domínio, e é incrementado dentro da mesma transação do insert:
+
+```ts
+// dentro da transação do caso de uso
+await this.database.client("code_counters")
+  .where({ name: "request" })
+  .update({ value: this.database.client.raw("value + 1") });
+```
+
+> O `value + 1` é a única expressão não-portátil do documento, e ela é idêntica em Postgres, MySQL e SQLite. Se um dia o contador migrar para um Redis, a porta `Counter` substitui a tabela sem alterar o gerador — o ponto de troca fica explícito.
+
+Regras de uso:
+
+- o protocolo tem constraint `UNIQUE` — belt-and-braces, já que a bijeção impede a duplicata;
+- **a leitura nunca usa `.first()`**: a busca por protocolo é uma sondagem com `LIMIT 2` que falha explicitamente se duas linhas corresponderem. É essa sondagem que impede a exposição de dados de outra solicitação;
+- o contador **nunca é resetado nem renumerado**; o limite de domínio (`< 2⁴⁰`) é verificado na geração.
+
+Ver [§ 11](#11-transactions) para o vínculo entre o contador e a transação, e [ADR-0008](./adr/0008-protocol-without-collision-risk.md) para a decisão completa.
+
+### 10.6 Pagination
 
 Toda listagem devolve o envelope que o frontend já consome:
 
@@ -606,14 +781,18 @@ Toda listagem devolve o envelope que o frontend já consome:
 
 ## 11. Transactions
 
-### 11.1 Uma transação, um dono
+### 11.1 One Transaction, One Owner
 
-**Só a camada de serviço abre transação.** Repositório nunca abre e nunca recebe `trx` como parâmetro. Essa é a regra que elimina o principal defeito do backend legado, onde serviços e repositórios abriam transações ao mesmo tempo e o escopo real da transação ficava indefinido.
+**Toda operação de escrita é um método `execute*` do service, e o `BaseService` abre a transação.** Repositório nunca abre e nunca recebe `trx` como parâmetro — e exige uma transação corrente para gravar.
+
+A fronteira da transação é uma afirmação de negócio: "isto é um fato". O *como* — `knex.transaction` — fica atrás da porta `TransactionManager`; o service declara atomicidade, não SQL.
+
+A fronteira é **por caso de uso**, não por statement: autocommit já paga uma transação e um COMMIT por statement, então agrupar os statements de um caso de uso em uma transação é um desconto, não um custo.
 
 ```ts
 // src/domains/requests/requests.service.ts
-async changeStatus(input: ChangeStatusInput): Promise<void> {
-  await this.runInTransaction(async () => {
+async executeChangeStatus(input: ChangeStatusInput): Promise<void> {
+  await this.execute(async () => {
     const request = await this.repository.findById(input.requestId);
     this.assert(request !== null, this.notFound("Solicitação", input.requestId));
 
@@ -627,7 +806,11 @@ async changeStatus(input: ChangeStatusInput): Promise<void> {
 }
 ```
 
-### 11.2 Transação implícita
+A **leitura** fica dentro da transação: a checagem de concorrência otimista (`expectedStatusId` → 409) só vale se read e write estiverem no mesmo escopo.
+
+Ver [ADR-0001](./adr/0001-layered-architecture-per-domain.md) para as alternativas descartadas.
+
+### 11.2 Implicit Transactions
 
 O `TransactionManager` usa `AsyncLocalStorage` para propagar a transação corrente sem poluir a assinatura de cada método.
 
@@ -641,70 +824,99 @@ export class KnexDatabase implements Database, TransactionManager {
   }
 
   async run<T>(work: () => Promise<T>): Promise<T> {
+    return this.nested(async (trx) => this.scope.run(trx, work));
+  }
+
+  async runReadOnly<T>(work: () => Promise<T>): Promise<T> {
+    return this.nested(async (trx) => this.scope.run(trx, work));
+  }
+
+  private async nested<T>(use: (trx: Knex.Transaction) => Promise<T>): Promise<T> {
     const current = this.scope.getStore();
     if (current) {
-      return current.transaction((nested) => this.scope.run(nested, work));
+      return current.transaction((nested) => use(nested));
     }
-    return this.knex.transaction((trx) => this.scope.run(trx, work));
+    return this.knex.transaction((trx) => use(trx));
   }
 }
 ```
 
-Efeito: dentro de `runInTransaction`, qualquer repositório chamado — inclusive de outro domínio — usa a mesma transação, sem que nenhum deles saiba que ela existe. Transação aninhada vira savepoint.
+Efeito: dentro de `execute`, qualquer repositório chamado — inclusive de outro domínio — usa a mesma transação, sem que nenhum deles saiba que ela existe.
 
-### 11.3 O que deve estar na mesma transação
+| Cenário | Semântica |
+| --- | --- |
+| **Aninhamento** | O `execute` de um service chamado dentro de outro vira **savepoint**. Só a transação externa faz commit; um savepoint pode ser desfeito sozinho, mas nunca confirma por conta própria. |
+| **Lote** | Processamento em lote faz `execute` por chunk, não um por item — cada chunk é uma transação, e um chunk que falha não desfaz os anteriores. |
+| **Leitura agregada** | Leitura que junta várias tabelas (linha do tempo, agregações do dashboard) usa `runReadOnly`, para que todos os statements vejam o mesmo snapshot. Sem isso, o resultado pode ser uma leitura rasgada — o que a linha do tempo mostra pode não ter coexistido. |
+| **Leitura simples** | Uma tabela, um statement: sem transação, sem snapshot retido. |
 
-- A alteração de negócio e o registro de auditoria que a descreve.
-- Alterações em tabelas diferentes que descrevem o mesmo fato.
-- O registro de evento e o efeito que o evento descreve.
+### 11.3 What Belongs in the Same Transaction
 
-### 11.4 O que não deve estar
+| Dentro | Por quê |
+| --- | --- |
+| A alteração de negócio e a trilha de auditoria que a descreve | Atomicidade da trilha |
+| Alterações em tabelas diferentes que descrevem o mesmo fato | O fato é indivisível |
+| O registro de evento e o efeito que o evento descreve | O efeito é consequência do evento |
 
-- Chamada HTTP externa, e-mail ou upload de arquivo.
-- Leitura usada apenas para montar log.
-- Qualquer coisa que possa demorar mais que o timeout da transação.
+### 11.4 What Does Not Belong
+
+| Fora | Motivo |
+| --- | --- |
+| Chamada HTTP externa, e-mail ou envio de anexo | Latência e lock retido |
+| Leitura usada apenas para montar log | Não é parte do fato |
+| Qualquer coisa acima do timeout da transação | Transação aberta prende o snapshot MVCC e impede o *vacuum* de remover tuplas mortas — é o que gera bloat |
+
+### 11.5 Runtime Guarantee
+
+A regra "escrita só dentro de transação" é garantida pelo **repositório**, não por disciplina:
+
+```ts
+// src/platform/database/knex-database.ts
+assertInTransaction(): void {
+  if (!this.scope.getStore()) {
+    throw new AppError("transaction_required", 500, "escrita fora de transação");
+  }
+}
+```
+
+O erro é interno e não exposto: chegar a ele é bug, não condição de negócio. Ele existe para transformar "esqueci a transação" de *estado parcial silencioso* em *falha barulhenta*.
 
 ---
 
 ## 12. Errors
 
-### 12.1 Tipos
+### 12.1 Types
 
-| Tipo | Quando | Conhece HTTP |
+| Tipo | Quando | Carrega status HTTP? |
 | --- | --- | --- |
-| `DomainError` | Regra de negócio violada | Não |
-| `AppError` | Erro de aplicação com código e status estáveis | Sim |
+| `DomainError` | Regra de negócio violada; recusa com contexto | Não — vem do registro |
+| `AppError` | Erro de aplicação com código estável | Sim |
 | `Error` comum | Falha inesperada | Não |
 
-```ts
-// src/core/errors/app-error.ts
-export class AppError extends Error {
-  readonly code: string;
-  readonly status: number;
-  readonly expose: boolean;
-
-  constructor(
-    code: string,
-    status: number,
-    message: string,
-    options: { cause?: unknown; expose?: boolean } = {},
-  ) {
-    super(message, { cause: options.cause });
-    this.name = "AppError";
-    this.code = code;
-    this.status = status;
-    this.expose = options.expose ?? false;
-  }
-}
-```
-
-### 12.2 Códigos estáveis
+### 12.2 Stable Codes
 
 Todo erro exposto tem um `code` em `snake_case`, estável entre versões. O `code` é o que o frontend deve usar para decidir comportamento; a `message` é para o humano e pode mudar.
 
-Registro canônico em `core/errors/error-codes.ts`: `validation_error`, `not_found`, `conflict`, `unauthorized`, `forbidden`, `protocol_collision`, `internal_error`.
+| Registro | Códigos | Quem usa |
+| --- | --- | --- |
+| `core/errors/error-codes.ts` | `validation_error`, `not_found`, `conflict`, `unauthorized`, `forbidden`, `internal_error` | Erros expostos ao cliente |
+| Códigos de domínio | `not_the_assignee`, `invalid_status_transition`, … | Erros de `DomainError` |
+| `core/errors/internal-codes.ts` | `transaction_required`, `protocol_collision` | Erros internos; nunca expostos |
 
-### 12.3 Mapeamento
+### 12.3 Domain Error with Refusal Context
+
+Um erro de domínio não conhece HTTP. Quando a recusa merece rastro, ele carrega o contexto — a definição de `DomainError` e de `RefusalContext` está em [§ 9.4](#94-audit-and-log-what-each-one-guarantees).
+
+```ts
+// src/core/errors/is-auditable.ts
+export function isAuditable(error: unknown): error is DomainError & { context: RefusalContext } {
+  return error instanceof DomainError && error.context !== undefined;
+}
+```
+
+O `context` carrega **o que** foi tentado; a borda completa com **quem** e **onde**. O critério de auditabilidade é explícito no erro, não inferido de uma lista na borda.
+
+### 12.4 HTTP Mapping
 
 Erro de domínio não conhece status HTTP. O mapeamento acontece **uma vez**, na borda:
 
@@ -716,12 +928,15 @@ const STATUS_BY_CODE: Readonly<Record<string, number>> = {
   forbidden: 403,
   not_found: 404,
   conflict: 409,
-  protocol_collision: 409,
+  not_the_assignee: 403,
+  invalid_status_transition: 409,
   internal_error: 500,
 };
 ```
 
-### 12.4 Envelope de resposta
+`AppError` carrega o próprio status; `DomainError` não — o dele vem deste registro. Uma fonte por tipo de erro.
+
+### 12.5 Response Envelope
 
 O contrato vigente com o frontend é o do backend legado:
 
@@ -729,14 +944,16 @@ O contrato vigente com o frontend é o do backend legado:
 { "status": "error", "statusCode": 404, "message": "Solicitação não encontrada." }
 ```
 
-Esse envelope é **temporário**. O `CODING_STANDARDS.md` define `{ "error": { "code", "message", "requestId" } }`, que é melhor (código estável, correlação por request) e deve ser adotado em uma migração coordenada com o frontend — o cliente atual lê `body.message || body.error` e passaria a exibir `[object Object]`. Ver [ADR-0005](./adr/0005-legacy-error-envelope-temporary.md).
+Esse envelope é **temporário**. O `CODING_STANDARDS.md` define `{ "error": { "code", "message", "requestId" } }`, que adiciona código estável e correlação por requisição, e deve ser adotado em uma migração coordenada com o frontend — o cliente atual lê `body.message || body.error` e passaria a exibir `[object Object]`. Ver [ADR-0005](./adr/0005-legacy-error-envelope-temporary.md).
 
-### 12.5 Exposição
+### 12.6 Exposure
 
-- `expose: true` → a mensagem vai para o cliente.
-- `expose: false` (padrão) → o cliente recebe `internal_error` com mensagem genérica.
-- Stack, SQL, nome de tabela, path e versão interna **nunca** saem do servidor.
-- A causa é registrada **uma vez**, na borda. Camada interna não faz log-and-rethrow.
+| Regra | Efeito |
+| --- | --- |
+| `expose: true` | A mensagem vai para o cliente |
+| `expose: false` (padrão) | O cliente recebe `internal_error` com mensagem genérica |
+| Stack, SQL, nome de tabela, path e versão interna | Nunca saem do servidor |
+| Causa do erro | Registrada **uma vez**, na borda; camada interna não faz log-and-rethrow |
 
 ---
 
@@ -758,28 +975,32 @@ export const CreateRequest = z.strictObject({
 });
 ```
 
-Regras:
+> `demand` é o nome do bloco no contrato público já acordado; ver a exceção em [§ 3](#3-naming).
 
-- `strictObject` rejeita campo desconhecido.
-- O controller valida e repassa ao service **um objeto tipado**, nunca o `req.body` cru.
-- Não há *mass assignment*: o service mapeia explicitamente os campos validados para a operação.
-- Erro de validação responde `400` com `code: "validation_error"`.
-- `Content-Type` diferente do esperado responde `415`.
+| Regra | Efeito |
+| --- | --- |
+| `strictObject` rejeita campo desconhecido | Campo novo exige contrato novo |
+| O controller repassa ao service um objeto tipado | O service nunca vê o `req.body` cru |
+| Sem *mass assignment* | O service mapeia explicitamente os campos validados |
+| Erro de validação | `400` com `code: "validation_error"` |
+| `Content-Type` inesperado | `415` |
 
 ---
 
 ## 14. Authentication and Authorization
 
-### 14.1 Sessão
+### 14.1 Session
 
 Login emite JWT em cookie `HttpOnly`. A cada requisição, o middleware:
 
 1. valida a assinatura e a expiração;
-2. relê usuário e perfil no banco (desativação e mudança de perfil valem na hora);
+2. relê usuário e perfil no banco — desativação e mudança de perfil valem na hora;
 3. compara `password_changed_at` com o do token — senha trocada invalida sessões antigas;
 4. monta o `Actor` e o coloca em `res.locals`.
 
-### 14.2 Atores
+### 14.2 Actors
+
+O ator descreve **o estado de autenticação** da requisição:
 
 ```ts
 // src/core/actor.ts
@@ -789,9 +1010,13 @@ export type Actor =
   | { readonly kind: "anonymous" };
 ```
 
-O terceiro tipo cobre o fluxo público: o header `X-Requester-Identity` identifica o solicitante sem sessão, usado no acompanhamento por protocolo e nas pendências.
+- `authenticated` — há sessão. O `profile` diz o que a pessoa pode fazer.
+- `requester` — sem sessão, mas com identidade declarada no header `X-Requester-Identity`; usado no acompanhamento por protocolo e nas pendências.
+- `anonymous` — sem sessão e sem identidade.
 
-### 14.3 Perfis
+O **perfil** não é um tipo de ator: ele qualifica um ator autenticado. Um solicitante autenticado é `authenticated` com `profile: "solicitante"`; um solicitante anônimo é `requester`.
+
+### 14.3 Profiles
 
 Cinco perfis, com hierarquia:
 
@@ -803,17 +1028,38 @@ Admin Root
 Solicitante  (ator externo, fora da hierarquia)
 ```
 
-- **Solicitante** — abre e acompanha solicitações.
-- **Analista** — tria, mapeia, prioriza; é o **Responsável** quando designado.
-- **Gestor** — leitura sobre as áreas internas.
-- **Administrador** — gerencia usuários, conteúdo e configuração; não gerencia outros Administradores.
-- **Admin Root** — todas as permissões; gerencia Administradores. Existe apenas no seed; nunca há auto-registro.
+| Perfil | Pode | Não pode |
+| --- | --- | --- |
+| **Solicitante** | Abrir e acompanhar solicitações | Ver as áreas internas |
+| **Analista** | Triar, mapear, priorizar; é o **Responsável** quando designado | Gerenciar usuários ou configuração |
+| **Gestor** | Ler as áreas internas | Alterar nada |
+| **Administrador** | Gerenciar usuários, conteúdo e configuração | Gerenciar outros Administradores |
+| **Admin Root** | Todas as permissões; gerencia Administradores | — |
 
-### 14.4 Autorização
+> *Admin Root* existe apenas no seed; nunca há auto-registro.
 
-A autorização é uma **matriz em código**, atrás de uma interface — a costura que vai receber o RBAC configurável no futuro.
+### 14.4 Authorization
+
+A autorização é uma **matriz de permissões escrita em código**, atrás de uma interface — a costura que vai receber o RBAC configurável no futuro.
 
 ```ts
+// src/core/authorization/permissions.ts
+export const PERMISSIONS = {
+  REQUEST_READ: "request:read",
+  REQUEST_WRITE: "request:write",
+  REQUEST_ASSIGN: "request:assign",
+  TRIAGE_WRITE: "triage:write",
+  MAPPING_WRITE: "mapping:write",
+  PRIORITIZATION_WRITE: "prioritization:write",
+  PENDING_ITEM_REVIEW: "pending-item:review",
+  INTERNAL_NOTE_WRITE: "internal-note:write",
+  AUDIT_READ: "audit:read",
+  USER_MANAGE: "user:manage",
+  PORTAL_CONFIG_MANAGE: "portal-config:manage",
+} as const;
+
+export type Permission = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
+
 // src/core/authorization/authorization-service.ts
 export interface AuthorizationService {
   can(actor: Actor, permission: Permission): boolean;
@@ -821,9 +1067,12 @@ export interface AuthorizationService {
 }
 ```
 
-- **Nível de rota**: gate grosso por perfil, no middleware.
-- **Nível de serviço**: regra fina sobre o recurso — é aqui que mora a autorização de verdade (o solicitante só vê a própria solicitação; o Responsável atua sobre a que lhe foi designada).
-- A verificação fina fica **em um lugar só** por domínio, não duplicada em seis arquivos.
+A matriz (permissão → perfis) fica em `core/authorization/profile-permissions.ts`. *Admin Root* recebe todas as permissões.
+
+| Nível | O que verifica | Onde |
+| --- | --- | --- |
+| Rota | Gate grosso por perfil | Middleware |
+| Serviço | Regra fina sobre o recurso — o solicitante só vê a própria solicitação; o Responsável atua sobre a que lhe foi designada | Service, em um lugar só por domínio |
 
 Ver [ADR-0006](./adr/0006-static-profile-authorization.md).
 
@@ -839,7 +1088,7 @@ export function createApp(container: Container): Express {
   app.use(requestIdMiddleware);
   app.use(express.json({ limit: "1mb" }));
   app.use(cookieParser());
-  app.use(cors({ origin: config.cors.origins, credentials: true }));
+  app.use(cors({ origin: container.config.cors.origins, credentials: true }));
 
   app.use("/api/v1/auth", container.modules.auth.router);
   app.use("/api/v1/requests", container.modules.requests.router);
@@ -851,12 +1100,12 @@ export function createApp(container: Container): Express {
 }
 ```
 
-Regras:
-
-- o 404 vem antes do error handler;
-- o error handler tem quatro parâmetros e é o último middleware;
-- depois de `headersSent`, o handler delega com `next(err)` e não responde de novo;
-- `app.ts` não cria dependência — ele recebe o `Container` pronto. Isso permite montar a aplicação em teste sem subir servidor.
+| Regra | Motivo |
+| --- | --- |
+| O 404 vem antes do error handler | O 404 é uma rota, não um erro |
+| O error handler tem quatro parâmetros e é o último | O Express identifica o error handler pela assinatura |
+| Depois de `headersSent`, o handler delega com `next(err)` | Não se responde duas vezes |
+| `app.ts` não cria dependência | Recebe o `Container` pronto; a aplicação pode ser montada em teste sem subir servidor |
 
 ---
 
@@ -865,26 +1114,32 @@ Regras:
 A configuração é lida e validada **no boot**. Aplicação com configuração inválida não sobe.
 
 ```ts
-// src/platform/config/environment.ts
-const Environment = z.strictObject({
+// src/platform/config/environment-schema.ts
+export const EnvironmentSchema = z.strictObject({
   NODE_ENV: z.enum(["development", "test", "production"]),
   PORT: z.coerce.number().int().positive(),
   DATABASE: z.strictObject({
-    CLIENT: z.enum(["postgres", "sqlite", "mysql"]),
+    ENGINE: z.enum(["postgres", "sqlite", "mysql"]),
     HOST: z.string(),
     PORT: z.coerce.number().int().positive(),
     NAME: z.string(),
     USER: z.string(),
     PASSWORD: z.string(),
   }),
+  CORS: z.strictObject({
+    ORIGINS: z.array(z.string()),
+  }),
   JWT_SECRET: z.string().min(32),
   PROTOCOL_SECRET: z.string().min(32),
 });
 ```
 
-- Segredo ausente ou curto demais derruba o boot em produção.
-- `.env.example` documenta as variáveis; segredo nunca vai para o repositório.
-- Nenhum `process.env` fora de `platform/config`.
+| Regra | Motivo |
+| --- | --- |
+| Segredo ausente ou curto demais derruba o boot em produção | Falhar cedo é melhor que falhar no primeiro request |
+| `.env.example` documenta as variáveis | Segredo nunca vai para o repositório |
+| Nenhum `process.env` fora de `platform/config` | Uma fonte de configuração |
+| `Config` (interface) e `EnvironmentSchema` (Zod) têm nomes distintos | O schema valida; a interface é o contrato interno |
 
 ---
 
@@ -892,15 +1147,17 @@ const Environment = z.strictObject({
 
 O logger é um adapter (`platform/logging`) por trás de uma porta em `core/service`.
 
-Regras:
+| Regra | Motivo |
+| --- | --- |
+| Log estruturado em JSON, com nível e campos estáveis | Parseável |
+| **Request id** em todo log, aceito de `x-request-id` apenas se for UUID válido | Correlação entre requisição e erro |
+| Campos, não concatenação: `logger.info({ requestId, userId }, "request loaded") | Busca por campo funciona |
+| Redação de `authorization`, `cookie`, `set-cookie`, `password`, `token` e `secret` | Segredo não vaza em log |
+| PII não entra em log | Dado pessoal não é log |
+| A causa de um erro é logada **uma vez**, na borda | Camada interna não faz log-and-rethrow |
+| Método, rota, status e duração em todo log de requisição | Métrica de saúde |
 
-- log estruturado em JSON, com nível e campos estáveis — nunca `console.log`;
-- **request id** em todo log, aceito do header `x-request-id` apenas se for UUID válido, gerado caso contrário, e devolvido na resposta;
-- campos, não concatenação: `logger.info({ requestId, userId }, "request loaded")`;
-- redação de `authorization`, `cookie`, `set-cookie`, `password`, `token` e `secret`;
-- PII não entra em log;
-- a causa de um erro é logada **uma vez**, na borda;
-- método, rota, status e duração em todo log de requisição.
+**O log é rastro de tentativa, não de fato.** Uma transação que faz *rollback* pode deixar um log dizendo que o status mudou, sem auditoria correspondente. Por isso o log de sucesso sai **depois** do commit, e para saber o que de fato aconteceu se olha a **auditoria** — ver [§ 9.4](#94-audit-and-log-what-each-one-guarantees).
 
 ---
 
@@ -908,14 +1165,16 @@ Regras:
 
 A arquitetura já expõe as costuras que a suíte de testes vai usar quando ela existir. Hoje **não há camada de testes** — a decisão é adiada, não as costuras.
 
-| Seam | Interface | Por quê |
+| Costura | Interface | Por quê |
 | --- | --- | --- |
 | Relógio | `Clock` | `Date.now()` nunca é chamado direto no domínio |
 | Identificador | `IdGenerator` | Id previsível em teste |
 | Protocolo | `ProtocolGenerator` | Protocolo estável em teste |
-| Persistência | `Database` | Adapter em memória sem banco real |
+| Contador | `Counter` | Protocolo previsível em teste |
+| Persistência | `Database` | Adapter em memória sem banco real; `assertInTransaction()` testável sem banco |
 | Autorização | `AuthorizationService` | Cenário de permissão sem banco |
 | Eventos | `DomainEventPublisher` | Assert sobre evento publicado |
+| Tentativas | `AttemptRecorder` | Assert sobre recusa registrada |
 | HTTP | `HttpContext` | Controller testável sem subir servidor |
 
 Com `Clock` e `IdGenerator` injetados, o domínio é determinístico: nada de `Math.random()`, `new Date()` ou `Date.now()` dentro de regra de negócio.
@@ -932,13 +1191,13 @@ platform  → core
 container → core + platform + domains
 ```
 
-Proibições:
-
-- `core` **nunca** importa de `domains` ou `platform`;
-- `domains` **nunca** importa de `platform` — a implementação concreta do adapter entra pelo container;
-- um domínio **nunca** importa repositório, service ou controller de outro domínio;
-- `platform` **nunca** importa de `domains`;
-- `app.ts` e `server.ts` **nunca** criam dependência — eles consomem o `Container`.
+| Proibição | Por quê |
+| --- | --- |
+| `core` **nunca** importa de `domains` ou `platform` | O kernel não conhece ninguém |
+| `domains` **nunca** importa de `platform` | A implementação concreta do adapter entra pelo container |
+| Um domínio **nunca** importa repositório, service ou controller de outro domínio | Fronteira entre áreas |
+| `platform` **nunca** importa de `domains` | Inclusive o *error handler*: ele recebe a porta `AttemptRecorder`, não o domínio |
+| `app.ts` e `server.ts` **nunca** criam dependência | Eles consomem o `Container` |
 
 ---
 
@@ -951,9 +1210,11 @@ Os padrões abaixo são os que o backend legado usa e que esta arquitetura exist
 | `import { db } from "../database/conexion.js"` dentro de um service | Dependência implícita, banco travado, nada testável | Injetar `Database` pelo construtor |
 | Regra de negócio dentro do repository | Repositório deixa de ser persistência e vira regra sem lugar de teste | Regra no service; repositório só lê e escreve |
 | Regra de negócio dentro do controller | Regra não é testável sem HTTP | Regra no service |
-| `trx` como parâmetro em todo método de repositório | Ruído em todas as assinaturas | Transação implícita por `TransactionManager` |
 | Service **e** repository abrindo transação | Escopo de transação indefinido | Só o service abre |
+| Escrita fora de transação | Commit parcial silencioso | `execute()` no service; `assertInTransaction()` no repositório |
+| `trx` como parâmetro em todo método de repositório | Ruído em todas as assinaturas | Transação implícita por `TransactionManager` |
 | `db.raw()` espalhado em repositório | SQL não portável | `Dialect` ou query builder |
+| `.first()` em busca por protocolo | Retorna a linha errada em silêncio quando há duplicata | Sondagem com `LIMIT 2` |
 | `catch { return [] }` | Erro de banco virando "não tem resultado" | Deixar o erro subir; tratar no service |
 | `switch` gigante mapeando coluna por campo | Regressão ao adicionar campo | Mapeamento por repositório, colunas por constante |
 | String de erro repetida (`"INSUFFICIENT_ROLE_PERMISSIONS"`) | Código sem registro, divaga | Registro em `error-codes.ts` |
@@ -965,61 +1226,56 @@ Os padrões abaixo são os que o backend legado usa e que esta arquitetura exist
 
 ---
 
-## 21. General Rules
+## 21. Review Checklist
 
-- [ ] O código pertence a um domínio; nada vive em pasta transversal por conveniência.
-- [ ] Toda dependência externa chega pelo construtor.
-- [ ] Nenhum import de `platform` dentro de `domains`.
-- [ ] Nenhum import de repositório de outro domínio.
-- [ ] Regras de negócio no service; tradução HTTP no controller; SQL no repository.
-- [ ] `core` não importa nada de `domains` ou `platform`.
-- [ ] Entrada validada na borda com Zod; objeto tipado chega ao service.
-- [ ] Sem `any`; `unknown` na borda; sem assertion sem validação.
-- [ ] Erros tipados, com `cause`; causa logada uma vez, na borda.
-- [ ] Toda consulta tem `limit`; toda listagem é paginada.
-- [ ] Transação aberta só no service; repositório nunca recebe `trx`.
-- [ ] Mudança relevante publica evento; auditoria é gravada na mesma transação.
-- [ ] SQL portátil: sem `db.raw` fora do `Dialect`.
-- [ ] ID gerado pela aplicação; protocolo com `UNIQUE` e retry.
-- [ ] Autorização verificada no servidor, em um lugar só por domínio.
-- [ ] Log estruturado com request id; sem PII; sem `console.log`.
-- [ ] Segredo vem de ambiente validado; nunca no repositório.
+Cada linha aponta a seção que define a regra. Um PR que muda mais de uma camada marca mais de uma linha.
+
+| [ ] | Regra | Onde | Como verificar |
+| --- | --- | --- | --- |
+| [ ] | O código pertence a um domínio | [§ 4](#4-directory-structure) | O arquivo está em `src/domains/<domínio>/` |
+| [ ] | Toda dependência externa chega pelo construtor | [§ 8](#8-dependency-injection) | Nenhum import de `platform` dentro de `domains` |
+| [ ] | Nenhum repositório, service ou controller de outro domínio é importado | [§ 19](#19-allowed-dependencies) | Só `import type` de uma `*.port.ts` |
+| [ ] | Regras no service; tradução HTTP no controller; SQL no repository | [§ 6](#6-layer-responsibilities) | O controller não monta query |
+| [ ] | `core` não importa nada de `domains` ou `platform` | [§ 19](#19-allowed-dependencies) | `rg "from \"\.\./(domains|platform)" src/core` |
+| [ ] | Entrada validada na borda com Zod | [§ 13](#13-validation-and-the-border) | O service recebe objeto tipado, não `req.body` |
+| [ ] | Sem `any`; `unknown` na borda; sem assertion sem validação | `CODING_STANDARDS.md` | Type-check estrito passa |
+| [ ] | Erros tipados, com `cause`; causa logada uma vez, na borda | [§ 12](#12-errors) | Nenhum `log-and-rethrow` |
+| [ ] | Toda escrita é um `execute*`; nenhuma fora de transação | [§ 11](#11-transactions) | `assertInTransaction()` no repositório |
+| [ ] | Leitura agregada usa `runReadOnly` | [§ 11.2](#112-implicit-transactions) | Timeline e dashboard |
+| [ ] | Mudança relevante publica evento; trilha da alteração na mesma transação | [§ 9.3](#93-change-audit-via-domain-events) | Assinatura no `domains/audit` |
+| [ ] | Recusa auditável carrega contexto e é gravada na borda | [§ 9.4](#94-audit-and-log-what-each-one-guarantees) | `DomainError` com `context` |
+| [ ] | SQL portátil: sem `db.raw` fora do `Dialect` | [§ 10.3](#103-portability-rules) | `rg "db\.raw\(" src/domains` |
+| [ ] | ID gerado pela aplicação; protocolo com `UNIQUE` e sondagem `LIMIT 2` | [§ 10.5](#105-protocol) | Leitura por protocolo |
+| [ ] | Autorização verificada no servidor, em um lugar só por domínio | [§ 14.4](#144-authorization) | `AuthorizationService.assert` |
+| [ ] | Log estruturado com request id; sem PII; sem `console.log` | [§ 17](#17-logging) | `rg "console\.(log|error)" src/` |
+| [ ] | Segredo vem de ambiente validado; nunca no repositório | [§ 16](#16-configuration) | `.env.example` sem valor |
 
 ---
 
-## 22. Pending Changes
-
-Pendências conhecidas, com o impacto e o gatilho de reavaliação:
+## 22. Pending Items
 
 | Pendência | Impacto | Gatilho |
 | --- | --- | --- |
-| Envelope de erro `{ error: { code, message, requestId } }` | Frontend precisa ajustar `readErrorMessage` | release coordenada com o frontend |
-| RBAC configurável (tabelas `roles`, `permissions`) | Troca da matriz em código por adapter de banco | Demanda do produto por perfis configuráveis |
+| Envelope de erro `{ error: { code, message, requestId } }` | Frontend precisa ajustar `readErrorMessage` | Release coordenada com o frontend |
+| RBAC configurável (tabelas `profiles`, `profile_permissions`) | Troca da matriz em código por adapter de banco | Demanda do produto por perfis configuráveis |
 | Perfis: 5 no backend, 4 nos contratos publicados | Contrato de API desatualizado | Atualizar `contratos/` no repositório de documentação |
+| Entropia do prefixo do protocolo (80 bits em `MAAT3K7P-ABCD-EFGH`) | Enumeração do protocolo: 40 bits caem em ~127 dias a 100k rps | Endpoint público sem rate limit forte |
 | Suíte de testes automatizados | Rede de segurança ausente para a reescrita | Ferramentas de teste decididas |
-| Envelope de paginação | Já é o formato do frontend | — |
 | Log de auditoria exposto na API | Pendente de contrato | Formalização do domínio de auditoria |
 
 ---
 
-## 23. Summary
+## 23. Index
 
 ```text
-O domínio é a unidade de modularização.
-
-Router monta endpoint.
-Controller valida entrada e formata resposta.
-Service decide: regra, autorização, transação, evento.
-Repository persiste, sem regra e sem transação própria.
-Database garante o dado.
-
-Dependências entram pelo construtor.
-O composition root é o único que conhece as implementações.
-Domínios conversam por portas publicadas e por eventos, nunca por repositório alheio.
-
-O SQL é portátil; o detalhe de engine vive no Dialect.
-Os IDs nascem na aplicação; o protocolo é derivado por HMAC.
-
-A auditoria acompanha a alteração, na mesma transação.
-O erro é traduzido uma vez, na borda.
+§ 4  Directory Structure      § 14 Authentication and Authorization
+§ 5  Domain Catalog           § 15 Routing and Application Assembly
+§ 6  Layer Responsibilities   § 16 Configuration
+§ 7  Base Classes             § 17 Logging
+§ 8  Dependency Injection     § 18 Testability Seams
+§ 9  Domain Events            § 19 Allowed Dependencies
+§ 10 Persistence with Knex    § 20 Anti-Patterns
+§ 11 Transactions             § 21 Review Checklist
+§ 12 Errors                   § 22 Pending Items
+§ 13 Validation and the Border
 ```

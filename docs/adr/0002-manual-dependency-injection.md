@@ -1,3 +1,7 @@
+---
+status: aceito
+---
+
 # Injeção de dependência manual
 
 O backend legado importa a conexão de banco como singleton de módulo: 22 arquivos dependem de `src/database/conexion.ts` diretamente, incluindo serviços. Isso torna o Postgres o único banco possível, impede qualquer teste sem banco real e esconde as dependências de cada módulo.

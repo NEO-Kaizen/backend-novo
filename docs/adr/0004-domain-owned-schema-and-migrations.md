@@ -1,3 +1,7 @@
+---
+status: aceito
+---
+
 # Schema e migrações pertencem ao domínio
 
 O backend legado tem 55 arquivos de migration distribuídos em três diretórios (`migrations/`, `migrations/requester_request/`, `migrations/users/`) sem que exista uma definição de tabela em código — o schema existe apenas como sequência de migrations. Não há quem responda "de quem é a tabela `triages`?".
