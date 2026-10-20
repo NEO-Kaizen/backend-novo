@@ -73,11 +73,11 @@ gh auth login
 
 Respostas do fluxo interativo:
 
-| Pergunta | Resposta |
-| --- | --- |
-| Host | `GitHub.com` |
+| Pergunta         | Resposta                       |
+| ---------------- | ------------------------------ |
+| Host             | `GitHub.com`                   |
 | Protocolo de Git | `SSH` (recomendado) ou `HTTPS` |
-| Autenticação | `Login with a web browser` |
+| Autenticação     | `Login with a web browser`     |
 
 Copie o código de oito dígitos exibido no terminal e cole no navegador.
 
@@ -108,21 +108,12 @@ gh extension install github/gh-stack
 
 ## Problemas comuns
 
-| Sintoma | Causa provável | Solução |
-| --- | --- | --- |
-| `gh: command not found` | Terminal aberto antes da instalação | Abra uma nova janela do terminal |
-| `HTTP 401` | Credencial inválida ou expirada | `gh auth login` |
-| `missing required scopes` | Escopo ausente | `gh auth refresh --scopes project` |
-| Versão antiga no Linux | Pacote da distribuição | Use o repositório oficial deste guia |
-
-## Próximos passos
-
-Dependências ainda não cobertas por este documento:
-
-- Git
-- Node.js 24+
-- jq
-- Docker e banco de dados (a definir)
+| Sintoma                   | Causa provável                      | Solução                              |
+| ------------------------- | ----------------------------------- | ------------------------------------ |
+| `gh: command not found`   | Terminal aberto antes da instalação | Abra uma nova janela do terminal     |
+| `HTTP 401`                | Credencial inválida ou expirada     | `gh auth login`                      |
+| `missing required scopes` | Escopo ausente                      | `gh auth refresh --scopes project`   |
+| Versão antiga no Linux    | Pacote da distribuição              | Use o repositório oficial deste guia |
 
 ## Referências
 
