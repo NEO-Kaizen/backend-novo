@@ -1,15 +1,17 @@
 # HTML Report Format
 
+Output language: Portuguese. Keep the architecture vocabulary in English.
+
 The architectural review is rendered as a single self-contained HTML file in the OS temp directory. Tailwind and Mermaid both come from CDNs. Mermaid handles graph-shaped diagrams reliably; hand-built divs and inline SVG handle the more editorial visuals (mass diagrams, cross-sections). Mix the two: don't lean on Mermaid for everything, it'll start to look generic.
 
 ## Scaffold
 
 ```html
 <!doctype html>
-<html lang="en">
+<html lang="pt-BR">
   <head>
     <meta charset="utf-8" />
-    <title>Architecture review for {{repo name}}</title>
+    <title>Revisão de arquitetura para {{repo name}}</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script type="module">
       import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
@@ -35,7 +37,7 @@ The architectural review is rendered as a single self-contained HTML file in the
 
 ## Header
 
-Repo name, date, and a compact legend: solid box = module, dashed line = seam, red arrow = leakage, thick dark box = deep module. No introduction paragraph. Straight into the candidates.
+Repo name, date, and a compact legend in Portuguese: solid box = module, dashed line = seam, red arrow = leakage, thick dark box = deep module. No introduction paragraph. Straight into the candidates.
 
 ## Candidate card
 
@@ -43,14 +45,14 @@ The diagrams carry the weight. Prose is sparse, plain, and uses the glossary ter
 
 Each candidate is one `<article>`:
 
-- **Title**: short, names the deepening (e.g. "Collapse the Order intake pipeline").
-- **Badge row**: recommendation strength (`Strong` = emerald, `Worth exploring` = amber, `Speculative` = slate), plus a tag for the dependency category (`in-process`, `local-substitutable`, `ports & adapters`, `mock`).
-- **Files**: monospaced list, `font-mono text-sm`.
-- **Before / After diagram**: the centrepiece. Two columns, side by side. See patterns below.
-- **Problem**: one sentence. What hurts.
-- **Solution**: one sentence. What changes.
-- **Wins**: bullets, ≤6 words each. e.g. "Tests hit one interface", "Pricing logic stops leaking", "Delete 4 shallow wrappers".
-- **ADR callout** (if applicable): one line in an amber-tinted box.
+- **Título**: short, names the deepening (e.g. "Collapse the Order intake pipeline").
+- **Linha de badges**: recommendation strength (`Forte` = emerald, `Vale explorar` = amber, `Especulativo` = slate), plus a tag for the dependency category (`in-process`, `local-substitutable`, `ports & adapters`, `mock`).
+- **Arquivos**: monospaced list, `font-mono text-sm`.
+- **Diagrama Antes / Depois**: the centrepiece. Two columns, side by side. See patterns below.
+- **Problema**: one sentence. What hurts.
+- **Solução**: one sentence. What changes.
+- **Ganhos**: bullets, ≤6 words each. e.g. "Testes atingem uma interface", "Lógica de Pricing para de vazar", "Remova 4 wrappers shallow".
+- **Callout de ADR** (if applicable): one line in an amber-tinted box.
 
 No paragraphs of explanation. If the diagram needs a paragraph to be understood, redraw the diagram.
 
@@ -99,13 +101,13 @@ Before: a tree of function calls rendered as nested boxes. After: the same tree 
 - Use `text-xs uppercase tracking-wider` for module labels inside diagrams, so they read as schematic, not as UI.
 - The only scripts are the Tailwind CDN and the Mermaid ESM import. The report is otherwise static: no app code, no interactivity beyond Mermaid's own rendering.
 
-## Top recommendation section
+## Recomendação principal
 
 One larger card. Candidate name, one sentence on why, anchor link to its card. That's it.
 
 ## Tone
 
-Plain English, concise, but the architectural nouns and verbs come straight from the `/codebase-design` skill. Concision is not an excuse to drift.
+Write in clear, concise Portuguese, but the architectural nouns and verbs come straight from the `/codebase-design` skill. Concision is not an excuse to drift.
 
 **Use exactly:** module, interface, implementation, depth, deep, shallow, seam, adapter, leverage, locality.
 
@@ -113,11 +115,11 @@ Plain English, concise, but the architectural nouns and verbs come straight from
 
 **Phrasings that fit the style:**
 
-- "Order intake module is shallow: interface nearly matches the implementation."
-- "Pricing leaks across the seam."
-- "Deepen: one interface, one place to test."
-- "Two adapters justify the seam: HTTP in prod, in-memory in tests."
+- "O módulo Order intake é shallow: a interface quase iguala a implementação."
+- "Pricing vaza pela seam."
+- "Aprofunde: uma interface, um lugar para testar."
+- "Dois adapters justificam a seam: HTTP em produção, in-memory nos testes."
 
-**Wins bullets** name the gain in glossary terms: *"locality: bugs concentrate in one module"*, *"leverage: one interface, N call sites"*, *"interface shrinks; implementation absorbs the wrappers"*. Don't write *"easier to maintain"* or *"cleaner code"*, because those terms aren't in the glossary and don't earn their place.
+**Wins bullets** name the gain in glossary terms: *"locality: bugs se concentram em um module"*, *"leverage: uma interface, N call sites"*, *"interface encolhe; implementation absorve os wrappers"*. Don't write *"mais fácil de manter"* or *"código mais limpo"*, because those terms aren't in the glossary and don't earn their place.
 
 No hedging, no throat-clearing, no "it's worth noting that…". If a sentence could be a bullet, make it a bullet. If a bullet could be cut, cut it. If a term isn't in the `/codebase-design` glossary, reach for one that is before inventing a new one.

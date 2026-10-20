@@ -4,6 +4,8 @@ description: "Turn the current conversation into a spec and publish it to the pr
 disable-model-invocation: true
 ---
 
+Output language: Portuguese.
+
 This skill takes the current conversation context and codebase understanding and produces a spec. Do NOT interview the user; just synthesize what you already know.
 
 The issue tracker and triage label vocabulary should have been provided to you. If not, tell the user to run `/setup-matt-pocock-skills`.
@@ -20,56 +22,56 @@ Check with the user that these seams match their expectations.
 
 <spec-template>
 
-## Problem Statement
+## Declaração do problema
 
-The problem that the user is facing, from the user's perspective.
+O problema que o usuário enfrenta, do ponto de vista do usuário.
 
-## Solution
+## Solução
 
-The solution to the problem, from the user's perspective.
+A solução para o problema, do ponto de vista do usuário.
 
-## User Stories
+## Histórias de usuário
 
-A LONG, numbered list of user stories. Each user story should be in the format of:
+Uma lista LONGA e numerada de histórias de usuário. Cada história deve seguir o formato:
 
-1. As an <actor>, I want a <feature>, so that <benefit>
+1. Como um <ator>, quero <funcionalidade>, para que <benefício>
 
 <user-story-example>
-1. As a mobile bank customer, I want to see balance on my accounts, so that I can make better informed decisions about my spending
+1. Como um cliente de banco móvel, quero ver o saldo das minhas contas, para tomar decisões mais informadas sobre meus gastos
 </user-story-example>
 
-This list of user stories should be extremely extensive and cover all aspects of the feature.
+Essa lista de histórias de usuário deve ser extremamente extensa e cobrir todos os aspectos da funcionalidade.
 
-## Implementation Decisions
+## Decisões de implementação
 
-A list of implementation decisions that were made. This can include:
+Uma lista das decisões de implementação tomadas. Pode incluir:
 
-- The modules that will be built/modified
-- The interfaces of those modules that will be modified
-- Technical clarifications from the developer
-- Architectural decisions
-- Schema changes
-- API contracts
-- Specific interactions
+- Os módulos que serão criados/modificados
+- As interfaces desses módulos que serão modificadas
+- Esclarecimentos técnicos do desenvolvedor
+- Decisões arquiteturais
+- Mudanças de schema
+- Contratos de API
+- Interações específicas
 
-Do NOT include specific file paths or code snippets. They may end up being outdated very quickly.
+NÃO inclua caminhos de arquivos específicos nem trechos de código. Eles podem ficar desatualizados muito rapidamente.
 
-Exception: if a prototype produced a snippet that encodes a decision more precisely than prose can (state machine, reducer, schema, type shape), inline it within the relevant decision and note briefly that it came from a prototype. Trim to the decision-rich parts, not a working demo, just the important bits.
+Exceção: se um protótipo produziu um trecho que codifica uma decisão com mais precisão do que a prosa consegue (máquina de estados, reducer, schema, formato de tipo), inclua-o na decisão relevante e note brevemente que veio de um protótipo. Corte para as partes ricas em decisão, não uma demo funcional, apenas os trechos importantes.
 
-## Testing Decisions
+## Decisões de teste
 
-A list of testing decisions that were made. Include:
+Uma lista das decisões de teste tomadas. Inclua:
 
-- A description of what makes a good test (only test external behavior, not implementation details)
-- Which modules will be tested
-- Prior art for the tests (i.e. similar types of tests in the codebase)
+- Uma descrição do que faz um bom teste (testar apenas comportamento externo, não detalhes de implementação)
+- Quais módulos serão testados
+- Precedentes para os testes (ou seja, tipos semelhantes de testes na base de código)
 
-## Out of Scope
+## Fora de escopo
 
-A description of the things that are out of scope for this spec.
+Uma descrição das coisas que estão fora do escopo desta spec.
 
-## Further Notes
+## Notas adicionais
 
-Any further notes about the feature.
+Quaisquer notas adicionais sobre a funcionalidade.
 
 </spec-template>
