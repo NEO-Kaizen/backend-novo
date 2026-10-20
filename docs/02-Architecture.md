@@ -631,6 +631,8 @@ Regra: **o log nunca é evidência.** Para saber o que aconteceu, olhe a auditor
 
 ## 10. Persistence with Knex
 
+As tabelas, colunas, relações e invariantes do modelo estão em [`03-Data-Model.md`](./03-Data-Model.md), que é a especificação do schema; a definição em Knex de cada domínio a implementa. As convenções de nomenclatura e de constraints do schema estão na [ADR-0009](./adr/0009-schema-naming-and-constraints.md).
+
 ### 10.1 The Database Port
 
 O repositório fala com a porta `Database`, não com o Knex diretamente.
@@ -1246,6 +1248,10 @@ Cada linha aponta a seção que define a regra. Um PR que muda mais de uma camad
 | [ ] | Recusa auditável carrega contexto e é gravada na borda | [§ 9.4](#94-audit-and-log-what-each-one-guarantees) | `DomainError` com `context` |
 | [ ] | SQL portátil: sem `db.raw` fora do `Dialect` | [§ 10.3](#103-portability-rules) | `rg "db\.raw\(" src/domains` |
 | [ ] | ID gerado pela aplicação; protocolo com `UNIQUE` e sondagem `LIMIT 2` | [§ 10.5](#105-protocol) | Leitura por protocolo |
+| [ ] | Schema segue as convenções de nomenclatura e constraints | [`03-Data-Model.md` § 2](./03-Data-Model.md#2-naming-conventions) | `ck_`, `uk_`, `idx_`, `fk_` + tabela |
+| [ ] | Nenhuma coluna `ENUM`; conjunto fechado é `text` + `ck_` ou tabela de referência | [`03-Data-Model.md` § 2.7](./03-Data-Model.md#27-closed-value-sets) | `rg "\.enu\(" src/domains` |
+| [ ] | `ON DELETE RESTRICT` em toda chave estrangeira; nada é apagado | [`03-Data-Model.md` § 2.11](./03-Data-Model.md#211-delete-policy) | `rg "onDelete\(" src/domains` |
+| [ ] | Schema alterado, modelo documentado atualizado | [ADR-0010](./adr/0010-data-model-doc-is-the-spec.md) | Diff em `03-Data-Model.md` no mesmo PR |
 | [ ] | Autorização verificada no servidor, em um lugar só por domínio | [§ 14.4](#144-authorization) | `AuthorizationService.assert` |
 | [ ] | Log estruturado com request id; sem PII; sem `console.log` | [§ 17](#17-logging) | `rg "console\.(log|error)" src/` |
 | [ ] | Segredo vem de ambiente validado; nunca no repositório | [§ 16](#16-configuration) | `.env.example` sem valor |

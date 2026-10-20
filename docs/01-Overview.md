@@ -7,6 +7,7 @@ Este documento situa o repositório: o que o sistema faz, por que ele está send
 Documentos relacionados:
 
 - [`02-Architecture.md`](./02-Architecture.md) — arquitetura em camadas, injeção de dependências, persistência com Knex e regras de modularização.
+- [`03-Data-Model.md`](./03-Data-Model.md) — o modelo de dados: tabelas, colunas, relações e invariantes.
 - [`../GLOSSARY.md`](../GLOSSARY.md) — vocabulário do domínio.
 - [`adr/`](./adr/) — decisões de arquitetura registradas.
 
@@ -109,6 +110,7 @@ O inventário completo, com responsabilidades e portas publicadas por cada domí
 ```text
 01-Overview.md      → o que é, por que, escopo
 02-Architecture.md  → como o código se organiza e por quê
+03-Data-Model.md    → as tabelas, as relações e as invariantes do banco
 GLOSSARY.md         → o que cada termo do domínio significa
 adr/                → decisões que custam caro para reverter
 CODING_STANDARDS.md → como escrever o código
