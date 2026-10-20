@@ -7,15 +7,15 @@ Vocabulário do domínio do portal MAAT, que registra e acompanha demandas opera
 ## Solicitação e acompanhamento
 
 **Solicitação**:
-O registro de uma demanda operacional submetida por um solicitante, com protocolo próprio e ciclo de vida definido por status.
+O registro submetido por um solicitante para atender uma necessidade operacional, com protocolo próprio e ciclo de vida definido por status.
 _Evitar_: pedido, demanda, requisição, ticket, chamado.
 
 **Protocolo**:
-Código público, curto e não enumerável que permite ao solicitante acompanhar uma solicitação sem expôr sua identidade interna.
+Identificador público, curto e não enumerável que permite ao solicitante acompanhar uma solicitação sem expor sua identidade interna.
 _Evitar_: código, referência, número do pedido, id público.
 
 **Solicitante**:
-Pessoa que registra uma solicitação e acompanha seu andamento. Pode actinguar de forma anônima ou autenticada.
+Pessoa que registra uma solicitação e acompanha seu andamento. Pode atuar de forma anônima ou autenticada.
 _Evitar_: cliente, usuário externo, requisitante.
 
 **Anexo**:
@@ -57,11 +57,11 @@ Etapa em que se avalia a possibilidade técnica e operacional de atender a solic
 _Evitar_: estudo, benchmarking, viabilidade.
 
 **Priorização**:
-Atribuição de pontuação a uma solicitação a partir de critérios ponderados, resultando em uma prioridade.
+Cálculo da prioridade de uma solicitação a partir de critérios ponderados.
 _Evitar_: pontuação (é o resultado da priorização), ranking, ordenação.
 
 **Critério**:
-Qesito ponderado usado no cálculo da priorização, com peso ajustável.
+Quesito ponderado usado no cálculo da priorização, com peso ajustável.
 _Evitar_: requisito, atributo, métrica.
 
 ## Colaboração
@@ -79,13 +79,17 @@ Sequência unificada dos acontecimentos de uma solicitação: notas internas, au
 _Evitar_: histórico, feed, atividade.
 
 **Auditoria**:
-Registro imutável de alterações relevantes em entidades do sistema, com autor, momento e valor anterior e novo.
+Registro imutável do que foi efetivamente alterado no sistema, com autor, momento e valor anterior e novo.
 _Evitar_: log, histórico, trilha de mudanças.
+
+**Tentativa**:
+Registro imutável de uma ação que foi recusada — por falta de permissão ou por regra de negócio. Preservado mesmo quando a ação não aconteceu. A *recusa* é o ato; a *tentativa* é o registro dele.
+_Evitar_: erro, negação, log.
 
 ## Acesso
 
 **Perfil**:
-Conjunto fixo de permissões atribuído a um usuário. São cinco: *Solicitante*, *Analista*, *Gestor*, *Administrador* e *Admin Root*.
+Conjunto fixo de permissões atribuído a um usuário. São cinco: *Solicitante*, *Analista*, *Gestor*, *Administrador* e *Admin Root*. O *Solicitante* descreve um ator externo e não ocupa a hierarquia interna.
 _Evitar_: papel, cargo, função, role.
 
 **Admin Root**:

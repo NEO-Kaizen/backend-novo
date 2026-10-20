@@ -1,6 +1,6 @@
 # Backend Overview
 
-O backend novo do **MAAT** (Tirador de Pedidos) é a API que sustenta o portal de registro e acompanhamento de demandas operacionais: o solicitante abre uma demanda, o time interno tria, prioriza, mapeia e encerra.
+O backend novo do **MAAT** (Tirador de Pedidos do NEO) é a API que sustenta o portal de registro e acompanhamento de demandas operacionais: o solicitante abre uma solicitação, o time interno tria, prioriza, mapeia e encerra.
 
 Este documento situa o repositório: o que o sistema faz, por que ele está sendo reescrito, o que está no escopo do backend novo e onde ficam as decisões de arquitetura.
 
@@ -14,14 +14,14 @@ Documentos relacionados:
 
 ## 1. O produto
 
-O MAAT é um portal de *intake* de demandas. O fluxo principal é:
+O MAAT é um portal de *intake* de solicitações. O fluxo principal é:
 
 ```text
 Solicitante preenche o formulário
         ↓
 Sistema gera o protocolo e registra a solicitação
         ↓
-Fila interna recebe a demanda
+Fila interna recebe a solicitação
         ↓
 Triagem → Mapeamento → Priorização → Execução
         ↓
@@ -38,16 +38,19 @@ O backend legado (`NEO-Kaizen/backend`) funciona, mas carrega problemas estrutur
 
 | Problema | Consequência | Onde foi resolvido |
 | --- | --- | --- |
-| Conexão de banco importada como singleton de módulo | Banco travado no Postgres; nada testável sem banco real | [ADR-0003](./adr/0003-knex-dialect-portability.md) |
+| Conexão de banco importada como singleton de módulo | Banco travado no Postgres; nada testável sem banco real | [ADR-0002](./adr/0002-manual-dependency-injection.md) |
 | Nenhuma injeção de dependência | Dependências implícitas, acoplamento invisível, ausência de fakes | [ADR-0002](./adr/0002-manual-dependency-injection.md) |
 | Serviço de 1.330 linhas misturando seis casos de uso | Mudança arriscada, revisão inviável | [ADR-0001](./adr/0001-layered-architecture-per-domain.md) |
 | Transações abertas em serviços **e** repositórios | Escopo de transação indefinido, risco de escrita parcial | [ADR-0001](./adr/0001-layered-architecture-per-domain.md) |
 | Domínios importando repositórios de outros domínios | Fronteiras entre áreas dissolvidas, ciclos entre módulos | [ADR-0001](./adr/0001-layered-architecture-per-domain.md), [ADR-0007](./adr/0007-event-driven-audit.md) |
 | Regras de autorização duplicadas em seis arquivos | Regra divergente por área, correção parcial | [ADR-0006](./adr/0006-static-profile-authorization.md) |
 | SQL específico de Postgres espalhado pelos repositórios | Troca de engine inviável | [ADR-0003](./adr/0003-knex-dialect-portability.md) |
-| `console.log` como logging | Sem correlação, sem redação de dados sensíveis | [ADR-0001](./adr/0001-layered-architecture-per-domain.md) |
+| `console.log` como logging | Sem correlação, sem redação de dados sensíveis | [02-Architecture § 17](./02-Architecture.md#17-logging) |
 | Zero testes automatizados | Nenhuma rede de segurança para uma reescrita | [ADR-0002](./adr/0002-manual-dependency-injection.md) |
 | Schema espalhado em três pastas de migration, sem dono | Modelagem sem responsabilidade clara | [ADR-0004](./adr/0004-domain-owned-schema-and-migrations.md) |
+| Protocolo lido com `.first()`, sem dono verificado no modo público | Risco de exibir dados de outra solicitação | [ADR-0008](./adr/0008-protocol-without-collision-risk.md) |
+
+A lista completa de anti‑padrões que esta arquitetura existe para não repetir está em [02-Architecture § 20](./02-Architecture.md#20-anti-patterns).
 
 A reescrita não é uma reimplementação linha a linha. O legado é a **fonte de requisitos** — regras de negócio, estados, contratos de API e vocabulário — mas a organização do código é nova.
 
@@ -61,14 +64,14 @@ A reescrita não é uma reimplementação linha a linha. O legado é a **fonte d
 - autenticação por sessão e autorização por perfil;
 - ciclo de vida da solicitação, do protocolo e dos anexos;
 - triagem, mapeamento, priorização, pendências e notas internas;
-- trilha de auditoria imutável;
-- configuração do portal (categorias, status, temas, modo de acesso);
+- trilha de auditoria imutável — do que foi alterado e do que foi recusado;
+- configuração do portal (categorias, status, aparência, modo de acesso);
 - fila, métricas de dashboard e exportações.
 
 **Fora do escopo:**
 
 - regras de interface do usuário (pertencem ao frontend);
-- integração com calendário ou ITSM (o mapeamento é registro manual);
+- integração com calendário ou ITSM — o mapeamento é registro manual;
 - RBAC configurável pelo administrador — ver [ADR-0006](./adr/0006-static-profile-authorization.md);
 - qualquer decisão de infraestrutura de deploy, que vive no repositório de frontend.
 
@@ -82,10 +85,10 @@ A reescrita não é uma reimplementação linha a linha. O legado é a **fonte d
 | Módulos | ESM | `CODING_STANDARDS.md` |
 | Linguagem | TypeScript 7, modo estrito | `CODING_STANDARDS.md` |
 | HTTP | Express 5 | `CODING_STANDARDS.md` |
-| Persistência | Knex 3 (query builder, sem ORM) | [ADR-0003](./adr/0003-knex-dialect-portability.md) |
-| Validação | Zod na borda | `CODING_STANDARDS.md` |
+| Persistência | Knex como query builder, sem ORM | [ADR-0003](./adr/0003-knex-dialect-portability.md) |
+| Validação | Zod na borda | [02-Architecture § 13](./02-Architecture.md#13-validation-and-the-border) |
 | Autorização | Matriz de permissões em código | [ADR-0006](./adr/0006-static-profile-authorization.md) |
-| Auditoria | Escrita orientada a eventos de domínio | [ADR-0007](./adr/0007-event-driven-audit.md) |
+| Auditoria | Alteração orientada a evento; tentativa gravada na borda | [ADR-0007](./adr/0007-event-driven-audit.md) |
 
 > Ferramentas de apoio (gerenciador de pacotes, linter, formatter, runner de testes) ainda não foram decididas e não são tratadas aqui.
 
@@ -97,7 +100,7 @@ O backend é organizado em doze domínios, cada um dono de suas tabelas, regras 
 
 `auth` · `users` · `requests` · `triage` · `mapping` · `queue` · `prioritization` · `pending-items` · `internal-notes` · `audit` · `reports` · `portal-config`
 
-O inventário completo, com responsabilidades e portas publicadas por cada domínio, está em [`02-Architecture.md` § Domain Catalog](./02-Architecture.md#5-domain-catalog).
+O inventário completo, com responsabilidades e portas publicadas por cada domínio, está em [02-Architecture § 5 Domain Catalog](./02-Architecture.md#5-domain-catalog).
 
 ---
 
@@ -114,11 +117,14 @@ SETUP.md            → como preparar o ambiente
 
 ---
 
-## 7. Questões em aberto
+## 7. Pendências registradas
 
-Itens que precisam de decisão fora do código:
+Decisões já tomadas e follow-up que dependem de outro time:
 
-1. **RBAC configurável.** Hoje a autorização é uma matriz em código com cinco perfis fixos. O produto pede perfis configuráveis pelo administrador; a decisão está em [ADR-0006](./adr/0006-static-profile-authorization.md) e a tabela de permissões é trabalho futuro.
-2. **Envelope de erro.** O contrato vigente com o frontend é `{ status, statusCode, message }`. O `CODING_STANDARDS.md` pede `{ error: { code, message, requestId } }`. A migração exige mudança coordenada no frontend — ver [ADR-0005](./adr/0005-legacy-error-envelope-temporary.md).
-3. **Perfis: cinco ou quatro.** O produto documenta cinco perfis (incluindo *Admin Root*); os contratos de API do repositório de documentação ainda listam quatro. A arquitetura adota cinco — ver [ADR-0006](./adr/0006-static-profile-authorization.md).
-4. **Remodelagem do banco.** O schema será refeito junto com o código. As migrações do legado são referência de dados, não de estrutura — ver [ADR-0004](./adr/0004-domain-owned-schema-and-migrations.md).
+| Item | Estado | Onde |
+| --- | --- | --- |
+| RBAC configurável | Decidido: matriz em código, cinco perfis; RBAC configurável é trabalho futuro | [ADR-0006](./adr/0006-static-profile-authorization.md) |
+| Envelope de erro | Decidido: manter o legado por ora; migração exige mudança coordenada no frontend | [ADR-0005](./adr/0005-legacy-error-envelope-temporary.md) |
+| Perfis: cinco ou quatro | Decidido: cinco no backend; os contratos publicados ainda listam quatro | [ADR-0006](./adr/0006-static-profile-authorization.md) |
+| Remodelagem do banco | Decidido: cada domínio é dono do seu schema; as migrações do legado são referência de dados, não de estrutura | [ADR-0004](./adr/0004-domain-owned-schema-and-migrations.md) |
+| Entropia do prefixo do protocolo | Em aberto: 40 bits são enumeráveis em ~127 dias a 100k rps | [02-Architecture § 22](./02-Architecture.md#22-pending-items) |
