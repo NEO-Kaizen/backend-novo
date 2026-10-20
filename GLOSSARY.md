@@ -1,0 +1,101 @@
+# Contexto: Tirador de Pedidos do NEO (MAAT)
+
+Vocabulário do domínio do portal MAAT, que registra e acompanha demandas operacionais. Este glossário descreve **o que os termos significam** — não onde eles ficam no código, nem como são implementados.
+
+**Regra de leitura:** quando um termo aparece aqui em itálico, ele é o termo canônico do domínio. Os sinônimos listados em *Evitar* não devem ser usados em código, documentos ou conversas de produto.
+
+## Solicitação e acompanhamento
+
+**Solicitação**:
+O registro de uma demanda operacional submetida por um solicitante, com protocolo próprio e ciclo de vida definido por status.
+_Evitar_: pedido, demanda, requisição, ticket, chamado.
+
+**Protocolo**:
+Código público, curto e não enumerável que permite ao solicitante acompanhar uma solicitação sem expôr sua identidade interna.
+_Evitar_: código, referência, número do pedido, id público.
+
+**Solicitante**:
+Pessoa que registra uma solicitação e acompanha seu andamento. Pode actinguar de forma anônima ou autenticada.
+_Evitar_: cliente, usuário externo, requisitante.
+
+**Anexo**:
+Arquivo enviado junto da solicitação, vinculado a ela e disponível para consulta do time interno.
+_Evitar_: documento, upload, arquivo.
+
+**Fila**:
+Conjunto ordenado de solicitações em aberto, com critérios de ordenação e métricas de acompanhamento.
+_Evitar_: lista, backlog, caixa de entrada.
+
+**Status**:
+Etapa do ciclo de vida de uma solicitação, com visibilidade definida (pública, interna ou restrita).
+_Evitar_: estado, fase, situação.
+
+**Categoria**:
+Classificação de uma solicitação, administrável e ordenável, usada para organizar a fila.
+_Evitar_: tipo, assunto, label, tema.
+
+**Prioridade**:
+Faixa de criticidade atribuída a uma solicitação — Baixa, Média, Alta ou Crítica.
+_Evitar_: gravidade, urgência, severidade.
+
+## Análise e priorização
+
+**Triagem**:
+Avaliação inicial que verifica a aderência da solicitação ao escopo do time e define o caminho de tratamento.
+_Evitar_: análise inicial, filtro, qualificação.
+
+**Veredito**:
+Resultado da triagem — *elegível*, *pendente de informações*, *fora do escopo*, *direcionada para outra área*, *duplicada*, *cancelada* ou *backlog*.
+_Evitar_: resultado da triagem, decisão, status da triagem.
+
+**Mapeamento**:
+Sessão de levantamento com as áreas envolvidas na solução, com participantes, responsável designado e registro próprio.
+_Evitar_: reunião, call, workshop, análise de viabilidade.
+
+**Análise de viabilidade**:
+Etapa em que se avalia a possibilidade técnica e operacional de atender a solicitação já mapeada.
+_Evitar_: estudo, benchmarking, viabilidade.
+
+**Priorização**:
+Atribuição de pontuação a uma solicitação a partir de critérios ponderados, resultando em uma prioridade.
+_Evitar_: pontuação (é o resultado da priorização), ranking, ordenação.
+
+**Critério**:
+Qesito ponderado usado no cálculo da priorização, com peso ajustável.
+_Evitar_: requisito, atributo, métrica.
+
+## Colaboração
+
+**Pendência**:
+Item que impede o avanço de uma solicitação e exige ação do solicitante ou do time. Pode pedir a correção de um campo ou apenas registrar uma observação.
+_Evitar_: tarefa, item, bug, recado.
+
+**Nota interna**:
+Registro de comunicação interna sobre uma solicitação, visível apenas para o time e integrado à linha do tempo.
+_Evitar_: comentário, mensagem, observação (reservado a pendência).
+
+**Linha do tempo**:
+Sequência unificada dos acontecimentos de uma solicitação: notas internas, auditoria, triagem e mapeamento.
+_Evitar_: histórico, feed, atividade.
+
+**Auditoria**:
+Registro imutável de alterações relevantes em entidades do sistema, com autor, momento e valor anterior e novo.
+_Evitar_: log, histórico, trilha de mudanças.
+
+## Acesso
+
+**Perfil**:
+Conjunto fixo de permissões atribuído a um usuário. São cinco: *Solicitante*, *Analista*, *Gestor*, *Administrador* e *Admin Root*.
+_Evitar_: papel, cargo, função, role.
+
+**Admin Root**:
+Perfil raiz do sistema, com todas as permissões e capacidade de gerir os demais *Administradores*. Existe no seed e nunca é criado por auto-registro.
+_Evitar_: super-admin, root, administrador mestre.
+
+**Responsável**:
+O *Analista* designado para conduzir a triagem ou o mapeamento de uma solicitação.
+_Evitar_: analista (é o perfil, não o vínculo), dono, responsável técnico.
+
+**Modo de acesso**:
+Configuração que determina se a abertura de solicitação exige autenticação ou está liberada ao público.
+_Evitar_: modo de portal, visibilidade, tipo de acesso.
