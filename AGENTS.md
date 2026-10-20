@@ -14,8 +14,8 @@ Layout single-context: `GLOSSARY.md` na raiz e `docs/adr/`. Consulte `docs/agent
 
 ## Convenções de Git
 
-- Branches: `<tipo>/<slug-em-portugues>` — ex.: `docs/padroes-de-codigo`, `feat/relatorio-de-vendas`.
-- Commits: `<tipo>: <descrição no imperativo, em português>` — ex.: `docs: adiciona convenções de Git`.
-- O tipo do Conventional Commits permanece em inglês (`feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`); slug e descrição ficam em português.
-- Corpo e footer do commit em português.
-- Título do PR igual à mensagem do commit principal; descrição em português.
+- Branches: `<type>/<issue>-<slug>` — ex.: `docs/12-coding-standards`, `feat/34-sales-report`.
+- Commits: `<type>: <imperative description in English>` — ex.: `docs: add Git conventions`.
+- O tipo do Conventional Commits permanece em inglês (`feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`); slug e descrição também ficam em inglês.
+- Corpo e footer do commit em inglês.
+- Título, descrição e comentários do PR em português.
