@@ -502,7 +502,7 @@ As respostas do solicitante. Uma linha por campo preenchido.
 | `id` | uuid | não | — | PK, UUID v4 |
 | `request_id` | uuid | não | — | FK → `requests.id` (RESTRICT) |
 | `field_id` | uuid | não | — | FK → `forms.form_fields.id` (RESTRICT) |
-| `value_text` | text | sim | — | Texto, e-mail, ou o **valor** da opção de um `select` |
+| `value_text` | text | sim | — | Texto, e-mail, ou o **valor** da opção de um `select` — `ck_form_answers_value_text_length` ≤ 8000 |
 | `value_number` | decimal | sim | — | Números e decimais |
 | `value_date` | date | sim | — | Datas |
 | `value_boolean` | boolean | sim | — | Booleanos |
@@ -521,6 +521,7 @@ As respostas do solicitante. Uma linha por campo preenchido.
 - As respostas de uma solicitação pertencem ao formulário em `requests.form_id`.
 - O valor de um `select` é o **valor** da opção, não o rótulo. Para `demand.category`, o valor da opção é o `id` da categoria.
 - **O banco não impõe os limites do campo.** O limite mora na definição (`form_fields.max_length`, `min_value`, `max_value`) e o valor em outra linha: a validação é da aplicação, na borda, guiada pela definição.
+- **`ck_form_answers_value_text_length` é um piso da tabela, não o limite do campo.** Ele limita o tamanho de qualquer resposta de texto, sem saber a qual campo ela pertence — o limite de 8000 é o dobro do maior limite de campo hoje (4000), e um campo que precise de mais exige uma migration para levantar o piso. Ele não substitui a validação da aplicação: um campo com `max_length` 150 continua aceitando mais, se a borda não validar.
 - Corrigir um campo reescreve a resposta; o histórico fica na auditoria.
 
 **Regras preservadas do legado**
