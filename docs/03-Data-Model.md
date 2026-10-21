@@ -31,13 +31,13 @@ As regras de negócio **não** são inventadas aqui: o legado é a fonte de requ
 
 ### 1.1 Inventário
 
-25 tabelas em 12 domínios, mais 1 tabela de infraestrutura:
+28 tabelas em 13 domínios, mais 1 tabela de infraestrutura:
 
 | Domínio | Tabelas | Escreve |
 | --- | --- | --- |
 | `auth` | `credentials` | `auth` |
 | `users` | `profiles`, `users`, `user_details`, `user_detail_categories` | `users` |
-| `requests` | `requests`, `request_details`, `requesters`, `attachments`, `request_time_preferences` | `requests` |
+| `requests` | `requests`, `form_answers`, `attachments`, `request_time_preferences` | `requests` |
 | `triage` | `triages` | `triage` |
 | `mapping` | `mappings`, `mapping_participants` | `mapping` |
 | `queue` | — *(projeção de leitura)* | — |
@@ -47,6 +47,7 @@ As regras de negócio **não** são inventadas aqui: o legado é a fonte de requ
 | `audit` | `audit_entries`, `attempts` | `audit` |
 | `reports` | — *(projeção de leitura)* | — |
 | `portal-config` | `portal_settings`, `themes`, `categories`, `statuses` | `portal-config` |
+| `forms` | `forms`, `form_blocks`, `form_fields` | `forms` |
 | `platform` | `code_counters` | `platform` (infraestrutura) |
 
 ---
@@ -57,13 +58,15 @@ As regras valem para todas as tabelas deste documento. A justificativa de cada u
 
 ### 2.1 Tables
 
-`snake_case`, no plural, em inglês, com o nome do domínio reflected no nome quando a tabela é específica dele (`internal_notes`, `mapping_participants`). Tabela que descreve um documento 1:1 com outro usa o nome do pai com o sufixo `_details` (`request_details`).
+`snake_case`, no plural, em inglês, com o nome do domínio reflected no nome quando a tabela é específica dele (`internal_notes`, `mapping_participants`). Tabela que descreve um documento 1:1 com outro usa o nome do pai com o sufixo `_details` (`user_details`).
 
 ### 2.2 Columns
 
 `snake_case`. Booleanos com prefixo `is_` ou `has_`. Colunas de texto com limite de tamanho têm constraint `ck_` própria com o limite — a única forma portátil de impor o limite, já que o Postgres ignora `varchar(n)` e o MySQL não.
 
 Tabela que modela **uma instância** de um conceito repetível não prefixa as colunas com a instância: `themes` tem `background`, não `light_background` — a instância é a linha.
+
+**Exceção: a chave de um campo de formulário é o contrato.** O valor de `form_fields.key` e de `form_blocks.key` é a chave que o frontend envia no payload (`processName`, `desiredDeadline`, `demand`), em camelCase. Não é snake_case porque não é nome interno: é a chave que liga a definição ao contrato da API, e o frontend valida contra ela.
 
 ### 2.3 Primary Keys
 
@@ -75,7 +78,7 @@ Exceção: a tabela singleton `portal_settings` usa `id` UUID como chave e é ga
 
 Coluna nomeada `<entidade_no_singular>_id`, referenciando `id` da outra tabela. `ON DELETE RESTRICT` em todas.
 
-A referência aponta para a **entidade**, nunca para a sua extensão 1:1. A identidade de uma pessoa é `users.id`; `user_details` é extensão de `users` e nunca é referenciada. A mesma regra vale para qualquer extensão 1:1 — `request_details` também é alcançada por `requests.id`.
+A referência aponta para a **entidade**, nunca para a sua extensão 1:1. A identidade de uma pessoa é `users.id`; `user_details` é extensão de `users` e nunca é referenciada. A mesma regra vale para qualquer extensão 1:1 — `user_details` também é alcançada por `users.id`.
 
 Relações com **naturalmente mais de uma origem** são polimórficas e **não têm FK** — é o caso de `audit_entries.entity_id`, que aponta para qualquer entidade auditável. A regra é a exceção, não o padrão.
 
@@ -137,7 +140,7 @@ Uma constraint de check **não enxerga outras linhas**. Invariante que depende d
 
 - **E-mail** é armazenado em minúsculas (`trim().toLowerCase()`) e único sobre o valor armazenado. O login normaliza antes de comparar.
 - **Unicidade sem distinção de caixa** que não possa ser feita com `LOWER()` — porque índice funcional não é portátil — usa **coluna normalizada** mantida pela aplicação e única: `categories.normalized_name`.
-- `requesters.corporate_email` **não** é único, de propósito: mais de um solicitante pode usar a mesma caixa corporativo. Não é um defeito.
+- O e-mail do **solicitante** — a resposta de `requester.corporateEmail` — **não** é único, de propósito: mais de uma pessoa pode usar a mesma caixa corporativo. Não é um defeito. O e-mail da **conta** (`users.email`) é único.
 
 ### 2.11 Delete Policy
 
@@ -164,7 +167,7 @@ O glossário é a fonte do vocabulário; estas são as tabelas onde cada termo v
 | --- | --- | --- |
 | **Solicitação** | `requests.requests` | O registro e seu ciclo de vida |
 | **Protocolo** | `requests.requests.protocol` | Identificador público, único, nunca reemitido |
-| **Solicitante** | `requests.requesters` | Pode ser anônimo (`requester_user_id` nulo) |
+| **Solicitante** | as respostas do bloco `requester` + `requests.requester_user_id` | Quem preencheu a solicitação; pode ser anônimo, e nesse caso não há conta |
 | **Anexo** | `requests.attachments` | Vinculado à solicitação e, opcionalmente, a uma pendência |
 | **Fila** | — | Projeção de leitura sobre `requests`; sem tabela própria |
 | **Status** | `portal-config.statuses` | Etapa do ciclo de vida, com visibilidade pública ou interna |
@@ -185,7 +188,10 @@ O glossário é a fonte do vocabulário; estas são as tabelas onde cada termo v
 | **Admin Root** | `users.profiles` | Existe apenas no seed; nunca há auto-registro |
 | **Responsável** | `requests.requests.responsible_id`, `triage.triages.assignee_user_id`, `mapping.mappings.responsible_id` | O Analista designado |
 | **Modo de acesso** | `portal-config.portal_settings.solicitation_mode` | `PUBLIC` ou `AUTHENTICATED` |
-| **Aparência** | `portal-config.themes` | Uma paleta do portal; a vigente é a apontada por `portal_settings.theme_id` |
+| **Aparência** | `portal-config.themes` | Uma paleta do portal; as vigentes são as apontadas por `portal_settings` |
+| **Formulário** | `forms.forms` | O que uma solicitação pede, definido por blocos e campos |
+| **Bloco** | `forms.form_blocks` | Uma seção do formulário — identificação, demanda, operacional, complementar |
+| **Campo** | `forms.form_fields` | Uma pergunta do formulário, com tipo, obrigatoriedade e limites |
 
 ---
 
@@ -200,18 +206,19 @@ Duas consequências operacionais:
 | # | Domínio | Tabelas |
 | --- | --- | --- |
 | 1 | `users` | `profiles`, `users`, `user_details` |
-| 2 | `portal-config` | `statuses`, `categories`, `themes`, `portal_settings` |
-| 3 | `users` | `user_detail_categories` |
-| 4 | `prioritization` | `criteria`, `priorities` |
-| 5 | `auth` | `credentials` |
-| 6 | `requests` | `requesters`, `requests`, `request_details`, `attachments`, `request_time_preferences` |
-| 7 | `triage` | `triages` |
-| 8 | `mapping` | `mappings`, `mapping_participants` |
-| 9 | `pending-items` | `pending_items` |
-| 10 | `internal-notes` | `internal_notes`, `internal_note_read_states` |
-| 11 | `prioritization` | `prioritization_evaluations` |
-| 12 | `audit` | `audit_entries`, `attempts` |
-| 13 | `platform` | `code_counters` |
+| 2 | `forms` | `forms`, `form_blocks`, `form_fields` |
+| 3 | `portal-config` | `statuses`, `categories`, `themes`, `portal_settings` |
+| 4 | `users` | `user_detail_categories` |
+| 5 | `prioritization` | `criteria`, `priorities` |
+| 6 | `auth` | `credentials` |
+| 7 | `requests` | `requests`, `form_answers`, `attachments`, `request_time_preferences` |
+| 8 | `triage` | `triages` |
+| 9 | `mapping` | `mappings`, `mapping_participants` |
+| 10 | `pending-items` | `pending_items` |
+| 11 | `internal-notes` | `internal_notes`, `internal_note_read_states` |
+| 12 | `prioritization` | `prioritization_evaluations` |
+| 13 | `audit` | `audit_entries`, `attempts` |
+| 14 | `platform` | `code_counters` |
 
 **Desmontagem.** Renomear ou excluir uma tabela referenciada exige antes remover a FK que a aponta — e essa migration é do domínio que referencia. É o único ponto em que a autonomy de um domínio toca a de outro, e ele é explícito.
 
@@ -230,8 +237,11 @@ Duas consequências operacionais:
 
 ```mermaid
 erDiagram
-    REQUESTS ||--|| REQUEST_DETAILS : "detalha"
-    REQUESTERS ||--o{ REQUESTS : "solicitada por"
+    FORMS ||--o{ FORM_BLOCKS : "organiza"
+    FORM_BLOCKS ||--o{ FORM_FIELDS : "contém"
+    FORMS ||--o{ REQUESTS : "define"
+    REQUESTS ||--o{ FORM_ANSWERS : "responde"
+    FORM_FIELDS ||--o{ FORM_ANSWERS : "valoriza"
     REQUESTS ||--o{ ATTACHMENTS : "recebe"
     REQUESTS ||--o{ REQUEST_TIME_PREFERENCES : "prefere"
     REQUESTS ||--o{ TRIAGES : "triada"
@@ -246,13 +256,22 @@ erDiagram
     REQUESTS {
         uuid id PK
         text protocol UK
+        uuid form_id FK
         uuid status_id FK
         uuid last_public_status_id FK
-        uuid requester_id FK
-        uuid category_id FK
+        uuid requester_user_id FK
         uuid priority_id FK
         uuid responsible_id FK
         timestamp closed_at
+    }
+    FORM_ANSWERS {
+        uuid id PK
+        uuid request_id FK
+        uuid field_id FK
+        text value_text
+        decimal value_number
+        date value_date
+        boolean value_boolean
     }
     TRIAGES {
         uuid id PK
@@ -408,6 +427,10 @@ A conta. Não carrega material de senha — esse é do domínio `auth`.
 | `name` | text | não | — | `ck_users_name_length` ≤ 150 |
 | `email` | text | não | — | UNIQUE `uk_users_email`, `ck_users_email_length` ≤ 254, armazenado em minúsculas |
 | `profile_id` | uuid | não | — | FK → `profiles.id` (RESTRICT) |
+| `area` | text | sim | — | `ck_users_area_length` ≤ 100 — área do usuário |
+| `department` | text | sim | — | `ck_users_department_length` ≤ 100 |
+| `manager_name` | text | sim | — | `ck_users_manager_name_length` ≤ 150 |
+| `additional_contact` | text | sim | — | `ck_users_additional_contact_length` ≤ 100 |
 | `is_active` | boolean | não | `true` | Desativar a conta invalida todos os tokens imediatamente |
 | `avatar_url` | text | sim | — | `ck_users_avatar_url_length` ≤ 500 |
 | `created_at` | timestamp | não | `now` | |
@@ -420,6 +443,7 @@ A conta. Não carrega material de senha — esse é do domínio `auth`.
 **Invariantes**
 
 - O e-mail é armazenado normalizado e único sobre o valor armazenado. E-mails que diferem só por caixa são o mesmo e-mail.
+- A conta guarda a **própria cópia** de contato — área, departamento, gestor e contato adicional. É o que "Meus dados" edita e o que o formulário pré-preenche; o que a solicitação carrega é uma resposta, e não esta cópia. Ver [ADR-0013](./adr/0013-requester-is-an-answer-not-a-table.md).
 - O token **não** carrega o perfil como autoridade: o middleware relê usuário e perfil do banco a cada requisição ([02-Architecture § 14.1](./02-Architecture.md#141-session)). Desativação e mudança de perfil valem na hora.
 - Usuário não é excluído. Desativar é o caminho de retirada.
 
@@ -478,20 +502,18 @@ Dados adicionais do usuário interno: cargo, especialidades, áreas atendidas, d
 
 Responsabilidade: ciclo de vida da solicitação, protocolo, anexos. Publica a porta `RequestReader`.
 
-### 8.1 `requests`
+O **conteúdo** da solicitação não mora nesta tabela: o solicitante preenche um **formulário**, e cada resposta é uma linha de `form_answers`. A definição do formulário vem do domínio `forms`. A tabela `requests` guarda identidade, classificação de fluxo, ciclo de vida e o que é publicado ao solicitante.
 
-O registro da solicitação e seu estado de ciclo de vida. O formulário de intake vive em `request_details` — a tabela `requests` é a entidade, não o formulário.
+### 8.1 `requests`
 
 | Coluna | Tipo | Nulo | Default | Notas |
 | --- | --- | --- | --- | --- |
 | `id` | uuid | não | — | PK, UUID v4 |
 | `protocol` | text | não | — | UNIQUE `uk_requests_protocol`, `ck_requests_protocol_length` ≤ 25 |
-| `requester_id` | uuid | não | — | FK → `requesters.id` (RESTRICT) |
-| `requester_user_id` | uuid | sim | — | FK → `users.id` (RESTRICT) — nulo quando o solicitante é anônimo |
-| `title` | text | não | — | `ck_requests_title_length` ≤ 150 |
+| `form_id` | uuid | não | — | FK → `forms.forms.id` (RESTRICT) — o formulário respondido |
+| `requester_user_id` | uuid | sim | — | FK → `users.id` (RESTRICT) — nulo quando a solicitação é anônima |
 | `status_id` | uuid | não | — | FK → `portal-config.statuses.id` (RESTRICT) — status interno atual |
 | `last_public_status_id` | uuid | sim | — | FK → `portal-config.statuses.id` (RESTRICT) — último status visível ao solicitante |
-| `category_id` | uuid | não | — | FK → `portal-config.categories.id` (RESTRICT) |
 | `priority_id` | uuid | sim | — | FK → `prioritization.priorities.id` (RESTRICT) |
 | `responsible_id` | uuid | sim | — | FK → `users.id` (RESTRICT) — o Responsável |
 | `estimated_completion` | date | sim | — | Data estimada de conclusão |
@@ -505,18 +527,19 @@ O registro da solicitação e seu estado de ciclo de vida. O formulário de inta
 | `created_at` | timestamp | não | `now` | |
 | `updated_at` | timestamp | não | `now` | |
 
-**Relações** — `requester_id` → `requesters.id`; `requester_user_id` → `users.id`; `status_id` e `last_public_status_id` → `portal-config.statuses.id`; `category_id` → `portal-config.categories.id`; `priority_id` → `prioritization.priorities.id`; `responsible_id` → `users.id`; `created_by_user_id` → `users.id`.
+**Relações** — `form_id` → `forms.forms.id`; `requester_user_id` → `users.id`; `status_id` e `last_public_status_id` → `portal-config.statuses.id`; `priority_id` → `prioritization.priorities.id`; `responsible_id` → `users.id`; `created_by_user_id` → `users.id`.
 
-**Índices** — UNIQUE `uk_requests_protocol`; `idx_requests_status_id`; `idx_requests_requester_id`; `idx_requests_category_id`; `idx_requests_priority_id`; `idx_requests_responsible_id`; `idx_requests_created_at`.
+**Índices** — UNIQUE `uk_requests_protocol`; `idx_requests_status_id`; `idx_requests_requester_user_id`; `idx_requests_priority_id`; `idx_requests_responsible_id`; `idx_requests_created_at`.
 
 **Invariantes**
 
 - O protocolo é produzido pelo contador (`code_counters`), nunca reemitido, e único por constraint — belt-and-braces sobre a bijeção da cifra ([ADR-0008](./adr/0008-protocol-without-collision-risk.md)). A leitura por protocolo **nunca** usa `.first()`: é uma sondagem com `LIMIT 2` que falha explicitamente se duas linhas corresponderem.
 - `last_public_status_id` nunca está à frente de `status_id`: quando o status interno é restrito, o solicitante continua vendo o último status público. É assim que a solicitação é encerrada para o solicitante sem revelar o trâmite interno.
 - `closed_at` é gravado na mesma transação da mudança de status que entra num status terminal (`statuses.is_terminal`), e é zerado se a solicitação volta a um status não terminal.
-- O solicitante pode ser anônimo: `requester_user_id` é nulo e a identidade vem de `requesters`.
+- O solicitante pode ser anônimo: `requester_user_id` é nulo e a identidade do solicitante está nas respostas do bloco `requester`.
 - `created_by` é um rótulo, não uma referência — o portal público não tem usuário. `created_by_user_id` é a referência quando existe.
 - A solicitação não é excluída.
+- **A categoria é uma resposta do formulário** (`demand.category`), não uma coluna: o valor guardado é o `id` da categoria, e a triagem a troca reescrevendo a resposta. Ver [ADR-0012](./adr/0012-form-is-a-configurable-entity.md).
 
 **Regras preservadas do legado**
 
@@ -526,82 +549,45 @@ O registro da solicitação e seu estado de ciclo de vida. O formulário de inta
 - O status público e o status interno são distintos, e o solicitante enxerga o último público.
 - A solicitação guarda data estimada de conclusão, reunião combinada e última mensagem técnica — o que o portal publica ao solicitante.
 - Pedir atualização de campo abre pendência, não edita a solicitação diretamente.
+- A abertura no modo autenticado ignora o nome e o e-mail do payload e usa os da sessão.
 
-### 8.2 `request_details`
+### 8.2 `form_answers`
 
-O formulário de intake da solicitação: os dados que o solicitante preenche. Relação 1:1 com `requests`.
-
-| Coluna | Tipo | Nulo | Default | Notas |
-| --- | --- | --- | --- | --- |
-| `request_id` | uuid | não | — | PK e FK → `requests.id` (RESTRICT) |
-| `request_type` | text | não | — | `ck_request_details_request_type_length` ≤ 80 |
-| `process_name` | text | não | — | ≤ 150 |
-| `need_description` | text | não | — | ≤ 4000 |
-| `problem_opportunity` | text | não | — | ≤ 4000 |
-| `expected_result` | text | não | — | ≤ 4000 |
-| `justification` | text | não | — | ≤ 4000 |
-| `process_description` | text | não | — | ≤ 4000 |
-| `process_steps` | text | não | — | ≤ 4000 |
-| `systems_used` | text | não | — | ≤ 255 |
-| `execution_frequency` | text | não | — | ≤ 50 — texto livre |
-| `approximate_volume` | text | não | — | ≤ 100 — texto livre |
-| `people_involved` | integer | não | — | `ck_request_details_people_involved_positive` > 0 |
-| `average_duration` | text | não | — | ≤ 60 — texto livre |
-| `estimated_monthly_effort` | decimal | não | — | `ck_request_details_effort_non_negative` ≥ 0 |
-| `has_manual_controls` | boolean | não | — | |
-| `manual_controls_detail` | text | sim | — | ≤ 1000 |
-| `main_risks` | text | não | — | ≤ 2000 |
-| `client_impact` | text | não | — | ≤ 2000 |
-| `process_documentation` | boolean | sim | — | |
-| `process_documentation_detail` | text | sim | — | ≤ 1000 |
-| `has_similar_solution` | boolean | sim | — | |
-| `similar_solution_detail` | text | sim | — | ≤ 1000 |
-| `depends_on_other_areas` | boolean | sim | — | |
-| `other_areas_detail` | text | sim | — | ≤ 1000 |
-| `handles_restricted_info` | boolean | sim | — | |
-| `restricted_info_detail` | text | sim | — | ≤ 1000 |
-| `additional_notes` | text | sim | — | ≤ 2000 |
-| `operational_impact` | text | não | — | `ck_request_details_operational_impact` ∈ `Baixo`, `Médio`, `Alto`, `Crítico` |
-| `perceived_criticality` | text | não | — | `ck_request_details_perceived_criticality` ∈ `Baixa`, `Média`, `Alta`, `Crítica` |
-| `desired_deadline` | date | não | — | Data desejada |
-
-**Relações** — `request_id` → `requests.id` (RESTRICT), PK e FK na mesma coluna.
-
-**Invariantes**
-
-- Toda solicitação tem detalhe: a abertura de uma solicitação grava as duas linhas na mesma transação.
-- `operational_impact` e `perceived_criticality` são vocabulário do código, com os valores em português — é o texto que o produto já usa.
-- `request_type`, `execution_frequency`, `average_duration` e `approximate_volume` são **texto livre**, como no legado. São os candidatos naturais a tabela de referência se o produto algum dia quiser vocabulário controlado; hoje são texto.
-
-**Regras preservadas do legado**
-
-- O formulário de intake é o mesmo: os campos, os limites e as obrigatoriedades.
-- Os impactos operacionais e a criticidade percebida são escalas de quatro níveis.
-
-### 8.3 `requesters`
-
-Quem abriu a solicitação. Existe mesmo quando a abertura é anônima.
+As respostas do solicitante. Uma linha por campo preenchido.
 
 | Coluna | Tipo | Nulo | Default | Notas |
 | --- | --- | --- | --- | --- |
 | `id` | uuid | não | — | PK, UUID v4 |
-| `full_name` | text | não | — | `ck_requesters_full_name_length` ≤ 150 |
-| `corporate_email` | text | não | — | `ck_requesters_corporate_email_length` ≤ 254 — **não** único |
-| `area` | text | sim | — | ≤ 100 — nula para extensão de usuário |
-| `department` | text | sim | — | ≤ 100 |
-| `manager_name` | text | sim | — | ≤ 150 — nula para extensão de usuário |
-| `additional_contact` | text | sim | — | ≤ 100 |
-| `user_id` | uuid | sim | — | FK → `users.id` (RESTRICT), UNIQUE `uk_requesters_user` |
+| `request_id` | uuid | não | — | FK → `requests.id` (RESTRICT) |
+| `field_id` | uuid | não | — | FK → `forms.form_fields.id` (RESTRICT) |
+| `value_text` | text | sim | — | Texto, e-mail, ou o **valor** da opção de um `select` |
+| `value_number` | decimal | sim | — | Números e decimais |
+| `value_date` | date | sim | — | Datas |
+| `value_boolean` | boolean | sim | — | Booleanos |
+| `value_json` | json | sim | — | Valores estruturados |
 | `created_at` | timestamp | não | `now` | |
 
-**Índices** — `idx_requesters_corporate_email`; `idx_requesters_area`; UNIQUE `uk_requesters_user`.
+**Relações** — `request_id` → `requests.id`; `field_id` → `forms.form_fields.id` (domínio `forms`).
+
+**Índices** — UNIQUE `uk_form_answers_request_field` (`request_id`, `field_id`); `idx_form_answers_field_request` (`field_id`, `request_id`); `idx_form_answers_field_text` (`field_id`, `value_text`).
 
 **Invariantes**
 
-- `corporate_email` pode se repetir: mais de um solicitante pode usar a mesma caixa. O índice é de busca, não de unicidade.
-- `user_id` liga o solicitante à conta quando existe, e é único — uma conta tem um solicitante.
+- Uma resposta por campo de uma solicitação.
+- A coluna de valor é determinada pelo tipo do campo: `text`, `long_text`, `email` e `select` → `value_text`; `number` e `decimal` → `value_number`; `date` → `value_date`; `boolean` → `value_boolean`; `yes_no_detail` → `value_boolean` **e** `value_text` (o detalhe). `value_json` fica para valor estruturado.
+- `value_text` só pode coexistir com `value_boolean`; qualquer outra combinação de duas colunas preenchidas é rejeitada por `ck_form_answers_value_shape`.
+- As respostas de uma solicitação pertencem ao formulário em `requests.form_id`.
+- O valor de um `select` é o **valor** da opção, não o rótulo. Para `demand.category`, o valor da opção é o `id` da categoria.
+- **O banco não impõe os limites do campo.** O limite mora na definição (`form_fields.max_length`, `min_value`, `max_value`) e o valor mora em outra linha: a validação é da aplicação, na borda, guiada pela definição. É o preço da generalização, e é o motivo de a definição ser a fonte única.
+- Corrigir um campo reescreve a resposta; o histórico fica na auditoria.
 
-### 8.4 `attachments`
+**Regras preservadas do legado**
+
+- O formulário é o mesmo: os quatro blocos, os campos, as obrigatoriedades e os limites.
+- `demand.category` é validado contra as categorias ativas no momento da abertura.
+- A correção de um campo é feita por pendência, não por edição direta da solicitação.
+
+### 8.3 `attachments`
 
 Arquivos enviados com a solicitação.
 
@@ -624,8 +610,9 @@ Arquivos enviados com a solicitação.
 
 - O arquivo vive fora do banco; a tabela guarda o ponteiro, o tamanho e o tipo.
 - `pending_item_id` liga o anexo à pendência que ele atende.
+- No máximo cinco anexos por solicitação, e no máximo dez megabytes por arquivo.
 
-### 8.5 `request_time_preferences`
+### 8.4 `request_time_preferences`
 
 Slots de horário que o solicitante marcou como preferência.
 
@@ -641,8 +628,7 @@ Slots de horário que o solicitante marcou como preferência.
 **Invariantes**
 
 - O mesmo slot não é registrado duas vezes para a mesma solicitação.
-
----
+- No máximo três slots por solicitação, e todos no futuro ou no dia de hoje.
 
 ## 9. Domain `triage`
 
@@ -765,7 +751,7 @@ Responsabilidade: fila centralizada e métricas. **Não tem tabelas** — é uma
 
 A ordenação da fila é **derivada**, nunca armazenada: `categories.display_order` ordena o card, `statuses.order_number` ordena a etapa, `prioritization.priorities.min_score` ordena a prioridade. Não existe coluna de ordenação em `requests` — ela envelheceria e passaria a discordar da configuração.
 
-A projeção consome: `requests.requests`, `portal-config.statuses`, `portal-config.categories`, `prioritization.priorities`, `users.users`.
+A projeção consome: `requests.requests`, `requests.form_answers`, `forms.form_fields`, `portal-config.statuses`, `portal-config.categories`, `prioritization.priorities`, `users.users`. O nome do solicitante, o processo e o prazo saem das respostas — a fila os lê por chave de campo.
 
 ---
 
@@ -864,7 +850,7 @@ Responsabilidade: pendências de campo e de observação. Publica a porta `Pendi
 | `request_id` | uuid | não | — | FK → `requests.id` (RESTRICT) |
 | `type` | text | não | — | `ck_pending_items_type` ∈ `field_edit`, `attachment_upload`, `information`, `action` |
 | `description` | text | não | — | |
-| `requested_fields` | json | sim | — | Campos solicitados, quando o tipo é `field_edit` |
+| `requested_fields` | json | sim | — | Chaves de campo solicitadas, quando o tipo é `field_edit` — espelho de `pending_item_fields` |
 | `requires_attachment` | boolean | não | `false` | |
 | `expected_attachment_type` | text | sim | — | ≤ 100 |
 | `is_visible_to_requester` | boolean | não | `true` | |
@@ -884,8 +870,25 @@ Responsabilidade: pendências de campo e de observação. Publica a porta `Pendi
 
 - **A pendência tem dois estados: `open` e `resolved`.** `overdue` não é estado armazenado — é derivado de `deadline`. O legado nunca gravou `overdue`; a fila e os relatórios calculam atraso em consulta.
 - A resolução fica na própria pendência: uma pendência resolvida é uma pendência com `resolution`, `resolved_by_user_id` e `resolved_at`. Não há histórico de respostas.
-- `requested_fields` só faz sentido para `type = field_edit`.
+- `requested_fields` só faz sentido para `type = field_edit`, e é o espelho de `pending_item_fields`: o par json serve ao contrato, a tabela filha serve à integridade.
 - Pendência pode pedir correção de um campo ou apenas registrar uma observação — `type` distingue os dois casos.
+
+### 13.2 `pending_item_fields`
+
+Os campos que a pendência pede para corrigir. O legado guardava as chaves em um json; aqui elas são referência ao campo do formulário.
+
+| Coluna | Tipo | Nulo | Default | Notas |
+| --- | --- | --- | --- | --- |
+| `id` | uuid | não | — | PK, UUID v4 |
+| `pending_item_id` | uuid | não | — | FK → `pending_items.id` (RESTRICT) |
+| `form_field_id` | uuid | não | — | FK → `forms.form_fields.id` (RESTRICT) |
+
+**Índices** — UNIQUE `uk_pending_item_fields_pending_field` (`pending_item_id`, `form_field_id`); `idx_pending_item_fields_field_id`.
+
+**Invariantes**
+
+- O mesmo campo não é pedido duas vezes na mesma pendência.
+- O campo pedido pertence ao formulário da solicitação — regra de aplicação.
 
 **Regras preservadas do legado**
 
@@ -1016,7 +1019,7 @@ O que foi recusado — por falta de permissão ou por regra de negócio. A recus
 
 Responsabilidade: dashboard, métricas, exportações. **Não tem tabelas** — é uma projeção de leitura sobre vários domínios, alimentada por consultas agregadas.
 
-As métricas de atraso (`overdue`) e de situação (`open`, `closed`, `overdue`, `unassigned`) são **derivadas** na consulta, a partir de `request_details.desired_deadline` e do conjunto de status terminais. Nada disso é armazenado.
+As métricas de atraso (`overdue`) e de situação (`open`, `closed`, `overdue`, `unassigned`) são **derivadas** na consulta, a partir da resposta de `operational.desiredDeadline` e do conjunto de status terminais. Nada disso é armazenado. A classificação por categoria sai da resposta de `demand.category`.
 
 ---
 
@@ -1034,11 +1037,8 @@ Configuração global do portal. Singleton.
 | `solicitation_mode` | text | não | `PUBLIC` | `ck_portal_settings_solicitation_mode` ∈ `PUBLIC`, `AUTHENTICATED` |
 | `platform_name` | text | não | `MAAT` | ≤ 80 |
 | `protocol_mask` | text | não | `MAAT` | ≤ 10 |
-| `theme_id` | uuid | sim | — | FK → `themes.id` (RESTRICT) — Aparência vigente; nulo quando o frontend aplica os padrões locais |
-| `logo_url` | text | sim | — | ≤ 500 |
-| `avatar_url` | text | sim | — | ≤ 500 |
-| `favicon_url` | text | sim | — | ≤ 500 |
-| `login_image_url` | text | sim | — | ≤ 500 |
+| `light_theme_id` | uuid | sim | — | FK → `themes.id` (RESTRICT) — a Aparência clara vigente |
+| `dark_theme_id` | uuid | sim | — | FK → `themes.id` (RESTRICT) — a Aparência escura vigente |
 | `updated_by_user_id` | uuid | sim | — | FK → `users.id` (RESTRICT) |
 | `created_at` | timestamp | não | `now` | |
 | `updated_at` | timestamp | não | `now` | |
@@ -1047,8 +1047,10 @@ Configuração global do portal. Singleton.
 
 - Uma linha. A unicidade é da aplicação e do seed — nenhuma constraint portable conta linhas.
 - `solicitation_mode` é o Modo de acesso: `PUBLIC` libera a abertura de solicitação; `AUTHENTICATED` exige conta.
-- `theme_id` aponta a **Aparência vigente** — a que o portal usa quando o solicitante não tem preferência própria. Nulo significa "sem Aparência", e o frontend cai nos padrões locais.
-- A Aparência apontada precisa estar ativa: apontar para uma Aparência inativa é erro de aplicação.
+- `light_theme_id` e `dark_theme_id` apontam as duas **Aparências vigentes** — uma por slot de paleta. Nulo em um slot significa "sem Aparência nesse slot", e o frontend cai nos padrões locais.
+- A leitura consolidada do portal **compõe** `{ light, dark }` a partir dos dois slots: é o contrato que o frontend consome hoje, sem mudança. Ver [ADR-0015](./adr/0015-preserve-the-appearance-contract.md).
+- As duas Aparências apontadas precisam estar ativas: apontar para uma inativa é erro de aplicação.
+- Os assets (logo, avatar, tela de login, favicon) pertencem à Aparência, e não ao portal — é o que elimina as oito URLs duplicadas do legado.
 
 ### 17.2 `themes`
 
@@ -1090,6 +1092,11 @@ As **aparências** do portal. Cada linha é uma paleta completa — a Aparência
 | `status_neutral_color` | text | sim | — | `ck_themes_hex` |
 | `status_neutral_background` | text | sim | — | `ck_themes_hex` |
 | `status_neutral_background_locked` | boolean | sim | — | |
+| `logo_url` | text | sim | — | `ck_themes_logo_url_length` ≤ 500 — asset da Aparência |
+| `avatar_url` | text | sim | — | ≤ 500 |
+| `login_image_url` | text | sim | — | ≤ 500 |
+| `favicon_url` | text | sim | — | ≤ 500 |
+| `logo_use_primary_color` | boolean | não | `false` | O logo usa a cor primária da Aparência |
 | `created_at` | timestamp | não | `now` | |
 | `updated_at` | timestamp | não | `now` | |
 
@@ -1104,6 +1111,8 @@ As **aparências** do portal. Cada linha é uma paleta completa — a Aparência
 - `name` é único — é o nome que o solicitante vê na escolha de aparência.
 - Só uma Aparência **ativa** pode ser a vigente (`portal_settings.theme_id`). Desativar a vigente exige repontar antes; sem vigente, o frontend aplica os padrões locais.
 - A escolha entre as Aparências é do frontend; o backend expõe a lista e a vigente. Preferência por solicitante é conceito futuro, e não tem tabela aqui.
+- Os assets são da Aparência: cada linha carrega os seus. O legado tinha oito URLs (`logoLightUrl` a `faviconDarkUrl`) porque as duas paletas viviam na mesma linha; aqui são quatro colunas por linha.
+- A URL de um asset é relativa (`/…`) ou absoluta (`http(s)://…`) — regra de aplicação, porque o upload acontece depois da escrita.
 
 **Regras preservadas do legado**
 
@@ -1169,11 +1178,149 @@ As etapas do ciclo de vida. A configuração mais carregada do portal: cada stat
 
 ---
 
-## 18. Infrastructure Schema
+## 18. Domain `forms`
+
+Responsabilidade: o catálogo das definições de formulário — o que um sujeito pede. Publica a porta `FormReader`.
+
+O domínio é um **catálogo**: guarda a definição, nunca a resposta. Quem responde é o domínio do sujeito — no caso da solicitação, `requests.form_answers`. Vários formulários podem existir: o de abertura de solicitação é um deles, e um formulário de outro assunto (uma pendência, um mapeamento) teria a mesma forma.
+
+### 18.1 `forms`
+
+| Coluna | Tipo | Nulo | Default | Notas |
+| --- | --- | --- | --- | --- |
+| `id` | uuid | não | — | PK, UUID v4 |
+| `key` | text | não | — | UNIQUE `uk_forms_key`, `ck_forms_key_length` ≤ 60 — `solicitacao` |
+| `name` | text | não | — | `ck_forms_name_length` ≤ 80 |
+| `description` | text | sim | — | |
+| `is_active` | boolean | não | `true` | |
+| `created_at` | timestamp | não | `now` | |
+| `updated_at` | timestamp | não | `now` | |
+
+**Invariantes** — a chave do formulário é estável e é o que a API e as seeds referenciam; formulário não é excluído, é desativado.
+
+### 18.2 `form_blocks`
+
+As seções do formulário. A chave do bloco é a chave do bloco no payload.
+
+| Coluna | Tipo | Nulo | Default | Notas |
+| --- | --- | --- | --- | --- |
+| `id` | uuid | não | — | PK, UUID v4 |
+| `form_id` | uuid | não | — | FK → `forms.id` (RESTRICT) |
+| `key` | text | não | — | `requester`, `demand`, `operational`, `complementary` |
+| `title` | text | não | — | `ck_form_blocks_title_length` ≤ 100 |
+| `display_order` | integer | não | — | |
+| `is_active` | boolean | não | `true` | |
+| `created_at` | timestamp | não | `now` | |
+| `updated_at` | timestamp | não | `now` | |
+
+**Índices** — UNIQUE `uk_form_blocks_form_key` (`form_id`, `key`).
+
+**Invariantes** — a chave do bloco é o nome da chave no payload; o bloco é desativado, nunca excluído.
+
+### 18.3 `form_fields`
+
+As perguntas. A chave do campo é a chave do campo no payload.
+
+| Coluna | Tipo | Nulo | Default | Notas |
+| --- | --- | --- | --- | --- |
+| `id` | uuid | não | — | PK, UUID v4 |
+| `block_id` | uuid | não | — | FK → `form_blocks.id` (RESTRICT) |
+| `key` | text | não | — | `processName`, `desiredDeadline` |
+| `label` | text | não | — | `ck_form_fields_label_length` ≤ 100 — rótulo exibido |
+| `type` | text | não | — | `ck_form_fields_type` ∈ `text`, `long_text`, `email`, `number`, `decimal`, `boolean`, `date`, `select`, `yes_no_detail` |
+| `required` | boolean | não | `true` | |
+| `help_text` | text | sim | — | |
+| `options` | json | sim | — | Opções de um `select`, como valor → rótulo |
+| `max_length` | integer | sim | — | Para `text` e `long_text` |
+| `min_value` | decimal | sim | — | Para `number` e `decimal` |
+| `max_value` | decimal | sim | — | Para `number` e `decimal` |
+| `must_be_future` | boolean | não | `false` | A data tem de ser hoje ou futura |
+| `is_active` | boolean | não | `true` | |
+| `display_order` | integer | não | — | |
+| `created_at` | timestamp | não | `now` | |
+| `updated_at` | timestamp | não | `now` | |
+
+**Índices** — UNIQUE `uk_form_fields_block_key` (`block_id`, `key`).
+
+**Invariantes**
+
+- **A chave do campo é o contrato.** É o valor que o frontend envia e o que a API devolve. É a única exceção a [§ 2.2](#22-columns), e é deliberada: a chave não é nome interno, é contrato.
+- O **tipo** de um campo não muda depois que ele tem respostas — regra de aplicação.
+- Um campo nunca é excluído, é desativado: as respostas antigas continuam apontando para ele.
+- As chaves de um formulário são únicas entre seus blocos — regra de aplicação, verificada na escrita.
+- `options` só existe para `select`. O **valor** da opção é o que se guarda; o rótulo é o que se mostra.
+- Os limites do campo são validados pela aplicação, na borda — o banco não os impõe, porque o valor vive em outra tabela.
+
+### 18.4 The Seed
+
+O formulário de abertura de solicitação, como nasce. São 33 campos em 4 blocos, com os rótulos que o produto já usa.
+
+**Bloco `requester` — Identificação**
+
+| Chave | Rótulo | Tipo | Obrigatório | Limites |
+| --- | --- | --- | --- | --- |
+| `fullName` | Nome completo | text | sim | 150 |
+| `corporateEmail` | E-mail corporativo | email | sim | 254 |
+| `area` | Área | text | sim | 100 |
+| `department` | Departamento | text | não | 100 |
+| `manager` | Gestor responsável | text | sim | 150 |
+| `additionalContact` | Contato adicional | text | não | 100 |
+
+**Bloco `demand` — Demanda**
+
+| Chave | Rótulo | Tipo | Obrigatório | Limites |
+| --- | --- | --- | --- | --- |
+| `title` | Título resumido | text | sim | 150 |
+| `requestType` | Tipo de solicitação | select | sim | `Automação`, `Melhoria`, `Manutenção` |
+| `category` | Categoria | select | sim | as categorias ativas — o único campo cujas opções não são inline |
+| `processName` | Nome do processo | text | sim | 150 |
+| `description` | Descrição da necessidade | text | sim | 4000 |
+| `problem` | Problema/oportunidade | text | sim | 4000 |
+| `expectedResult` | Resultado esperado | text | sim | 4000 |
+| `justification` | Justificativa | text | sim | 4000 |
+
+**Bloco `operational` — Operacional**
+
+| Chave | Rótulo | Tipo | Obrigatório | Limites |
+| --- | --- | --- | --- | --- |
+| `processDescription` | Descrição do processo atual | text | sim | 4000 |
+| `processSteps` | Etapas do processo | text | sim | 4000 |
+| `systemsUsed` | Sistemas utilizados | text | sim | 255 |
+| `executionFrequency` | Frequência de execução | select | sim | `Diária`, `Semanal`, `Mensal`, `Por Demanda` |
+| `volumetry` | Volumetria | text | sim | 100 |
+| `peopleInvolved` | Pessoas envolvidas | number | sim | ≥ 1 |
+| `averageExecutionTime` | Tempo médio por ciclo | text | sim | 60 |
+| `monthlyEffortHours` | Esforço mensal (horas) | number | sim | ≥ 0 |
+| `hasManualControls` | Controles manuais | yes_no_detail | sim | detalhe ≤ 1000 |
+| `mainRisks` | Principais riscos | text | sim | 2000 |
+| `clientImpact` | Impacto no cliente | text | sim | 2000 |
+| `operationalImpact` | Impacto operacional | select | sim | `Baixo`, `Médio`, `Alto`, `Crítico` |
+| `desiredDeadline` | Prazo desejado | date | sim | hoje ou futuro |
+| `perceivedCriticality` | Criticidade percebida | select | sim | `Baixa`, `Média`, `Alta`, `Crítica` |
+
+**Bloco `complementary` — Complementar**
+
+| Chave | Rótulo | Tipo | Obrigatório | Limites |
+| --- | --- | --- | --- | --- |
+| `hasProcessDocumentation` | Documentação do processo | yes_no_detail | não | detalhe ≤ 1000 |
+| `hasSimilarSolution` | Solução semelhante | yes_no_detail | não | detalhe ≤ 1000 |
+| `dependsOnOtherAreas` | Dependência de outras áreas | yes_no_detail | não | detalhe ≤ 1000 |
+| `handlesRestrictedInfo` | Informação restrita (LGPD) | yes_no_detail | não | detalhe ≤ 1000 |
+| `additionalNotes` | Observações adicionais | text | não | 2000 |
+
+**Regras preservadas do legado**
+
+- O formulário é o mesmo: os quatro blocos, os campos, os rótulos, as obrigatoriedades e os limites.
+- O payload continua sendo `{ requester, demand, operational, complementary }` — a API resolve as chaves e devolve a mesma forma, agrupando as respostas por bloco.
+- `schedulePreferences` **não** é um campo de formulário: é a lista de slots, e vive em `request_time_preferences`.
+
+---
+
+## 19. Infrastructure Schema
 
 Schema sem dono de domínio ([ADR-0011](./adr/0011-infrastructure-schema-without-domain-owner.md)). A tabela é consumida pela porta `Counter`, em `core/repository/`.
 
-### 18.1 `code_counters`
+### 19.1 `code_counters`
 
 | Coluna | Tipo | Nulo | Default | Notas |
 | --- | --- | --- | --- | --- |
@@ -1189,58 +1336,133 @@ Schema sem dono de domínio ([ADR-0011](./adr/0011-infrastructure-schema-without
 
 ---
 
-## 19. Table Catalog
+## 20. Table Catalog
 
 | # | Tabela | Domínio | No legado | Papel |
 | --- | --- | --- | --- | --- |
 | 1 | `profiles` | `users` | `profiles` | Os cinco perfis; chave estável para a matriz em código |
-| 2 | `users` | `users` | `users` | A conta: identidade, perfil, estado |
+| 2 | `users` | `users` | `users` | A conta: identidade, perfil, estado, contato |
 | 3 | `user_details` | `users` | `details_professional` | Dados do usuário interno: cargo, especialidades, disponibilidade |
-| 4 | `user_detail_categories` | `users` | `attended_category_ids` (texto) | Áreas atendidas pelo profissional |
+| 4 | `user_detail_categories` | `users` | `attended_category_ids` (texto) | Áreas atendidas pelo usuário interno |
 | 5 | `credentials` | `auth` | `users` (colunas soltas) | Material de credencial, separado do cadastro |
-| 6 | `requests` | `requests` | `requests` | A solicitação e seu ciclo de vida |
-| 7 | `request_details` | `requests` | `requests` (colunas do formulário) | O formulário de intake, 1:1 com a solicitação |
-| 8 | `requesters` | `requests` | `requesters` | Quem abriu a solicitação |
-| 9 | `attachments` | `requests` | `attachments` | Arquivos enviados |
-| 10 | `request_time_preferences` | `requests` | `request_time_preferences` | Slots de horário preferidos |
-| 11 | `triages` | `triage` | `triages` | Histórico append-only de triagens |
-| 12 | `mappings` | `mapping` | `mappings` | Sessão de mapeamento |
-| 13 | `mapping_participants` | `mapping` | `mapping_participants` | Participantes internos e externos |
-| 14 | `criteria` | `prioritization` | `criteria` | Quesitos ponderados |
-| 15 | `priorities` | `prioritization` | `priorities` | Faixas de criticidade por score |
-| 16 | `prioritization_evaluations` | `prioritization` | `prioritization_evaluations` | Avaliação corrente da solicitação |
-| 17 | `pending_items` | `pending-items` | `pending_items` | Pendências de campo e de observação |
-| 18 | `internal_notes` | `internal-notes` | `request_internal_notes` | Notas internas imutáveis |
-| 19 | `internal_note_read_states` | `internal-notes` | `request_internal_note_read_states` | Marca de leitura por usuário |
-| 20 | `audit_entries` | `audit` | `audit_history` | O que foi alterado |
-| 21 | `attempts` | `audit` | — (novo) | O que foi recusado |
-| 22 | `portal_settings` | `portal-config` | `system_settings` | Configuração global do portal |
-| 23 | `themes` | `portal-config` | `system_themes` | As Aparências do portal — uma paleta por linha |
-| 24 | `categories` | `portal-config` | `categories` | Classificação ordenável da fila |
-| 25 | `statuses` | `portal-config` | `statuses` | Etapas do ciclo de vida |
-| 26 | `code_counters` | `platform` | — (novo) | Contador do gerador de protocolo |
+| 6 | `forms` | `forms` | — (novo) | O catálogo de formulários |
+| 7 | `form_blocks` | `forms` | — (novo) | As seções de um formulário |
+| 8 | `form_fields` | `forms` | `fieldCatalog.ts` (código) | Os campos de um bloco — o contrato do payload |
+| 9 | `requests` | `requests` | `requests` | A solicitação: identidade, fluxo e ciclo de vida |
+| 10 | `form_answers` | `requests` | `requests` (colunas do formulário) | As respostas do solicitante |
+| 11 | `attachments` | `requests` | `attachments` | Arquivos enviados |
+| 12 | `request_time_preferences` | `requests` | `request_time_preferences` | Slots de horário preferidos |
+| 13 | `triages` | `triage` | `triages` | Histórico append-only de triagens |
+| 14 | `mappings` | `mapping` | `mappings` | Sessão de mapeamento |
+| 15 | `mapping_participants` | `mapping` | `mapping_participants` | Participantes internos e externos |
+| 16 | `criteria` | `prioritization` | `criteria` | Quesitos ponderados |
+| 17 | `priorities` | `prioritization` | `priorities` | Faixas de criticidade por score |
+| 18 | `prioritization_evaluations` | `prioritization` | `prioritization_evaluations` | Avaliação corrente da solicitação |
+| 19 | `pending_items` | `pending-items` | `pending_items` | Pendências de campo e de observação |
+| 20 | `pending_item_fields` | `pending-items` | `pending_items.requested_fields` (json) | Os campos que a pendência pede para corrigir |
+| 21 | `internal_notes` | `internal-notes` | `request_internal_notes` | Notas internas imutáveis |
+| 22 | `internal_note_read_states` | `internal-notes` | `request_internal_note_read_states` | Marca de leitura por usuário |
+| 23 | `audit_entries` | `audit` | `audit_history` | O que foi alterado |
+| 24 | `attempts` | `audit` | — (novo) | O que foi recusado |
+| 25 | `portal_settings` | `portal-config` | `system_settings` | Configuração global do portal |
+| 26 | `themes` | `portal-config` | `system_themes` | As Aparências — uma paleta por linha, com seus assets |
+| 27 | `categories` | `portal-config` | `categories` | Classificação ordenável da fila |
+| 28 | `statuses` | `portal-config` | `statuses` | Etapas do ciclo de vida |
+| 29 | `code_counters` | `platform` | — (novo) | Contador do gerador de protocolo |
 
-### 19.1 What Changed From the Legacy
+### 20.1 What Changed From the Legacy
 
 | Mudança | Por quê |
 | --- | --- |
 | `users` → `users` + `credentials` | O domínio `users` não guarda segredo; `UserReader` não pode vazar hash |
-| `requests` → `requests` + `request_details` | A entidade deixa de ser o formulário; a triagem deixa de ter cópia em `requests` |
-| `details_professional` → `user_details` + `user_detail_categories` | O profissional é o usuário interno; a lista de categorias vira tabela filha; e toda referência ao profissional aponta para `users.id`, nunca para a extensão |
+| `requests` → `requests` + `form_answers` + `forms` | O formulário deixa de ser colunas e passa a ser definição + respostas |
+| `requesters` → respostas do bloco `requester` | O solicitante é o que foi preenchido, não uma linha por e-mail — [ADR-0013](./adr/0013-requester-is-an-answer-not-a-table.md) |
+| `requests.title`, `category_id`, `process_name` → respostas | A classificação e o conteúdo do formulário têm uma casa só |
+| `details_professional` → `user_details` + `user_detail_categories` | O profissional é o usuário interno; a lista de categorias vira tabela filha |
 | `audit_history` → `audit_entries` + `attempts` | Alteração e recusa são trilhas com garantias diferentes ([ADR-0007](./adr/0007-event-driven-audit.md)) |
 | `professional_id` → `responsible_id` → `users.id` | O profissional é 1:1 com a conta; a referência aponta para a conta |
 | `request_internal_notes` → `internal_notes` | Nome no vocabulário do domínio |
-| `system_settings` → `portal_settings` | Nome no vocabulário do domínio |
-| `system_themes` → `themes` | A singleton com as duas paletas duplicadas em colunas (`light_*` e `dark_*`) vira entidade: uma paleta por linha, com nome; `portal_settings.theme_id` aponta a vigente |
+| `system_themes` → `themes` | A singleton com as duas paletas duplicadas em colunas vira entidade: uma paleta por linha, com nome; e os assets migram para a Aparência |
+| `system_settings` → `portal_settings` | Nome no vocabulário do domínio; e os dois slots de paleta |
 | `criteria.criterion_id` (texto) → `id` (uuid) + `code` | Chave primária uniforme, com código estável preservado |
 | `prioritization_evaluations.classification` (ENUM) → `priority_id` (FK) | O mesmo conjunto não é armazenado duas vezes |
 | `categories.status` (ENUM) → `is_active` (boolean) | Enum de dois valores é boolean |
-| `criteria.active` → `criteria.is_active`; `priorities` ganha `is_active` | Enum de dois valores é boolean; e faixa de prioridade é desativada, nunca excluída (§ 2.11) |
 | `user_details.status` (ENUM) → `is_available` (boolean) | Enum de dois valores é boolean, e nome que não colide com o da conta |
 | `statuses.visibility` (ENUM) → `is_public` (boolean) | Idem |
 | `pending_items.status` com `overdue` → `open`/`resolved` | `overdue` é derivado, nunca gravado |
+| `pending_items.requested_fields` (json) → `pending_item_fields` | O campo pendente passa a ser referência ao campo do formulário |
 | `requests.internal_notes`, `next_steps`, triagem duplicada | Uma casa por fato: `triages` |
 | `ENUM` nativo (9 colunas) | `text` + `ck_`, ou tabela de referência ([ADR-0003](./adr/0003-knex-dialect-portability.md)) |
 | `CASCADE` e `SET NULL` | `RESTRICT` em toda parte ([ADR-0009](./adr/0009-schema-naming-and-constraints.md)) |
 | `sequence` / `serial` / `bigIncrements` | UUID v4 gerado pela aplicação ([ADR-0003](./adr/0003-knex-dialect-portability.md)) |
 | `btrim`, índice funcional sobre `LOWER()`, `jsonb_typeof` | `trim`, coluna normalizada, validação de JSON na borda |
+
+---
+
+## 21. Permission Catalogue
+
+A chave de permissão é `recurso:ação` e é **contrato**: o frontend decide o que mostrar a partir dela, e o RBAC configurável vai semear exatamente estas chaves. A matriz continua em código ([ADR-0006](./adr/0006-static-profile-authorization.md)); o catálogo abaixo é a lista única que a matriz usa e que a futura tabela `permissions` recebe.
+
+| Chave | Recurso | Ação | O que permite | Equivalente no legado |
+| --- | --- | --- | --- | --- |
+| `request:read` | request | read | Ler a solicitação na visão interna | `requireRole(Analista, Gestor, Administrador)` em `GET /requests/:protocol/internal` |
+| `request:write` | request | write | Editar o conteúdo interno da solicitação | `PATCH /requests/:protocol/internal` + `canEditSolicitation` |
+| `request:assign` | request | assign | Atribuir e reatribuir o Responsável | `PATCH .../assignee` + `canAssignRequest` |
+| `request:status_change` | request | status_change | Mudar o status da solicitação | `PATCH .../status` — o Gestor nunca muda status |
+| `queue:read` | queue | read | Ler a fila e suas métricas | `requireRole(...)` em `/queue` |
+| `queue:export` | queue | export | Exportar a fila em CSV | `GET /reports/requests.csv` |
+| `reports:read` | reports | read | Ler o dashboard e as métricas | `GET /reports/dashboard` |
+| `triage:read` | triage | read | Ler a triagem | `GET /requests/:protocol/triage` |
+| `triage:write` | triage | write | Registrar uma triagem | `POST .../triage` + `isAdminOrAssignee` |
+| `mapping:read` | mapping | read | Ler o mapeamento | `GET /queue/requests/:protocol/mapping` |
+| `mapping:write` | mapping | write | Registrar e concluir o mapeamento | `PUT .../mapping` |
+| `prioritization:read` | prioritization | read | Ler os critérios e as avaliações | `GET /prioritization/criteria` |
+| `prioritization:write` | prioritization | write | Registrar avaliação de priorização | `PUT /prioritization/:protocol/score` |
+| `pending_item:read` | pending_item | read | Ler as pendências | rotas de pendência |
+| `pending_item:write` | pending_item | write | Abrir e responder pendências | `POST .../pending-items` |
+| `pending_item:review` | pending_item | review | Revisar e validar pendências | `PATCH .../pending-items/review` + `assertCanCreateOrReview` |
+| `internal_note:read` | internal_note | read | Ler as notas internas e a linha do tempo | `GET .../internal-notes` |
+| `internal_note:write` | internal_note | write | Escrever notas internas | `POST .../internal-notes` |
+| `audit:read` | audit | read | Ler a trilha de auditoria | `GET /audit-history` + leitura escopada |
+| `user:read` | user | read | Ler usuários | `GET /users/...` |
+| `user:manage` | user | manage | Criar, editar, ativar e resetar senha de usuários | `requireRole(Administrador)` em `/users` + `assertRoleIsManageable` |
+| `portal_config:read` | portal_config | read | Ler a configuração do portal | `GET /portal-config` |
+| `portal_config:manage` | portal_config | manage | Alterar a configuração do portal | `PATCH /portal-config/*` |
+| `form:read` | form | read | Ler a definição do formulário | — (novo) |
+| `form:manage` | form | manage | Alterar a definição do formulário | — (novo) |
+
+São 25 chaves. As 11 da ADR-0006 são subconjunto; as 14 novas cobrem o que o legado e o frontend já gateavam sem uma chave. Ver [ADR-0014](./adr/0014-permission-key-is-the-contract.md).
+
+### 21.1 A matriz por perfil
+
+| Perfil | Chaves |
+| --- | --- |
+| **Solicitante** | Nenhuma. O que ele faz é abrir e acompanhar a própria solicitação — escopo de posse, não permissão |
+| **Analista** | `queue:read`, `request:read`, `request:write`\*, `request:assign`\*, `request:status_change`\*, `triage:read`, `triage:write`\*, `mapping:read`, `mapping:write`\*, `prioritization:read`, `prioritization:write`\*, `pending_item:read`, `pending_item:write`, `pending_item:review`\*, `internal_note:read`, `internal_note:write`, `audit:read`\* |
+| **Gestor** | `queue:read`, `queue:export`, `request:read`, `reports:read`, `triage:read`, `mapping:read`, `prioritization:read`, `pending_item:read`, `internal_note:read`, `audit:read` |
+| **Administrador** | Todas |
+| **Admin Root** | Todas |
+
+\* A chave vale **apenas** sobre as solicitações onde o usuário é o responsável — a custódia. Escopo é regra de serviço, não de permissão, e é o que a ADR-0006 já decide.
+
+### 21.2 O que o RBAC configurável vai semear
+
+| Tabela | Colunas |
+| --- | --- |
+| `permissions` | `key` (PK, text), `resource` (text), `action` (text), `description` (text) |
+| `profile_permissions` | `profile_id` (FK → `profiles.id`), `permission_id` (FK → `permissions.id`) — PK composta |
+
+A chave é a chave primária: é o contrato, e é o que o frontend vai receber. Quando isso chegar, a matriz em código vira um adapter de banco atrás da mesma `AuthorizationService` — nenhum domínio muda (ADR-0006) — e `GET /auth/me` passa a devolver as chaves do usuário, **além** do papel.
+
+---
+
+## 22. Pendências
+
+| Pendência | Impacto | Gatilho |
+| --- | --- | --- |
+| Formulário configurável | Hoje o formulário é fixo e semeado. A customização pede uma tela de administração e um contrato de renderização dinâmica no frontend | Demanda do produto por formulário configurável |
+| Aparências nomeadas | O contrato devolve `{ light, dark }`. A lista de aparências com escolha do solicitante é o contrato `portal-config-api-0_5`, que já existe e não está implementado | Evolução do frontend para o contrato 0_5 |
+| RBAC configurável | As permissões são matriz em código. `permissions` e `profile_permissions` são o passo seguinte, semeadas pelo catálogo de § 21 | Demanda do produto por perfis configuráveis |
+| Preferência de aparência por solicitante | A escolha entre as aparências fica no cliente; o servidor não guarda preferência | A preferência precisar ser do servidor |
+| Projeção da fila | Nome do solicitante, processo e prazo saem das respostas, e a fila os junta por chave de campo. Uma tabela de projeção é a alternativa se a junção pesar | Volume da fila |
+| Identidade do solicitante | O bloco `requester` é resposta; a busca por e-mail é um índice sobre as respostas | Volume de solicitações |

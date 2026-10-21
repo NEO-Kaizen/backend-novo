@@ -107,3 +107,15 @@ _Evitar_: modo de portal, visibilidade, tipo de acesso.
 **Aparência**:
 Conjunto de cores e estilos que o portal apresenta. Há mais de uma; uma delas é a vigente, e o solicitante escolhe entre as oferecidas.
 _Evitar_: tema, theme, skin, paleta.
+
+**Formulário**:
+Definição do que uma solicitação pede, composta por blocos e campos. É administrável, e a versão semeada descreve o formulário de abertura de solicitação.
+_Evitar_: formulário do legado, intake, requerimento.
+
+**Bloco**:
+Seção de um formulário, que agrupa campos sob um mesmo assunto — identificação, demanda, operacional, complementar.
+_Evitar_: seção, passo, etapa.
+
+**Campo**:
+Pergunta de um bloco de formulário, com tipo, obrigatoriedade e limites. O valor preenchido é a resposta.
+_Evitar_: campo do banco, coluna, atributo, input.

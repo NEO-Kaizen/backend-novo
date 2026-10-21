@@ -137,8 +137,8 @@ knexfile.ts
 | Domínio | Responsabilidade | Tabelas | Portas publicadas |
 | --- | --- | --- | --- |
 | `auth` | Login, logout, sessão, troca de senha | credenciais, sessões | `AuthReader` |
-| `users` | Cadastro, perfil, dados do usuário, avatar | usuários, perfis | `UserReader` |
-| `requests` | Ciclo de vida da solicitação, protocolo, anexos | solicitações, solicitantes, anexos | `RequestReader` |
+| `users` | Cadastro, perfil, dados do usuário, avatar, contato | usuários, perfis | `UserReader` |
+| `requests` | Ciclo de vida da solicitação, protocolo, anexos | solicitações, respostas do formulário, anexos | `RequestReader` |
 | `triage` | Triagem: aderência, escopo, veredito | triagens | `TriageReader` |
 | `mapping` | Sessão de mapeamento, participantes, agenda | mapeamentos, participantes | `MappingReader` |
 | `queue` | Fila centralizada e métricas | — (lê de `requests`) | `QueueReader` |
@@ -148,10 +148,12 @@ knexfile.ts
 | `audit` | Trilha de auditoria imutável | auditoria, tentativas | `AuditReader` · `AttemptRecorder` |
 | `reports` | Dashboard, métricas, exportações | — (lê de vários domínios) | — |
 | `portal-config` | Configuração do portal, categorias, status, aparência, modo de acesso | configurações, categorias, status, aparências | `PortalConfigReader` |
+| `forms` | Catálogo das definições de formulário: blocos e campos | formulários, blocos, campos | `FormReader` |
 
 Regras do catálogo:
 
 - **Um domínio é dono das suas tabelas.** Nenhum outro domínio escreve nelas.
+- **`forms` é um catálogo:** guarda a definição de um formulário, nunca a resposta. Quem responde é o domínio do sujeito — `requests.form_answers` — e liga por chave estrangeira, como `requests.category_id` liga em `portal-config.categories.id`.
 - **`queue` e `reports` não têm tabelas.** São projeções de leitura sobre outros domínios e consomem as portas publicadas por eles.
 - **Toda porta publicada é um contrato de leitura**, com uma única exceção: `AttemptRecorder`, que é uma porta de escrita controlada pela borda — ver [§ 9.4](#94-audit-and-log-what-each-one-guarantees).
 - **Projeções de leitura não escrevem.** `queue` e `reports` recebem apenas portas `*Reader`; por isso não estendem `BaseService` e não têm transação.
@@ -1071,6 +1073,8 @@ export interface AuthorizationService {
 
 A matriz (permissão → perfis) fica em `core/authorization/profile-permissions.ts`. *Admin Root* recebe todas as permissões.
 
+O catálogo completo das chaves — 25 chaves `recurso:ação`, com o equivalente no legado — está em [`03-Data-Model.md` § 21](./03-Data-Model.md#21-permission-catalogue). É o mesmo catálogo que vai semear `permissions` e `profile_permissions` quando o RBAC configurável entrar, sem que nenhum domínio mude — ver [ADR-0014](./adr/0014-permission-key-is-the-contract.md).
+
 | Nível | O que verifica | Onde |
 | --- | --- | --- |
 | Rota | Gate grosso por perfil | Middleware |
@@ -1268,6 +1272,10 @@ Cada linha aponta a seção que define a regra. Um PR que muda mais de uma camad
 | Entropia do prefixo do protocolo (80 bits em `MAAT3K7P-ABCD-EFGH`) | Enumeração do protocolo: 40 bits caem em ~127 dias a 100k rps | Endpoint público sem rate limit forte |
 | Suíte de testes automatizados | Rede de segurança ausente para a reescrita | Ferramentas de teste decididas |
 | Log de auditoria exposto na API | Pendente de contrato | Formalização do domínio de auditoria |
+| Formulário configurável | O formulário é fixo e semeado; a customização pede tela de administração e renderização dinâmica | Demanda do produto por formulário configurável |
+| Aparências nomeadas | O contrato devolve `{ light, dark }`; a lista de aparências com escolha do solicitante já está no contrato `portal-config-api-0_5` | Evolução do frontend para o contrato 0_5 |
+| RBAC configurável | As permissões são matriz em código; `permissions` e `profile_permissions` semeiam o mesmo catálogo | Demanda do produto por perfis configuráveis |
+| Preferência de aparência do solicitante | A escolha fica no cliente; o servidor não guarda preferência | A preferência precisar ser do servidor |
 
 ---
 
