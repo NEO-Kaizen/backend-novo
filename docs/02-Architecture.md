@@ -53,7 +53,7 @@ O domínio fala português; o código fala inglês. A conversão é fixa e vale 
 | Análise de viabilidade | `viability_analysis` |
 | Priorização | `prioritization` |
 | Critério | `criterion` |
-| Chave promovida | `promoted_key` |
+| Classificação | `classification_key` |
 | Formulário | `form` |
 | Bloco | `form_block` |
 | Campo | `form_field` |
@@ -979,6 +979,7 @@ Tudo que entra pela borda é `unknown` até ser validado.
 ```ts
 // src/domains/requests/requests.schema.ts
 export const CreateRequest = z.strictObject({
+  category: z.string().min(1).max(40),   // classificação: fora dos blocos
   demand: z.strictObject({
     title: z.string().min(1).max(150),
     description: z.string().min(1).max(4000),
@@ -990,9 +991,9 @@ export const CreateRequest = z.strictObject({
 });
 ```
 
-> `demand` é o nome do bloco no contrato público já acordado; ver a exceção em [§ 3](#3-naming).
+> `demand` é o nome do bloco no contrato público já acordado; ver a exceção em [§ 3](#3-naming). `category` é a **Classificação**, e é pedida **no topo** — fora dos blocos, porque ela escolhe o formulário.
 >
-> Os limites por campo são os do **seed do formulário** ([`03-Data-Model.md` Apêndice A](./03-Data-Model.md#22-appendix-a-the-form-seed)); este exemplo é ilustrativo do formato, não da fonte dos limites. A definição do formulário é a fonte única: o schema da borda é gerado a partir dela **e do catálogo de chaves promovidas** — uma chave promovida não tem linha na definição, e a borda a valida pelo nome, contra as categorias ativas.
+> Os limites por campo são os do **seed do formulário** ([`03-Data-Model.md` Apêndice A](./03-Data-Model.md#22-appendix-a-the-form-seed)); este exemplo é ilustrativo do formato, não da fonte dos limites. A definição do formulário é a fonte única: o schema da borda é gerado a partir dela **e do catálogo de classificações** — a classificação não tem linha na definição, e a borda a valida pelo nome, contra as categorias ativas.
 
 | Regra | Efeito |
 | --- | --- |

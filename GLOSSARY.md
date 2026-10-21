@@ -31,7 +31,7 @@ Etapa do ciclo de vida de uma solicitação, com visibilidade definida (pública
 _Evitar_: estado, fase, situação.
 
 **Categoria**:
-Classificação de uma solicitação, administrável e ordenável, usada para organizar a fila.
+Classificação ordenável da solicitação. O solicitante a escolhe na abertura — e é ela que define o formulário que ele preenche. A pendência permite que ele a corrija; a triagem pode reclassificar.
 _Evitar_: tipo, assunto, label, tema.
 
 **Prioridade**:
@@ -39,7 +39,7 @@ Faixa de criticidade atribuída a uma solicitação — Baixa, Média, Alta ou C
 _Evitar_: gravidade, urgência, severidade.
 
 **Classificação**:
-Atributo que situa a solicitação no fluxo: Status, Prioridade e Categoria. São atributos da solicitação, nunca perguntas do formulário.
+Atributo que situa a solicitação no fluxo: Status, Prioridade e Categoria. São atributos da solicitação, nunca perguntas do formulário. Só a Categoria é pedida ao solicitante — e é ela que escolhe o formulário que ele preenche.
 _Evitar_: tipo, rótulo, tag.
 
 ## Análise e priorização
@@ -69,10 +69,6 @@ Quesito ponderado usado no cálculo da priorização, com peso ajustável.
 _Evitar_: requisito, atributo, métrica.
 
 ## Formulário
-
-**Chave promovida**:
-Chave do payload que sai do formulário e ganha coluna própria, tipada e indexada na entidade. Deixa de ser pergunta e passa a ser atributo.
-_Evitar_: coluna promovida, campo promovido, chave especial.
 
 **Formulário**:
 Definição de o que uma solicitação pede, composta por blocos e campos. É administrável, e a versão semeada descreve o formulário de abertura de solicitação.

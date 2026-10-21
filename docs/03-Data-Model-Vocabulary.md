@@ -21,7 +21,6 @@
 | **Análise de viabilidade** | — | Etapa do mapeamento; registrada em `mappings` e na auditoria, sem tabela própria |
 | **Priorização** | `prioritization.prioritization_evaluations` | Cálculo da prioridade a partir de critérios ponderados |
 | **Critério** | `prioritization.criteria` | Quesito ponderado, com peso ajustável |
-| **Chave promovida** | `requests.category_id`, `triage.triages.new_category_id` | Chave do payload que virou coluna tipada e indexada |
 | **Pendência** | `pending-items.pending_items` | O que impede o avanço da solicitação |
 | **Nota interna** | `internal-notes.internal_notes` | Registro imutável, integrado à linha do tempo |
 | **Linha do tempo** | — | Projeção: `audit_entries` + `internal_notes` |
