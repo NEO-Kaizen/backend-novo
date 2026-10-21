@@ -16,7 +16,7 @@ A leitura por protocolo deixa de usar `.first()` e passa a fazer uma **sondagem 
 
 - **HMAC sobre o UUID, com retry.** Determinístico: o retry sobre o mesmo id devolve o mesmo código, então a colisão virava erro permanente. Corrigir com nonce aleatório resolveria, mas a garantia passaria a ser probabilística. Rejeitado.
 - **Base62 em vez de base32 (48 bits).** O frontend aceita `[A-Za-z0-9]`, mas o collation padrão do MySQL é case-insensitive: `MAAT-abcd` e `MAAT-ABCD` seriam a mesma chave no MySQL e chaves diferentes no Postgres — três engines, três semânticas de busca. Misturar maiúsculas em URL também quebra em clientes que normalizam. Rejeitado.
-- **Espaço maior no prefixo (`MAAT3K7P-ABCD-EFGH`, 80 bits).** O regex do frontend já permite prefixo de 1 a 10 caracteres, então é **sem mudança no frontend**. Fica registrado como pendência (§ 22) porque altera o formato exibido ao usuário.
+- **Espaço maior no prefixo (`MAAT3K7P-ABCD-EFGH`, 80 bits).** O regex do frontend já permite prefixo de 1 a 10 caracteres, então é **sem mudança no frontend**. Fica registrado como pendência (§ 21 do [`03-Data-Model.md`](../03-Data-Model.md#21-pendências)) porque altera o formato exibido ao usuário.
 - **Inserir id autoincrement e gerar o protocolo depois.** Reintroduz o id inteiro do banco e um segundo `UPDATE` por insert, sem ganho sobre o contador.
 - **Resolver colisão na leitura (detectar duplicata ao buscar).** Converte uma invariante do modelo em verificação de runtime — exatamente como vazamentos entre inquilinos acontecem. Rejeitado.
 

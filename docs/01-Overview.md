@@ -1,6 +1,6 @@
 # Backend Overview
 
-O backend novo do **MAAT** (Tirador de Pedidos do NEO) é a API que sustenta o portal de registro e acompanhamento de demandas operacionais: o solicitante abre uma solicitação, o time interno tria, prioriza, mapeia e encerra.
+O backend novo do **MAAT** (Tirador de Pedidos do NEO) é a API que sustenta o portal de registro e acompanhamento de solicitações: o solicitante abre uma solicitação, o time interno tria, prioriza, mapeia e encerra.
 
 Este documento situa o repositório: o que o sistema faz, por que ele está sendo reescrito, o que está no escopo do backend novo e onde ficam as decisões de arquitetura.
 
@@ -15,7 +15,7 @@ Documentos relacionados:
 
 ## 1. O produto
 
-O MAAT é um portal de *intake* de solicitações. O fluxo principal é:
+O MAAT é um portal de *formulário* de solicitações. O fluxo principal é:
 
 ```text
 Solicitante preenche o formulário
@@ -129,4 +129,4 @@ Decisões já tomadas e follow-up que dependem de outro time:
 | Envelope de erro | Decidido: manter o legado por ora; migração exige mudança coordenada no frontend | [ADR-0005](./adr/0005-legacy-error-envelope-temporary.md) |
 | Perfis: cinco ou quatro | Decidido: cinco no backend; os contratos publicados ainda listam quatro | [ADR-0006](./adr/0006-static-profile-authorization.md) |
 | Remodelagem do banco | Decidido: cada domínio é dono do seu schema; as migrações do legado são referência de dados, não de estrutura | [ADR-0004](./adr/0004-domain-owned-schema-and-migrations.md) |
-| Entropia do prefixo do protocolo | Em aberto: 40 bits são enumeráveis em ~127 dias a 100k rps | [02-Architecture § 22](./02-Architecture.md#22-pending-items) |
+| Entropia do prefixo do protocolo | Em aberto: 40 bits são enumeráveis em ~127 dias a 100k rps | [03-Data-Model § 21](./03-Data-Model.md#21-pendências) |

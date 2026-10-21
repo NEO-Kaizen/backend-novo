@@ -46,23 +46,29 @@ O domínio fala português; o código fala inglês. A conversão é fixa e vale 
 | Status | `status` |
 | Categoria | `category` |
 | Prioridade | `priority` |
+| Classificação | `classification` |
 | Triagem | `triage` |
-| Veredito | `verdict` |
+| Veredito | `verdict` — o Status de saída da triagem (`triage.triages.exit_status_id`) |
 | Mapeamento | `mapping` |
-| Análise de viabilidade | `viability-analysis` |
+| Análise de viabilidade | `viability_analysis` |
 | Priorização | `prioritization` |
 | Critério | `criterion` |
-| Pendência | `pending-item` |
-| Nota interna | `internal-note` |
+| Chave promovida | `promoted_key` |
+| Formulário | `form` |
+| Bloco | `form_block` |
+| Campo | `form_field` |
+| Pendência | `pending_item` |
+| Nota interna | `internal_note` |
 | Linha do tempo | `timeline` |
 | Auditoria | `audit` |
 | Tentativa | `attempt` |
 | Perfil | `profile` |
-| Admin Root | `admin-root` |
-| Responsável | `assignee` |
-| Modo de acesso | `access-mode` |
+| Admin Root | `admin_root` |
+| Responsável | `responsible` |
+| Modo de acesso | `solicitation_mode` |
+| Aparência | `appearance` |
 
-Valores de domínio (status, prioridades, vereditos) permanecem em português, porque são exibidos ao usuário e gravados como dado de negócio.
+Valores de domínio (status, prioridades, categorias) permanecem em português, porque são exibidos ao usuário e gravados como dado de negócio.
 
 > **Exceção:** nomes de campo do contrato público seguem o formato já acordado em `tirador-pedidos-NEO/contratos/`. Quando o contrato existente usa um termo, o contrato prevalece sobre a tabela acima.
 
@@ -119,7 +125,7 @@ src/
     ├── prioritization/
     ├── pending-items/
     ├── internal-notes/
-    ├── audit/                  # dono das tabelas audit e attempt
+    ├── audit/                  # dono das tabelas audit_entries e attempts
     ├── reports/
     ├── portal-config/
     └── forms/              # dono de forms, form_blocks e form_fields
@@ -148,14 +154,15 @@ knexfile.ts
 | `internal-notes` | Notas internas, marcas de leitura, linha do tempo | `internal_notes`, `internal_note_read_states` | `InternalNoteReader` |
 | `audit` | Trilha de auditoria imutável | `audit_entries`, `attempts` | `AuditReader` · `AttemptRecorder` |
 | `reports` | Dashboard, métricas, exportações | — (lê de vários domínios) | — |
-| `portal-config` | Configuração do portal, categorias, status, aparência, modo de acesso | configurações, categorias, status, aparências | `PortalConfigReader` |
-| `forms` | Catálogo das definições de formulário: blocos e campos | formulários, blocos, campos | `FormReader` |
+| `portal-config` | Configuração do portal, categorias, status, aparência, modo de acesso | `portal_settings`, `themes`, `categories`, `statuses` | `PortalConfigReader` |
+| `forms` | Catálogo das definições de formulário: blocos e campos | `forms`, `form_blocks`, `form_fields` | `FormReader` |
+| `platform` | Infraestrutura: contador de protocolo | `code_counters` | — (consumido pela porta `Counter`) |
 
 Regras do catálogo:
 
 - **Um domínio é dono das suas tabelas.** Nenhum outro domínio escreve nelas.
 - **`forms` é um catálogo:** guarda a definição de um formulário, nunca a resposta. Quem responde é o domínio do sujeito — `requests.form_answers` — e liga por chave estrangeira (`requests.form_answers.field_id` → `forms.form_fields.id`).
-- **A classificação não é coluna:** a categoria é a resposta de `demand.category`, e o valor guardado é o `id` da categoria.
+- **A classificação é coluna, não pergunta:** a categoria mora em `requests.category_id`, resolvida pelo nome contra as categorias ativas na abertura. Status, Prioridade e Categoria são as três classificações, e nenhuma delas é campo do formulário ([ADR-0012](./adr/0012-form-is-a-configurable-entity.md)).
 - **`queue` e `reports` não têm tabelas.** São projeções de leitura sobre outros domínios e consomem as portas publicadas por eles.
 - **Toda porta publicada é um contrato de leitura**, com uma única exceção: `AttemptRecorder`, que é uma porta de escrita controlada pela borda — ver [§ 9.4](#94-audit-and-log-what-each-one-guarantees).
 - **Projeções de leitura não escrevem.** `queue` e `reports` recebem apenas portas `*Reader`; por isso não estendem `BaseService` e não têm transação.
@@ -540,7 +547,7 @@ Existem **duas trilhas**, com garantias diferentes.
 | Trilha | O que registra | Garantia | Onde é gravada | Se a gravação falhar |
 | --- | --- | --- | --- | --- |
 | **Alteração** | O que foi commitado | Atômica com a mudança | Dentro da transação do caso de uso | A mudança é desfeita |
-| **Tentativa** | O que foi recusado | Independente — a recusa aconteceu de fato | Fora da transação | Vira log; a resposta não é bloqueada |
+| **Tentativa** | O que foi recusado | Independente — a recusa aconteceu de fato | Fora da transação | Vira registro de tentativa; a resposta não é bloqueada |
 
 A tentativa **não pode** estar dentro da transação: ela existe justamente porque a transação foi desfeita.
 
@@ -617,7 +624,7 @@ if (isAuditable(error)) {
 
 #### What Counts as an Auditable Attempt
 
-| Situação | Auditada? | Por quê |
+| Caso | Auditada? | Por quê |
 | --- | --- | --- |
 | Recusa de autorização (`forbidden`) | Sim | Alguém tentou algo que não podia — tem responsabilidade |
 | Recusa de regra de negócio (status inválido, transição proibida) | Sim | Tentativa deliberada de um humano |
@@ -629,9 +636,9 @@ O critério é **explícito no erro** (`DomainError.context`), não inferido de 
 #### Audit and Log Are Not the Same Thing
 
 - **Auditoria** é o fato: está no banco, dentro ou fora de transação conforme a trilha, e é append-only.
-- **Log** é o **rastro da tentativa**: sai quando a requisição foi atendida, na borda, e pode existir para uma operação que foi desfeita. Uma transação que faz *rollback* pode deixar um log dizendo que o status mudou, sem auditoria correspondente.
+- **Registro de tentativa** é o **rastro da recusa**: sai quando a requisição foi atendida, na borda, e pode existir para uma operação que foi desfeita. Uma transação que faz *rollback* pode deixar um registro dizendo que o status mudou, sem auditoria correspondente.
 
-Regra: **o log nunca é evidência.** Para saber o que aconteceu, olhe a auditoria. E o log de sucesso sai **depois** do commit — ver [§ 17](#17-logging).
+Regra: **o registro de tentativa nunca é evidência.** Para saber o que aconteceu, olhe a auditoria. E o registro de sucesso sai **depois** do commit — ver [§ 17](#17-logging).
 
 ---
 
@@ -701,7 +708,7 @@ Estas regras são o que torna a troca de banco uma realidade e não uma intenç�
 | Repositório usa **apenas o query builder** do Knex | Preserva a diferença entre as engines |
 | **IDs gerados pela aplicação** (`crypto.randomUUID()`) | Elimina `nextval()`, `::uuid`, sequences e colunas `serial` |
 | **Sem tipo `ENUM`** | Use `text` com constraint de check ou tabela de lookup |
-| **Sem coluna `ARRAY`** | Use tabela filha (`mapping_participants`, `attachments`) |
+| **Sem coluna `ARRAY`** | Use tabela filha (`mapping_participants`, `user_detail_categories`) |
 | **Sem `tsvector` / full-text search do Postgres** | Use `like`/`ilike` ou índice dedicado |
 | **Sem `COUNT(*) FILTER (WHERE …)`** | Reescreva com agregação condicional via query builder |
 | **Booleanos** via `dialect.booleanType()` | Postgres `boolean`, MySQL `tinyint(1)`, SQLite inteiro |
@@ -761,7 +768,7 @@ O contador vive em uma tabela `code_counters(name, value)`, com uma linha por do
 ```ts
 // dentro da transação do caso de uso
 await this.database.client("code_counters")
-  .where({ name: "request" })
+  .where({ name: "requests" })
   .increment("value", 1);
 ```
 
@@ -985,7 +992,7 @@ export const CreateRequest = z.strictObject({
 
 > `demand` é o nome do bloco no contrato público já acordado; ver a exceção em [§ 3](#3-naming).
 >
-> Os limites por campo são os do **seed do formulário** ([`03-Data-Model.md` Apêndice A](./03-Data-Model.md#23-appendix-a-the-form-seed)); este exemplo é ilustrativo do formato, não da fonte dos limites. A definição do formulário é a fonte única: o schema da borda é gerado a partir dela.
+> Os limites por campo são os do **seed do formulário** ([`03-Data-Model.md` Apêndice A](./03-Data-Model.md#22-appendix-a-the-form-seed)); este exemplo é ilustrativo do formato, não da fonte dos limites. A definição do formulário é a fonte única: o schema da borda é gerado a partir dela.
 
 | Regra | Efeito |
 | --- | --- |
@@ -1062,11 +1069,11 @@ export const PERMISSIONS = {
   TRIAGE_WRITE: "triage:write",
   MAPPING_WRITE: "mapping:write",
   PRIORITIZATION_WRITE: "prioritization:write",
-  PENDING_ITEM_REVIEW: "pending-item:review",
-  INTERNAL_NOTE_WRITE: "internal-note:write",
+  PENDING_ITEM_REVIEW: "pending_item:review",
+  INTERNAL_NOTE_WRITE: "internal_note:write",
   AUDIT_READ: "audit:read",
   USER_MANAGE: "user:manage",
-  PORTAL_CONFIG_MANAGE: "portal-config:manage",
+  PORTAL_CONFIG_MANAGE: "portal_config:manage",
 } as const;
 
 export type Permission = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
@@ -1080,7 +1087,7 @@ export interface AuthorizationService {
 
 A matriz (permissão → perfis) fica em `core/authorization/profile-permissions.ts`. *Admin Root* recebe todas as permissões.
 
-O catálogo completo das chaves — 25 chaves `recurso:ação`, com o equivalente no legado — está em [`03-Data-Model.md` Apêndice B](./03-Data-Model.md#24-appendix-b-permission-catalogue). É o mesmo catálogo que vai semear `permissions` e `profile_permissions` quando o RBAC configurável entrar, sem que nenhum domínio mude — ver [ADR-0014](./adr/0014-permission-key-is-the-contract.md).
+O catálogo completo das chaves — 25 chaves `recurso:ação`, com o equivalente no legado — está em [`03-Data-Model.md` Apêndice B](./03-Data-Model.md#23-appendix-b-permission-catalogue). É o mesmo catálogo que vai semear `permissions` e `profile_permissions` quando o RBAC configurável entrar, sem que nenhum domínio mude — ver [ADR-0014](./adr/0014-permission-key-is-the-contract.md).
 
 | Nível | O que verifica | Onde |
 | --- | --- | --- |
@@ -1269,20 +1276,16 @@ Cada linha aponta a seção que define a regra. Um PR que muda mais de uma camad
 
 ---
 
-## 22. Pending Items
+## 22. Pendências de Arquitetura
+
+As pendências de **schema** estão no [`03-Data-Model.md` § 21](./03-Data-Model.md#21-pendências) — formulário configurável, aparências nomeadas, RBAC configurável, preferência de aparência, projeção da fila, identidade do solicitante e entropia do prefixo do protocolo. As de arquitetura são as daqui:
 
 | Pendência | Impacto | Gatilho |
 | --- | --- | --- |
 | Envelope de erro `{ error: { code, message, requestId } }` | Frontend precisa ajustar `readErrorMessage` | Release coordenada com o frontend |
-| RBAC configurável (tabelas novas `permissions` e `profile_permissions`; `profiles` continua sendo o eixo) | Troca da matriz em código por adapter de banco | Demanda do produto por perfis configuráveis |
 | Perfis: 5 no backend, 4 nos contratos publicados | Contrato de API desatualizado | Atualizar `contratos/` no repositório de documentação |
-| Entropia do prefixo do protocolo (o formato vigente é `MAAT-XXXX-XXXX`, 40 bits; a alternativa de 80 bits `MAAT3K7P-ABCD-EFGH` está pendente) | Enumeração do protocolo: 40 bits caem em ~127 dias a 100k rps | Endpoint público sem rate limit forte |
 | Suíte de testes automatizados | Rede de segurança ausente para a reescrita | Ferramentas de teste decididas |
-| Log de auditoria exposto na API | Pendente de contrato | Formalização do domínio de auditoria |
-| Formulário configurável | O formulário é fixo e semeado; a customização pede tela de administração e renderização dinâmica | Demanda do produto por formulário configurável |
-| Aparências nomeadas | O contrato devolve `{ light, dark }`; a lista de aparências com escolha do solicitante já está no contrato `portal-config-api-0_5` | Evolução do frontend para o contrato 0_5 |
-| RBAC configurável | As permissões são matriz em código; `permissions` e `profile_permissions` semeiam o mesmo catálogo | Demanda do produto por perfis configuráveis |
-| Preferência de aparência do solicitante | A escolha fica no cliente; o servidor não guarda preferência | A preferência precisar ser do servidor |
+| Trilha de auditoria exposta na API | Pendente de contrato | Formalização do domínio de auditoria |
 
 ---
 
@@ -1297,6 +1300,6 @@ Cada linha aponta a seção que define a regra. Um PR que muda mais de uma camad
 § 9  Domain Events            § 19 Allowed Dependencies
 § 10 Persistence with Knex    § 20 Anti-Patterns
 § 11 Transactions             § 21 Review Checklist
-§ 12 Errors                   § 22 Pending Items
+§ 12 Errors                   § 22 Pendências de Arquitetura
 § 13 Validation and the Border
 ```

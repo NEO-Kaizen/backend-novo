@@ -23,5 +23,5 @@ A forma final já está escrita: o contrato `portal-config-api-0_5` especifica p
 
 - O `PATCH /portal-config/theme` continua recebendo as duas paletas e grava a linha de cada slot.
 - Um token nulo significa "use o padrão": o frontend cobre token a token, e o contrato já permite o backend começar sem cores.
-- A lista de aparências e a escolha do solicitante são a etapa seguinte, e estão registradas como pendência em `03-Data-Model.md` § 22.
+- A lista de aparências e a escolha do solicitante são a etapa seguinte, e estão registradas como pendência em `03-Data-Model.md` § 21.
 - A URL de um asset é relativa ou absoluta — regra de aplicação, porque o upload acontece depois da escrita.
