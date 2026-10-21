@@ -440,10 +440,10 @@ Dados adicionais do usuário interno: cargo, especialidades, áreas atendidas, d
 | `id` | uuid | não | — | PK, UUID v4 |
 | `user_id` | uuid | não | — | FK → `users.id` (RESTRICT), UNIQUE `uk_user_details_user_id` |
 | `job_title` | text | sim | — | `ck_user_details_job_title_length` ≤ 100 |
-| `specialties` | text | sim | — | Texto livre |
+| `specialties` | text | sim | — | Lista de especialidades do analista, separada por vírgula — cada uma com até 100 caracteres, ao menos uma |
 | `is_available` | boolean | não | `true` | Disponibilidade do profissional — **não** é a conta |
 | `capacity` | integer | não | `5` | `ck_user_details_capacity_non_negative` ≥ 0 |
-| `notes` | text | sim | — | |
+| `notes` | text | sim | — | `ck_user_details_notes_length` ≤ 500 |
 | `created_at` | timestamp | não | `now` | |
 | `updated_at` | timestamp | não | `now` | |
 
@@ -452,6 +452,7 @@ Dados adicionais do usuário interno: cargo, especialidades, áreas atendidas, d
 **Invariantes**
 
 - Um `user_details` por usuário, no máximo.
+- **A extensão existe só para o perfil Analista**: criar ou promover a Analista exige a extensão, e nenhum outro perfil a tem.
 - `is_available` e `users.is_active` são coisas diferentes: a conta pode estar ativa e o profissional indisponível. Só `users.is_active` derruba token.
 
 ### 7.4 `user_detail_categories`
@@ -524,6 +525,7 @@ O **conteúdo** da solicitação não mora nesta tabela: o solicitante preenche 
 - `last_public_status_id` nunca está à frente de `status_id`: quando o status interno é restrito, o solicitante continua vendo o último status público. É assim que a solicitação é encerrada para o solicitante sem revelar o trâmite interno.
 - `closed_at` é gravado na mesma transação da mudança de status que entra num status terminal (`statuses.is_terminal`), e é zerado se a solicitação volta a um status não terminal.
 - O solicitante pode ser anônimo: `requester_user_id` é nulo e a identidade do solicitante está nas respostas do bloco `requester`.
+- **Toda solicitação nasce no status inicial do ciclo** — o primeiro status, o da abertura.
 - `created_by` é um rótulo, não uma referência — o portal público não tem usuário. `created_by_user_id` é a referência quando existe.
 - **A categoria é uma classificação, não uma pergunta.** É uma coluna — `requests.category_id` — e não um campo do formulário, porque status, prioridade e categoria são as três classificações da solicitação: as três são lidas pela fila, pelo dashboard e pela exportação, e as três são colunas tipadas. Ver [ADR-0012](./adr/0012-form-is-a-configurable-entity.md).
 - **O formulário só pergunta o que não é classificação.** A customização adiciona e remove perguntas; ela não toca nas classificações. Uma chave promovida deixa de ser perguntada, e o valor continua na coluna — que, com NOT NULL e FK, não pode ficar pendurada.
@@ -647,7 +649,7 @@ Conjunto append-only de triagens. Cada triagem é uma linha nova; a triagem atua
 | --- | --- | --- | --- | --- |
 | `id` | uuid | não | — | PK, UUID v4 |
 | `request_id` | uuid | não | — | FK → `requests.id` (RESTRICT) |
-| `is_adherent_to_scope` | boolean | sim | — | Nulo quando a aderência não foi avaliada |
+| `is_adherent_to_scope` | boolean | não | — | A aderência ao escopo é sempre avaliada |
 | `adherent_justification` | text | não | `` | Justificativa da aderência — vazia quando a solicitação é aderente |
 | `is_category_change` | boolean | não | `false` | A triagem reclassifica a solicitação |
 | `new_category_id` | uuid | sim | — | FK → `portal-config.categories.id` (RESTRICT) — a categoria proposta, resolvida pelo nome |
@@ -671,12 +673,14 @@ Conjunto append-only de triagens. Cada triagem é uma linha nova; a triagem atua
 **Invariantes**
 
 - **`triages` é a única casa do desfecho da triagem.** A solicitação não tem cópia de triagem: as colunas de triagem que existiam em `requests` no legado foram removidas.
-- **O Veredito é o Status de saída.** `exit_status_id` aponta para um status com `statuses.triage_mode = conclusion_only` — os status que podem encerrar uma triagem. Não há vocabulário próprio de desfecho: o mesmo conjunto de status serve ao ciclo e ao desfecho, e é o Administrador quem o configura.
+- **O Veredito é o Status de saída.** `exit_status_id` aponta para um status **ativo**, **não restrito**, com `statuses.triage_mode = conclusion_only` — os status que podem encerrar uma triagem. Não há vocabulário próprio de desfecho: o mesmo conjunto de status serve ao ciclo e ao desfecho, e é o Administrador quem o configura.
 - **O desfecho e a etapa não têm correspondência 1:1.** Uma triagem que conclui "fora do escopo" sai em "Não elegível"; uma que conclui "duplicada" sai em "Cancelado". O que o solicitante vê vem do Status (`is_public`), nunca da triagem.
 - **A triagem é append-only**: corrigir uma triagem é registrar outra linha.
 - `suggested_responsible` é texto livre — a triagem sugere um nome. O vínculo é `assignee_user_id`, e é o responsável efetivo. O rótulo e o e-mail congelam quem era o responsável no momento.
 - `occurred_at` ordena a linha do tempo da triagem por tempo de negócio.
-- **Os campos condicionais seguem a aderência.** Quando `is_adherent_to_scope` é falso, `adherent_justification` guarda a justificativa e `preliminary_complexity` e `perceived_risks` ficam vazias; quando é verdadeiro, vale o contrário. `new_category_id` só é gravado quando `is_category_change` é verdadeiro.
+- **Os campos condicionais seguem a aderência, e a exigência acompanha.** `adherent_justification` é obrigatória quando `is_adherent_to_scope` é falsa, e `preliminary_complexity` e `perceived_risks` são obrigatórias quando ela é verdadeira — o campo que não se aplica fica vazio. `new_category_id` só é gravado quando `is_category_change` é verdadeiro.
+- **Solicitação em status terminal não aceita triagem.** Concluir uma solicitação encerra o fluxo, e o status terminal não volta.
+- **A conclusão da triagem libera o responsável da solicitação.**
 - **`last_technical_message` é obrigatório quando o Status de saída é público.** Se o solicitante vê o desfecho, há algo a dizer a ele.
 
 **Regras de negócio**
@@ -691,7 +695,7 @@ Conjunto append-only de triagens. Cada triagem é uma linha nova; a triagem atua
 
 - A linha carrega o próprio autor e o próprio tempo, para ser legível sem JOIN: no legado a proveniência vivia só na auditoria, e a triagem era ordenada por um join com a trilha de auditoria.
 - `new_category_id` é uma referência à categoria, resolvida pelo nome contra as categorias ativas — no legado era texto.
-- `is_adherent_to_scope` é booleano anulável e `is_category_change` é booleano com `false` por padrão: o legado gravava "Sim", "Não" ou texto vazio em coluna de texto.
+- `is_adherent_to_scope` e `is_category_change` são booleanos: o legado gravava "Sim", "Não" ou texto vazio em coluna de texto.
 
 ---
 
@@ -729,6 +733,10 @@ Responsabilidade: sessão de mapeamento, participantes, agenda. Publica a porta 
 - Uma solicitação pode ter vários mapeamentos, mas **no máximo um aberto** — o mapeamento atual é o mais recente não concluído. A unicidade é da aplicação, garantida na transação que conclui o anterior.
 - `scheduled_for` é persistido em UTC e devolvido com `Z`.
 - A duração, quando informada, está entre 15 e 480 minutos.
+- **A modalidade obriga o dado do encontro:** `REMOTE` exige `meeting_link`, `IN_PERSON` exige `location`.
+- **O destino do mapeamento é um status ativo, não restrito, com `mapping_mode` `conclusion_only`.**
+- **Solicitação em status terminal não aceita mapeamento.** Concluir o mapeamento libera o designado do mapeamento.
+- **`requests.meeting_scheduled_for` e `requests.meeting_link` são a projeção da reunião agendada:** valem quando o destino é o status de mapeamento agendado, e são zerados quando o mapeamento conclui em outro destino. `mappings.scheduled_for` é a agenda do mapeamento.
 
 ### 10.2 `mapping_participants`
 
@@ -748,6 +756,7 @@ Participantes do mapeamento: internos (ligados a uma conta) ou externos (nome e 
 **Invariantes**
 
 - O mesmo usuário não aparece duas vezes no mesmo mapeamento. Participantes externos têm `user_id` nulo, e nulos não colidem entre si — vários externos são permitidos.
+- **O nome e o e-mail do participante interno vêm do cadastro**, no momento do mapeamento; a divergência do payload é ignorada. O participante externo carrega os valores do payload.
 - A unicidade por e-mail é case-insensitive sem índice funcional: o e-mail é normalizado na gravação e a unicidade é sobre o valor armazenado. O legado usava `lower(email)` num índice funcional, que não é portátil.
 
 **Regras de negócio**
@@ -817,7 +826,8 @@ Faixas de criticidade. A faixa é definida por faixa de score — por isso a tab
 
 - `min_score` ≤ `max_score`, garantido por constraint `ck_priorities_score_range`.
 - A tabela existe pelo **dado de referência** — a faixa de score e o peso padrão, administráveis — e não pelo rótulo: `level` é um dos quatro níveis que o código conhece.
-- **As faixas não podem se sobrepor.** Uma constraint de check não enxerga outras linhas: a não sobreposição é regra de aplicação, verificada quando a faixa é salva.
+- **As faixas não podem se sobrepor nem deixar lacuna**: todo score entre 10 e 50 cai em exatamente uma faixa. A sobreposição e a lacuna são regra de aplicação, verificadas quando a faixa é salva — uma constraint de check não enxerga outras linhas.
+- **`default_weight` é o peso de referência da faixa e nenhum cálculo o usa**: o score sai das notas e dos pesos dos critérios.
 
 ### 12.3 `prioritization_evaluations`
 
@@ -887,6 +897,7 @@ Responsabilidade: pendências de campo e de observação. Publica a porta `Pendi
 
 - **A pendência tem três estados: `requested`, `responded` e `validated`.** `overdue` não é estado armazenado — é derivado de `deadline`. O legado nunca gravou `overdue`; a fila e os relatórios calculam atraso em consulta.
 - **`requested` → `responded` → `validated`.** O solicitante responde; a equipe revisa e valida. A chave de permissão `pending_item:review` cobre o segundo passo.
+- Há **no máximo uma pendência em aberto por solicitação**; abrir outra é 409.
 - A resolução fica na própria pendência: uma pendência validada é uma pendência com `resolution`, `validated_by_user_id` e `validated_at`. Não há registro de respostas.
 - `requested_fields` só faz sentido para `type = field_edit`. Ele guarda as **chaves** do contrato, e `pending_item_fields` guarda os **ids** dos campos: as duas representações não são intercambiáveis. **A tabela filha é a fonte autoritativa**; o json é derivado dela e é regenerado quando a pendência é gravada.
 - Pendência pode pedir correção de um campo ou apenas registrar uma observação — `type` distingue os dois casos. O pedido de anexo é o par `requires_attachment` e `expected_attachment_type`, e não um terceiro tipo.
@@ -935,7 +946,7 @@ Responsabilidade: notas internas, marcas de leitura, linha do tempo. Publica a p
 | `id` | uuid | não | — | PK, UUID v4 |
 | `request_id` | uuid | não | — | FK → `requests.id` (RESTRICT) |
 | `author_user_id` | uuid | não | — | FK → `users.id` (RESTRICT) |
-| `author_profile_at_creation` | text | não | — | `ck_internal_notes_author_profile` ∈ `Solicitante`, `Analista`, `Gestor`, `Administrador`, `Admin Root` |
+| `author_profile_at_creation` | text | não | — | `ck_internal_notes_author_profile` ∈ `Analista`, `Gestor`, `Administrador`, `Admin Root` |
 | `content` | text | não | — | `ck_internal_notes_content_length` — `trim(content)` entre 1 e 4000 |
 | `created_at` | timestamp | não | `now` | |
 
@@ -956,7 +967,7 @@ Responsabilidade: notas internas, marcas de leitura, linha do tempo. Publica a p
 
 *Acrescentadas pelo modelo novo*
 
-- O perfil congelado tem os cinco perfis do produto. O legado registrava três — `Analista`, `Gestor`, `Administrador` — porque ainda não existiam `Solicitante` nem `Admin Root`.
+- O perfil congelado registra quem escreveu a nota — e **só o time escreve nota interna**, então o vocabulário do `ck_` são os perfis do time.
 
 ### 14.2 `internal_note_read_states`
 
@@ -1134,7 +1145,7 @@ As **aparências** do portal. Cada linha é um conjunto completo de cores e esti
 | Coluna | Tipo | Nulo | Default | Notas |
 | --- | --- | --- | --- | --- |
 | `id` | uuid | não | — | PK, UUID v4 |
-| `name` | text | não | — | `ck_categories_name_length` ≤ 80 — nome exibido |
+| `name` | text | não | — | nome exibido — `ck_categories_name_length` ≤ 40 — é o limite do contrato da API |
 | `normalized_name` | text | não | — | UNIQUE `uk_categories_normalized_name` — `trim().toLowerCase()` do nome, mantido pela aplicação |
 | `description` | text | sim | — | |
 | `is_active` | boolean | não | `true` | Categoria desativada sai da fila |
@@ -1147,6 +1158,7 @@ As **aparências** do portal. Cada linha é um conjunto completo de cores e esti
 **Invariantes**
 
 - A unicidade do nome é case-insensitive. Como índice funcional não é portátil, ela é garantida pela coluna normalizada, mantida pela aplicação — o nome exibido continua exatamente como o administrador digitou.
+- **O cadastro tem no máximo 50 categorias, com ao menos uma categoria ativa.**
 
 ### 17.4 `statuses`
 
@@ -1156,7 +1168,7 @@ As etapas do ciclo de vida — a configuração mais carregada do portal.
 | --- | --- | --- | --- | --- |
 | `id` | uuid | não | — | PK, UUID v4 |
 | `order_number` | integer | não | — | UNIQUE `uk_statuses_order_number` — ordem do ciclo |
-| `name` | text | não | — | UNIQUE `uk_statuses_name` ≤ 100 — nome exibido |
+| `name` | text | não | — | UNIQUE `uk_statuses_name` — nome exibido — `ck_statuses_name_length` ≤ 40 — é o limite do contrato da API, não a largura da coluna |
 | `description` | text | sim | — | |
 | `is_public` | boolean | não | `false` | Status visível ao solicitante |
 | `is_active` | boolean | não | `true` | Status desativado sai do ciclo |
@@ -1174,8 +1186,11 @@ As etapas do ciclo de vida — a configuração mais carregada do portal.
 **Invariantes**
 
 - A visibilidade tem **dois** predicados independentes: `is_public` (visível ao solicitante) e `is_restricted` (que nenhum perfil pode assumir). Não há coluna de visibilidade — a combinação dos dois é o que o glossário chama de "pública, interna ou restrita".
+- **Um status restrito tem `triage_mode` e `mapping_mode` `none`** — ele não é alvo de triagem nem de mapeamento.
 - `is_terminal` marca o status que encerra a solicitação; é o que dispara `requests.closed_at`.
 - `triage_mode` e `mapping_mode` dizem o que é permitido fazer no status: nada, livremente, ou só a conclusão da etapa. A regra de transição mora aqui, e não numa tabela de transições.
+- **Quem tem custódia da solicitação só alcança um status ativo, não restrito, com `triage_mode` ou `mapping_mode` `free`**; o Administrador alcança qualquer status ativo. Um status terminal não é saída.
+- **O cadastro tem no máximo 50 status, com ao menos um status ativo e ao menos um status terminal.**
 - **O Status de saída de uma triagem é um status com `triage_mode = conclusion_only`.** É o que define o conjunto de desfechos possíveis, e o que faz do Veredito uma etapa do ciclo e não um vocabulário paralelo.
 - **A mudança de status para um status com `is_restricted` é do Administrador.** Nenhum outro perfil o assume.
 
