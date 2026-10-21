@@ -14,7 +14,7 @@ Decidimos o seguinte.
 
 **O catálogo é por entidade e vive em código.** `audit_entries.entity_type` espelha o catálogo; `audit_entries.action` é uma coluna própria, com a lista global = união das ações de cada entidade. O par (entidade, ação) é validado pelo catálogo em código, como no legado. `read` e `write` saem do vocabulário. `access_denied` também sai: pela ADR-0007 a recusa não é alteração, e vai para `attempts`.
 
-**Toda entidade que pode ser escrita tem tipo de entidade.** Entidade cujo ciclo de vida é controlado pelo pai é auditada sob o pai — `pending_item_field` sob `pending_item`, `user_detail_category` sob `user`.
+**Toda entidade que pode ser escrita tem tipo de entidade.** Entidade cujo ciclo de vida é controlado pelo pai é auditada sob o pai — `pending_item_field` sob `pending_item`, `analyst_detail_category` sob `analyst_detail`.
 
 **A trilha carrega a solicitação.** `audit_entries` e `attempts` ganham `request_id` nullable. O ADR-0007 já diz que o payload do evento de auditoria carrega o `requestId`; sem coluna, esse id só existia dentro de `previous_value`/`new_value`, em JSON, onde não há índice. Com a coluna, a **Linha do tempo** — a sequência unificada dos acontecimentos de uma solicitação — é uma consulta indexada, e o domínio `audit` não precisa conhecer o `requests` para responder por ela.
 

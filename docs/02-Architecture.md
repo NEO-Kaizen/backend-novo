@@ -144,7 +144,7 @@ knexfile.ts
 | Domínio | Responsabilidade | Tabelas | Portas publicadas |
 | --- | --- | --- | --- |
 | `auth` | Login, logout, sessão, troca de senha | `credentials` — **não há tabela de sessões**: a sessão é o token | `AuthReader` |
-| `users` | Cadastro, perfil, dados do usuário, avatar, contato | `profiles`, `users`, `user_details`, `user_detail_categories` | `UserReader` |
+| `users` | Cadastro, perfil, dados do usuário, avatar, contato | `profiles`, `users`, `analyst_details`, `analyst_detail_categories` | `UserReader` |
 | `requests` | Ciclo de vida da solicitação, protocolo, anexos | `requests`, `form_answers`, `attachments`, `request_time_preferences` | `RequestReader` |
 | `triage` | Triagem: aderência, escopo, veredito | `triages` | `TriageReader` |
 | `mapping` | Sessão de mapeamento, participantes, agenda | `mappings`, `mapping_participants` | `MappingReader` |
@@ -708,7 +708,7 @@ Estas regras são o que torna a troca de banco uma realidade e não uma intenç�
 | Repositório usa **apenas o query builder** do Knex | Preserva a diferença entre as engines |
 | **IDs gerados pela aplicação** (`crypto.randomUUID()`) | Elimina `nextval()`, `::uuid`, sequences e colunas `serial` |
 | **Sem tipo `ENUM`** | Use `text` com constraint de check ou tabela de lookup |
-| **Sem coluna `ARRAY`** | Use tabela filha (`mapping_participants`, `user_detail_categories`) |
+| **Sem coluna `ARRAY`** | Use tabela filha (`mapping_participants`, `analyst_detail_categories`) |
 | **Sem `tsvector` / full-text search do Postgres** | Use `like`/`ilike` ou índice dedicado |
 | **Sem `COUNT(*) FILTER (WHERE …)`** | Reescreva com agregação condicional via query builder |
 | **Booleanos** via `dialect.booleanType()` | Postgres `boolean`, MySQL `tinyint(1)`, SQLite inteiro |

@@ -43,7 +43,7 @@ Por isso cada seção de domínio fecha com o bloco **Regras de negócio**, divi
 | Domínio | Tabelas | Escreve |
 | --- | --- | --- |
 | `auth` | `credentials` | `auth` |
-| `users` | `profiles`, `users`, `user_details`, `user_detail_categories` | `users` |
+| `users` | `profiles`, `users`, `analyst_details`, `analyst_detail_categories` | `users` |
 | `requests` | `requests`, `form_answers`, `attachments`, `request_time_preferences` | `requests` |
 | `triage` | `triages` | `triage` |
 | `mapping` | `mappings`, `mapping_participants` | `mapping` |
@@ -65,7 +65,7 @@ As regras valem para todas as tabelas deste documento. A justificativa de cada u
 
 ### 2.1 Tables
 
-`snake_case`, no plural, em inglês, com o nome do domínio refletido no nome quando a tabela é específica dele (`internal_notes`, `mapping_participants`). Tabela que descreve um **documento 1:1** com outro usa o nome do pai com o sufixo `_details` (`user_details`).
+`snake_case`, no plural, em inglês, com o nome do domínio refletido no nome quando a tabela é específica dele (`internal_notes`, `mapping_participants`). Tabela que descreve um **documento 1:1** com outro usa o nome do pai com o sufixo `_details` (`analyst_details`).
 
 **Identificadores técnicos não são vocabulário.** Os nomes de tabela, coluna, constraint e chave de permissão seguem a convenção de nomenclatura em inglês e não o vocabulário do domínio, que está em [`GLOSSARY.md`](../GLOSSARY.md). Exceções, por usarem palavra do domínio: `themes` (a Aparência) e `pending_items` / `pending_item_fields` (a Pendência).
 
@@ -75,7 +75,7 @@ As regras valem para todas as tabelas deste documento. A justificativa de cada u
 
 Colunas de texto com limite de tamanho têm constraint `ck_` própria, nomeada `ck_<tabela>_<coluna>_length`. É a única forma de impor o limite nas três engines: o SQLite ignora o comprimento declarado em `varchar(n)`, e o `ck_` torna o limite explícito e uniforme em Postgres e MySQL. Onde a tabela deste documento escreve apenas "≤ N", o nome da constraint é o implícito acima.
 
-Constraint que não é só de comprimento — faixa de valor, faixa numérica, formato — se nomeia `ck_<tabela>_<coluna>_<assunto>`: `ck_criteria_weight_range`, `ck_priorities_score_range`, `ck_priorities_min_score_range`, `ck_priorities_max_score_range`, `ck_user_details_capacity_non_negative`, `ck_themes_hex`, `ck_themes_gradient_angle`, `ck_mappings_duration_minutes`. A regra do comprimento continua valendo: `ck_internal_notes_content_length`, `ck_themes_avatar_url_length`, `ck_themes_login_image_url_length`, `ck_themes_favicon_url_length`.
+Constraint que não é só de comprimento — faixa de valor, faixa numérica, formato — se nomeia `ck_<tabela>_<coluna>_<assunto>`: `ck_criteria_weight_range`, `ck_priorities_score_range`, `ck_priorities_min_score_range`, `ck_priorities_max_score_range`, `ck_analyst_details_capacity_non_negative`, `ck_themes_hex`, `ck_themes_gradient_angle`, `ck_mappings_duration_minutes`. A regra do comprimento continua valendo: `ck_internal_notes_content_length`, `ck_themes_avatar_url_length`, `ck_themes_login_image_url_length`, `ck_themes_favicon_url_length`.
 
 Tabela que modela **uma instância** de um conceito repetível não prefixa as colunas com a instância: `themes` tem `background`, não `light_background` — a instância é a linha.
 
@@ -110,7 +110,7 @@ Coluna nomeada `<entidade_no_singular>_id`, referenciando `id` da outra tabela. 
 
 **Três colunas não seguem o padrão `<entidade>_id`**, porque o nome carrega a função e não o alvo: `form_answers.field_id` e `pending_item_fields.form_field_id` apontam para `forms.form_fields.id`; `internal_note_read_states.last_read_note_id` aponta para `internal_notes.id`. São exceções intencionais.
 
-A referência aponta para a **entidade**, nunca para a sua extensão 1:1. A identidade de uma pessoa é `users.id`; `user_details` é extensão de `users` e nunca é referenciada. A mesma regra vale para qualquer extensão 1:1 — `user_details` também é alcançada por `users.id`.
+A referência aponta para a **entidade**, nunca para a sua extensão 1:1. A identidade de uma pessoa é `users.id`; `analyst_details` é extensão de `users` e nunca é referenciada. A mesma regra vale para qualquer extensão 1:1 — `analyst_details` também é alcançada por `users.id`.
 
 Relações com **naturalmente mais de uma origem** são polimórficas e **não têm FK** — é o caso de `audit_entries.entity_id`, que aponta para qualquer entidade auditável. A regra é a exceção, não o padrão.
 
@@ -126,11 +126,13 @@ Relações com **naturalmente mais de uma origem** são polimórficas e **não t
 
 Coluna que guarda um instante do processo, e não da escrita, é declarada por conta própria e não substitui `created_at`/`updated_at`: `prioritization_evaluations.calculated_at`, `pending_items.responded_at`, `pending_items.validated_at`, `requests.closed_at`, `requests.meeting_scheduled_for`, `requests.last_external_update_at`, `mappings.scheduled_for`, `mappings.concluded_at`.
 
+**Quem tocou por último é coluna.** `requests.updated_by_user_id`, `mappings.updated_by_user_id` e `portal_settings.updated_by_user_id` respondem a pergunta "quem mexeu nisto" sem varrer a auditoria — a auditoria continua sendo o rastro completo.
+
 Um único tipo de timestamp em toda a base, via `dialect.timestampType()`. `occurred_at` é tempo de negócio, não ordem de commit ([ADR-0007](./adr/0007-event-driven-audit.md)).
 
 ### 2.6 Booleans
 
-Prefixo `is_` ou `has_`. Um "enum" de dois valores é boolean: `categories.status` (active/inactive) virou `categories.is_active`, e `user_details.status` virou `user_details.is_available`.
+Prefixo `is_` ou `has_`. Um "enum" de dois valores é boolean: `categories.status` (active/inactive) virou `categories.is_active`, e `analyst_details.status` virou `analyst_details.is_available`.
 
 **Exceções, já no modelo:** `form_fields.required` e `form_fields.must_be_future` (o prefixo seria redundante com o nome do campo); `credentials.must_change_password` e `pending_items.requires_attachment` (o prefixo repetiria o verbo do substantivo que já está no nome); `form_answers.value_boolean` (é a **coluna de valor** de uma resposta booleana, não uma marca); e os tokens de Aparência `themes.logo_use_primary_color` e `themes.status_*_background_locked` (o prefixo quebraria o nome do token que o frontend consome).
 
@@ -151,7 +153,7 @@ Consequências:
 - O mesmo conjunto não é armazenado duas vezes **como coluna de classificação**. Onde existe tabela de referência, o resto referencia por FK — `prioritization_evaluations.priority_id` é a **única** casa da faixa ([ADR-0016](./adr/0016-priority-has-one-home.md)). *Exceção:* os campos `select` do formulário têm opções inline que coincidem com um conjunto do produto; são vocabulários de formulário, não de classificação, e não têm FK porque o formulário é um catálogo genérico. Nenhum deles é classificação — **status, prioridade e categoria são as três**.
 - Os quatro `select` do formulário usam duas escalas de gravidade diferentes: `perceivedCriticality` (urgência percebida pelo solicitante) e `operationalImpact` (impacto do pedido no processo). São perguntas distintas e alimentam critérios distintos da priorização.
 - Tabela de referência referenciada **pelo código** precisa de chave estável: `profiles.name` **é** a chave de `core/authorization/profile-permissions.ts`.
-- Tabela de referência referenciada **por id** não precisa de chave estável: `statuses` usa `id` e `order_number`.
+- Tabela de referência referenciada **por id** não precisa de chave estável: `statuses` usa `id` e `order_number` — e `key`, que é o que o código referencia.
 - Adicionar um valor a um vocabulário do código toca o catálogo **e** a constraint `ck_` no mesmo pull request. São espelhos; um PR que muda um sem o outro está quebrado.
 
 **Toda entidade que pode ser escrita tem tipo de entidade auditável.** A lista vive no catálogo de auditoria em código e é espelhada em `ck_audit_entries_entity_type` ([ADR-0020](./adr/0020-audit-trail-shape.md)). Entidade cujo ciclo de vida é controlado pelo pai é auditada sob o pai. Duas ficam de fora: `internal_note_read_state` é auditada sob `internal_note`, e `code_counters` é infraestrutura, fora do domínio.
@@ -219,10 +221,10 @@ Duas consequências operacionais:
 
 | # | Domínio | Tabelas |
 | --- | --- | --- |
-| 1 | `users` | `profiles`, `users`, `user_details` |
+| 1 | `users` | `profiles`, `users`, `analyst_details` |
 | 2 | `forms` | `forms`, `form_blocks`, `form_fields` |
 | 3 | `portal-config` | `statuses`, `categories`, `themes`, `portal_settings` |
-| 4 | `users` | `user_detail_categories` |
+| 4 | `users` | `analyst_detail_categories` |
 | 5 | `prioritization` | `criteria`, `priorities` |
 | 6 | `auth` | `credentials` |
 | 7 | `requests` | `requests`, `form_answers`, `request_time_preferences` |
@@ -347,33 +349,33 @@ A conta. Não carrega material de senha — esse é do domínio `auth`.
 - A conta guarda a **própria cópia** de contato — área, departamento, gestor e contato adicional. O que a solicitação carrega é uma resposta, e não esta cópia ([ADR-0013](./adr/0013-requester-is-an-answer-not-a-table.md)).
 - O token **não** carrega o perfil como autoridade: o middleware relê usuário e perfil do banco a cada requisição ([02-Architecture § 14.1](./02-Architecture.md#141-session)). Desativação e mudança de perfil valem na hora.
 
-### 7.3 `user_details`
+### 7.3 `analyst_details`
 
-Dados adicionais do usuário interno: cargo, especialidades, áreas atendidas, disponibilidade. É a extensão 1:1 de `users`.
+Dados profissionais do Analista: cargo, especialidades, áreas atendidas, disponibilidade. É a extensão 1:1 de `users`.
 
 | Coluna | Tipo | Nulo | Default | Notas |
 | --- | --- | --- | --- | --- |
 | `id` | uuid | não | — | PK, UUID v4 |
-| `user_id` | uuid | não | — | FK → `users.id` (RESTRICT), UNIQUE `uk_user_details_user_id` |
-| `job_title` | text | sim | — | `ck_user_details_job_title_length` ≤ 100 |
+| `user_id` | uuid | não | — | FK → `users.id` (RESTRICT), UNIQUE `uk_analyst_details_user_id` |
+| `job_title` | text | sim | — | `ck_analyst_details_job_title_length` ≤ 100 |
 | `specialties` | text | sim | — | Lista de especialidades do analista, separada por vírgula — cada uma com até 100 caracteres, ao menos uma |
-| `is_available` | boolean | não | `true` | Disponibilidade do profissional — **não** é a conta |
-| `capacity` | integer | não | `5` | `ck_user_details_capacity_non_negative` ≥ 0 |
-| `notes` | text | sim | — | `ck_user_details_notes_length` ≤ 500 |
+| `is_available` | boolean | não | `true` | Disponibilidade do analista — **não** é a conta |
+| `capacity` | integer | não | `5` | `ck_analyst_details_capacity_non_negative` ≥ 0 |
+| `notes` | text | sim | — | `ck_analyst_details_notes_length` ≤ 500 |
 | `created_at` | timestamp | não | `now` | |
 | `updated_at` | timestamp | não | `now` | |
 
-**Índices** — `uk_user_details_user_id`.
+**Índices** — `uk_analyst_details_user_id`.
 
 **Invariantes**
 
-- Um `user_details` por usuário, no máximo.
+- Um `analyst_details` por usuário, no máximo.
 - **A extensão existe só para o perfil Analista**: criar ou promover a Analista exige a extensão, e nenhum outro perfil a tem.
-- `is_available` e `users.is_active` são coisas diferentes: a conta pode estar ativa e o profissional indisponível. Só `users.is_active` derruba token.
+- `is_available` e `users.is_active` são coisas diferentes: a conta pode estar ativa e o analista indisponível. Só `users.is_active` derruba token.
 
-### 7.4 `user_detail_categories`
+### 7.4 `analyst_detail_categories`
 
-Áreas atendidas pelo usuário interno. Tabela filha, e não coluna `ARRAY` ou texto com ids ([02-Architecture § 10.3](./02-Architecture.md#103-portability-rules)). Aponta para `users.id` — a identidade do profissional é a conta, e não a extensão 1:1.
+Áreas atendidas pelo Analista. Tabela filha, e não coluna `ARRAY` ou texto com ids ([02-Architecture § 10.3](./02-Architecture.md#103-portability-rules)). Aponta para `users.id` — a identidade do analista é a conta, e não a extensão 1:1.
 
 | Coluna | Tipo | Nulo | Default | Notas |
 | --- | --- | --- | --- | --- |
@@ -382,12 +384,12 @@ Dados adicionais do usuário interno: cargo, especialidades, áreas atendidas, d
 | `category_id` | uuid | não | — | FK → `portal-config.categories.id` (RESTRICT) |
 | `created_at` | timestamp | não | `now` | |
 
-**Índices** — UNIQUE `uk_user_detail_categories_user_category` (`user_id`, `category_id`).
+**Índices** — UNIQUE `uk_analyst_detail_categories_user_category` (`user_id`, `category_id`).
 
 **Invariantes**
 
 - A mesma categoria não é atendida duas vezes pelo mesmo usuário.
-- Quem atende categorias tem extensão: uma linha em `user_detail_categories` pressupõe a linha correspondente em `user_details`, criada na mesma transação. É regra de aplicação — uma constraint de check não enxerga outras linhas.
+- Quem atende categorias tem extensão: uma linha em `analyst_detail_categories` pressupõe a linha correspondente em `analyst_details`, criada na mesma transação. É regra de aplicação — uma constraint de check não enxerga outras linhas.
 
 **Regras de negócio**
 
@@ -428,10 +430,11 @@ O **conteúdo** da solicitação não mora nesta tabela: o solicitante preenche 
 | `closed_at` | timestamp | sim | — | Momento do encerramento |
 | `created_by` | text | não | — | `ck_requests_created_by_length` ≤ 254 — rótulo de quem abriu |
 | `created_by_user_id` | uuid | sim | — | FK → `users.id` (RESTRICT) — nulo quando o registro é do portal público |
+| `updated_by_user_id` | uuid | sim | — | FK → `users.id` (RESTRICT) — quem tocou a solicitação por último |
 | `created_at` | timestamp | não | `now` | |
 | `updated_at` | timestamp | não | `now` | |
 
-**Relações** — `form_id` → `forms.forms.id`; `requester_user_id` → `users.id`; `status_id` e `last_public_status_id` → `portal-config.statuses.id`; `category_id` → `portal-config.categories.id`; `responsible_id` → `users.id`; `created_by_user_id` → `users.id`.
+**Relações** — `form_id` → `forms.forms.id`; `requester_user_id` → `users.id`; `status_id` e `last_public_status_id` → `portal-config.statuses.id`; `category_id` → `portal-config.categories.id`; `responsible_id` → `users.id`; `created_by_user_id` e `updated_by_user_id` → `users.id`.
 
 **Índices** — UNIQUE `uk_requests_protocol`; `idx_requests_status_id`; `idx_requests_category_id`; `idx_requests_requester_user_id`; `idx_requests_responsible_id`; `idx_requests_created_at`.
 
@@ -441,7 +444,7 @@ O **conteúdo** da solicitação não mora nesta tabela: o solicitante preenche 
 - `last_public_status_id` nunca está à frente de `status_id`: quando o status interno é restrito, o solicitante continua vendo o último status público. É assim que a solicitação é encerrada para o solicitante sem revelar o trâmite interno.
 - `closed_at` é gravado na mesma transação da mudança de status que entra num status terminal (`statuses.is_terminal`), e é zerado se a solicitação volta a um status não terminal.
 - O solicitante pode ser anônimo: `requester_user_id` é nulo e a identidade do solicitante está nas respostas do bloco `requester`.
-- **Toda solicitação nasce no status inicial do ciclo** — o primeiro status, o da abertura.
+- **Toda solicitação nasce no status de `key = solicitacao_enviada`** — o status inicial do ciclo.
 - `created_by` é um rótulo, não uma referência — o portal público não tem usuário. `created_by_user_id` é a referência quando existe.
 - **A classificação é coluna, não pergunta.** Status, Prioridade e Categoria são as três classificações da solicitação: as três são colunas tipadas e lidas pela fila, pelo dashboard e pela exportação. A customização do formulário adiciona e remove perguntas e não toca nas classificações. Ver [ADR-0012](./adr/0012-form-is-a-configurable-entity.md).
 - **A categoria chega pelo payload e é resolvida na escrita.** O frontend manda `demand.category` com o **nome** escolhido; o backend resolve o nome contra as categorias ativas e grava o `id`. Nome inválido é 400.
@@ -519,7 +522,7 @@ Arquivos enviados com a solicitação.
 | `file_path` | text | não | — | `ck_attachments_file_path_length` ≤ 1000 — caminho do arquivo no armazenamento |
 | `content_type` | text | não | — | `ck_attachments_content_type` ∈ `application/pdf`, `application/vnd.openxmlformats-officedocument.wordprocessingml.document`, `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`, `image/png`, `image/jpeg` |
 | `size_bytes` | integer | não | — | `ck_attachments_size_bytes` > 0 e ≤ 10485760 |
-| `is_restricted` | boolean | não | `false` | Anexo de conteúdo restrito |
+| `is_restricted` | boolean | não | `false` | Anexo de conteúdo restrito — **sem regra implementada**; ver [§ 21](#21-pendências) |
 | `uploaded_by` | text | sim | — | `ck_attachments_uploaded_by_length` ≤ 100 — rótulo de quem enviou |
 | `uploaded_by_user_id` | uuid | sim | — | FK → `users.id` (RESTRICT) — nulo quando quem enviou é o solicitante anônimo |
 | `uploaded_at` | timestamp | não | `now` | |
@@ -549,6 +552,7 @@ Slots de horário que o solicitante marcou como preferência.
 
 - O mesmo slot não é registrado duas vezes para a mesma solicitação.
 - No máximo três slots por solicitação, e todos no futuro ou no dia de hoje.
+- **`request_time_preferences.scheduled_for` é a fronteira do fuso.** O slot chega sem offset (`yyyy-mm-ddThh:mm`), é interpretado no fuso do portal e gravado em UTC como o resto da base; o frontend traduz de volta na leitura.
 
 ---
 
@@ -768,7 +772,7 @@ A avaliação corrente da solicitação. O registro de reavaliações **não** t
 - **A soma dos pesos dos critérios ativos tem de ser maior que zero.** Sem isso não há score — é erro de aplicação, não de banco.
 - A faixa resultante é uma referência à tabela de faixas, não uma cópia do texto. O legado guardava a classificação como `ENUM` duplicado aqui.
 - A reavaliação é auditada como `prioritization_evaluation`, com a ação `evaluate` — é o que guarda o registro de reavaliações que esta tabela não tem.
-- A forma do `notes` — um objeto — é validada na borda com Zod; o banco valida só o que é portátil.
+- **O `notes` é indexado por `criteria.code`.** O vocabulário das chaves do objeto é o dos critérios ativos, e o denominador da fórmula acompanha a lista.
 
 **Regras de negócio**
 
@@ -797,7 +801,8 @@ Responsabilidade: pendências de campo e de observação. Publica a porta `Pendi
 | `expected_attachment_type` | text | sim | — | `ck_pending_items_expected_attachment_type_length` ≤ 100 |
 | `status` | text | não | `requested` | `ck_pending_items_status` ∈ `requested`, `responded`, `validated` |
 | `deadline` | date | sim | — | |
-| `resolution` | text | sim | — | Texto da resolução |
+| `resolution` | text | sim | — | O texto da validação, escrito pela equipe |
+| `response_text` | text | sim | — | A resposta do solicitante |
 | `responded_at` | timestamp | sim | — | Quando o solicitante respondeu |
 | `validated_at` | timestamp | sim | — | Quando a equipe validou |
 | `validated_by_user_id` | uuid | sim | — | FK → `users.id` (RESTRICT) — quem validou |
@@ -812,7 +817,8 @@ Responsabilidade: pendências de campo e de observação. Publica a porta `Pendi
 - **A pendência tem três estados: `requested`, `responded` e `validated`.** `overdue` não é estado armazenado — é derivado de `deadline`; a fila e os relatórios calculam atraso em consulta.
 - **`requested` → `responded` → `validated`.** O solicitante responde; a equipe revisa e valida. A chave de permissão `pending_item:review` cobre o segundo passo.
 - Há **no máximo uma pendência em aberto por solicitação**; abrir outra é 409.
-- A resolução fica na própria pendência: uma pendência validada é uma pendência com `resolution`, `validated_by_user_id` e `validated_at`. Não há registro de respostas.
+- **A pendência guarda duas vozes, e elas não se misturam:** `response_text` é o que o solicitante respondeu, e `resolution` é o que a equipe escreveu ao validar. Quem validou e quando ficam em `validated_by_user_id` e `validated_at`.
+- **Abrir pendência move a solicitação para o status de `key = pendente_de_informacoes`**; quando todas as pendências em aberto da solicitação são respondidas, ela volta para `key = em_triagem`; reabrir devolve.
 - `requested_fields` só faz sentido para `type = field_edit`. Ele guarda as **chaves** do contrato, e `pending_item_fields` guarda os **ids** dos campos: as duas representações não são intercambiáveis. **A tabela filha é a fonte autoritativa**; o json é derivado dela e é regenerado quando a pendência é gravada.
 - Pendência pode pedir correção de um campo ou apenas registrar uma observação — `type` distingue os dois casos. O pedido de anexo é o par `requires_attachment` e `expected_attachment_type`, e não um terceiro tipo.
 - **Uma pendência pede a correção de um campo do formulário.** A classificação da solicitação não é campo: a categoria é corrigida pela equipe, na triagem.
@@ -917,7 +923,7 @@ O que foi de fato criado ou alterado. Gravada na mesma transação da alteraçã
 | --- | --- | --- | --- | --- |
 | `id` | uuid | não | — | PK, UUID v4 |
 | `request_id` | uuid | sim | — | FK → `requests.id` (RESTRICT) — a solicitação em cujo contexto o fato ocorreu |
-| `entity_type` | text | não | — | `ck_audit_entries_entity_type` — espelha o catálogo de auditoria em código (`core/audit/audit-catalogue.ts`): `request`, `form_answer`, `attachment`, `triage`, `mapping`, `mapping_participant`, `pending_item`, `internal_note`, `request_time_preference`, `user`, `user_detail`, `profile`, `status`, `category`, `priority`, `prioritization_evaluation`, `criterion`, `theme`, `portal_setting`, `form`, `form_block`, `form_field` |
+| `entity_type` | text | não | — | `ck_audit_entries_entity_type` — espelha o catálogo de auditoria em código (`core/audit/audit-catalogue.ts`): `request`, `form_answer`, `attachment`, `triage`, `mapping`, `mapping_participant`, `pending_item`, `internal_note`, `request_time_preference`, `user`, `analyst_detail`, `profile`, `status`, `category`, `priority`, `prioritization_evaluation`, `criterion`, `theme`, `portal_setting`, `form`, `form_block`, `form_field` |
 | `entity_id` | uuid | não | — | Entidade auditada — **polimórfico, sem FK** |
 | `action` | text | não | — | `ck_audit_entries_action` — o verbo da ação, no vocabulário do catálogo |
 | `actor_user_id` | uuid | sim | — | FK → `users.id` (RESTRICT) |
@@ -1072,7 +1078,7 @@ As **aparências** do portal. Cada linha é um conjunto completo de cores e esti
 **Invariantes**
 
 - A unicidade do nome é case-insensitive. Como índice funcional não é portátil, ela é garantida pela coluna normalizada, mantida pela aplicação — o nome exibido continua exatamente como o administrador digitou.
-- **O cadastro tem no máximo 50 categorias, com ao menos uma categoria ativa.**
+- **Ao menos uma categoria deve estar ativa.** A fila ordena pelas categorias ativas, e o formulário oferece as mesmas.
 
 ### 17.4 `statuses`
 
@@ -1081,6 +1087,7 @@ As etapas do ciclo de vida — a configuração mais carregada do portal.
 | Coluna | Tipo | Nulo | Default | Notas |
 | --- | --- | --- | --- | --- |
 | `id` | uuid | não | — | PK, UUID v4 |
+| `key` | text | não | — | UNIQUE `uk_statuses_key` — a identidade estável do status, do código |
 | `order_number` | integer | não | — | UNIQUE `uk_statuses_order_number` — ordem do ciclo |
 | `name` | text | não | — | UNIQUE `uk_statuses_name` — nome exibido — `ck_statuses_name_length` ≤ 40 — é o limite do contrato da API, não a largura da coluna |
 | `description` | text | sim | — | |
@@ -1099,12 +1106,15 @@ As etapas do ciclo de vida — a configuração mais carregada do portal.
 
 **Invariantes**
 
+- **A `key` é a identidade do status, e ela é do código.** O código referencia status por `key` — nunca por `id`, nunca por `name`. O `name` é o rótulo que o Administrador edita; a `key` é o endereço.
+- **A `key` do seed do ciclo de referência:** `solicitacao_enviada`, `aguardando_triagem`, `em_triagem`, `pendente_de_informacoes`, `aguardando_mapeamento`, `mapeamento_agendado`, `em_mapeamento`, `em_analise_de_viabilidade`, `elegivel`, `nao_elegivel`, `priorizado`, `backlog`, `direcionada_para_outra_area`, `em_desenvolvimento`, `em_homologacao`, `concluido`, `cancelado`.
+- **Os status de núcleo são imutáveis.** São os sete com `is_core = true`: a `key` é reservada, e nem o nome, nem `is_public`, `is_terminal`, `is_restricted`, `triage_mode` ou `mapping_mode` podem mudar — nem a linha pode ser desativada.
 - A visibilidade tem **dois** predicados independentes: `is_public` (visível ao solicitante) e `is_restricted` (que nenhum perfil pode assumir). Não há coluna de visibilidade — a combinação dos dois é o que o glossário chama de "pública, interna ou restrita".
 - **Um status restrito tem `triage_mode` e `mapping_mode` `none`** — ele não é alvo de triagem nem de mapeamento.
 - `is_terminal` marca o status que encerra a solicitação; é o que dispara `requests.closed_at`.
 - `triage_mode` e `mapping_mode` dizem o que é permitido fazer no status: nada, livremente, ou só a conclusão da etapa. A regra de transição mora aqui, e não numa tabela de transições.
 - **Quem tem custódia da solicitação só alcança um status ativo, não restrito, com `triage_mode` ou `mapping_mode` `free`**; o Administrador alcança qualquer status ativo. Um status terminal não é saída.
-- **O cadastro tem no máximo 50 status, com ao menos um status ativo e ao menos um status terminal.**
+- **Ao menos um status deve estar ativo, e ao menos um status terminal.** Toda solicitação precisa poder chegar a um encerramento.
 - **O Status de saída de uma triagem é um status com `triage_mode = conclusion_only`.** É o que define o conjunto de desfechos possíveis, e o que faz do Veredito uma etapa do ciclo e não um vocabulário paralelo.
 - **A mudança de status para um status com `is_restricted` é do Administrador.** Nenhum outro perfil o assume.
 
@@ -1221,8 +1231,8 @@ Schema sem dono de domínio ([ADR-0011](./adr/0011-infrastructure-schema-without
 | --- | --- | --- | --- |
 | 1 | `profiles` | `users` | `profiles` |
 | 2 | `users` | `users` | `users` |
-| 3 | `user_details` | `users` | `details_professional` |
-| 4 | `user_detail_categories` | `users` | `attended_category_ids` (texto) |
+| 3 | `analyst_details` | `users` | `details_professional` |
+| 4 | `analyst_detail_categories` | `users` | `attended_category_ids` (texto) |
 | 5 | `credentials` | `auth` | `users` (colunas soltas) |
 | 6 | `forms` | `forms` | — (novo) |
 | 7 | `form_blocks` | `forms` | — (novo) |
@@ -1259,7 +1269,7 @@ Schema sem dono de domínio ([ADR-0011](./adr/0011-infrastructure-schema-without
 | `requests.title`, `process_name` → respostas | O conteúdo do formulário tem uma casa só; a classificação (a categoria) continua sendo coluna |
 | `requests.priority_id` → sai | A faixa tem uma casa só: a avaliação corrente — [ADR-0016](./adr/0016-priority-has-one-home.md) |
 | `triages.result` (texto) → sai | O desfecho da triagem é o Status de saída, e o texto é a justificativa da conclusão |
-| `details_professional` → `user_details` + `user_detail_categories` | O profissional é o usuário interno; a lista de categorias vira tabela filha |
+| `details_professional` → `analyst_details` + `analyst_detail_categories` | O profissional é o usuário interno; a lista de categorias vira tabela filha |
 | `audit_history` → `audit_entries` + `attempts` | Alteração e recusa são trilhas com garantias diferentes ([ADR-0007](./adr/0007-event-driven-audit.md)) |
 | `professional_id` → `responsible_id` → `users.id` | O profissional é 1:1 com a conta; a referência aponta para a conta |
 | `request_internal_notes` → `internal_notes` | Nome no vocabulário do domínio |
@@ -1268,7 +1278,7 @@ Schema sem dono de domínio ([ADR-0011](./adr/0011-infrastructure-schema-without
 | `criteria.criterion_id` (texto) → `id` (uuid) + `code` | Chave primária uniforme, com código estável preservado |
 | `prioritization_evaluations.classification` (ENUM) → `priority_id` (FK) | O mesmo conjunto não é armazenado duas vezes |
 | `categories.status` (ENUM) → `is_active` (boolean) | Enum de dois valores é boolean |
-| `user_details.status` (ENUM) → `is_available` (boolean) | Enum de dois valores é boolean, e nome que não colide com o da conta |
+| `analyst_details.status` (ENUM) → `is_available` (boolean) | Enum de dois valores é boolean, e nome que não colide com o da conta |
 | `statuses.visibility` (ENUM) → `is_public` (boolean) | O `visibility` foi descartado no legado; o que resta é `is_public` |
 | `pending_items.status` — sem mudança de conjunto | O modelo novo explicita o `overdue` como derivado, e não como estado |
 | `pending_items.type` (ENUM) → `field_edit`/`observation` | O `ENUM` legado tinha quatro valores; o modelo novo reduz o tipo aos dois casos de negócio, e o pedido de anexo passa a ser o par `requires_attachment` / `expected_attachment_type` |
@@ -1289,6 +1299,7 @@ Schema sem dono de domínio ([ADR-0011](./adr/0011-infrastructure-schema-without
 | Projeção da fila | Nome do solicitante, processo e prazo saem das respostas, e a fila os junta por chave de campo. Uma tabela de projeção é a alternativa se a junção pesar | Volume da fila |
 | Identidade do solicitante | O bloco `requester` é resposta; a busca por e-mail é um índice sobre as respostas | Volume de solicitações |
 | Entropia do prefixo do protocolo | O formato vigente é `MAAT-XXXX-XXXX`, com 40 bits. O prefixo de 80 bits (`MAAT3K7P-ABCD-EFGH`) reduz a chance de colisão e muda o formato exibido ao solicitante | [ADR-0008](./adr/0008-protocol-without-collision-risk.md) |
+| Anexo restrito | A coluna `attachments.is_restricted` existe, mas nenhuma regra a implementa e nada a lê. Decidir se o conceito é implementado — quem enxerga o arquivo, e o que o solicitante vê — ou se a coluna sai | Decisão de produto sobre conteúdo restrito (LGPD) |
 
 ---
 
