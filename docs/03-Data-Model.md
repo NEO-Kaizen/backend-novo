@@ -63,11 +63,13 @@ As regras valem para todas as tabelas deste documento. A justificativa de cada u
 
 `snake_case`. Booleanos com prefixo `is_` ou `has_`. Colunas de texto com limite de tamanho têm constraint `ck_` própria com o limite — a única forma portátil de impor o limite, já que o Postgres ignora `varchar(n)` e o MySQL não.
 
+Tabela que modela **uma instância** de um conceito repetível não prefixa as colunas com a instância: `themes` tem `background`, não `light_background` — a instância é a linha.
+
 ### 2.3 Primary Keys
 
 Toda chave primária é `id`, UUID v4 gerado pela aplicação via porta `IdGenerator` ([ADR-0003](./adr/0003-knex-dialect-portability.md)). O schema não depende de `sequence`, `serial` ou `auto_increment`.
 
-Exceção: tabelas singleton (`portal_settings`, `themes`) usam `id` UUID como chave e são garantidas pela aplicação e pelo seed — nenhuma constraint portable conta linhas.
+Exceção: a tabela singleton `portal_settings` usa `id` UUID como chave e é garantida pela aplicação e pelo seed — nenhuma constraint portable conta linhas.
 
 ### 2.4 Foreign Keys
 
@@ -183,6 +185,7 @@ O glossário é a fonte do vocabulário; estas são as tabelas onde cada termo v
 | **Admin Root** | `users.profiles` | Existe apenas no seed; nunca há auto-registro |
 | **Responsável** | `requests.requests.responsible_id`, `triage.triages.assignee_user_id`, `mapping.mappings.responsible_id` | O Analista designado |
 | **Modo de acesso** | `portal-config.portal_settings.solicitation_mode` | `PUBLIC` ou `AUTHENTICATED` |
+| **Aparência** | `portal-config.themes` | Uma paleta do portal; a vigente é a apontada por `portal_settings.theme_id` |
 
 ---
 
@@ -197,7 +200,7 @@ Duas consequências operacionais:
 | # | Domínio | Tabelas |
 | --- | --- | --- |
 | 1 | `users` | `profiles`, `users`, `user_details` |
-| 2 | `portal-config` | `statuses`, `categories`, `themes` |
+| 2 | `portal-config` | `statuses`, `categories`, `themes`, `portal_settings` |
 | 3 | `users` | `user_detail_categories` |
 | 4 | `prioritization` | `criteria`, `priorities` |
 | 5 | `auth` | `credentials` |
@@ -271,7 +274,7 @@ erDiagram
     CATEGORIES ||--o{ USER_DETAIL_CATEGORIES : "atendida"
     STATUSES ||--o{ REQUESTS : "classifica"
     CATEGORIES ||--o{ REQUESTS : "classifica"
-    THEMES ||--o| PORTAL_SETTINGS : "tema vigente"
+    THEMES ||--o| PORTAL_SETTINGS : "aparência vigente"
 
     USERS {
         uuid id PK
@@ -292,6 +295,11 @@ erDiagram
         text name UK
         boolean is_public
         boolean is_terminal
+        boolean is_active
+    }
+    THEMES {
+        uuid id PK
+        text name UK
         boolean is_active
     }
 ```
@@ -1026,7 +1034,7 @@ Configuração global do portal. Singleton.
 | `solicitation_mode` | text | não | `PUBLIC` | `ck_portal_settings_solicitation_mode` ∈ `PUBLIC`, `AUTHENTICATED` |
 | `platform_name` | text | não | `MAAT` | ≤ 80 |
 | `protocol_mask` | text | não | `MAAT` | ≤ 10 |
-| `theme_id` | uuid | sim | — | FK → `themes.id` (RESTRICT) — tema vigente; nulo quando o frontend aplica os padrões locais |
+| `theme_id` | uuid | sim | — | FK → `themes.id` (RESTRICT) — Aparência vigente; nulo quando o frontend aplica os padrões locais |
 | `logo_url` | text | sim | — | ≤ 500 |
 | `avatar_url` | text | sim | — | ≤ 500 |
 | `favicon_url` | text | sim | — | ≤ 500 |
@@ -1039,25 +1047,69 @@ Configuração global do portal. Singleton.
 
 - Uma linha. A unicidade é da aplicação e do seed — nenhuma constraint portable conta linhas.
 - `solicitation_mode` é o Modo de acesso: `PUBLIC` libera a abertura de solicitação; `AUTHENTICATED` exige conta.
+- `theme_id` aponta a **Aparência vigente** — a que o portal usa quando o solicitante não tem preferência própria. Nulo significa "sem Aparência", e o frontend cai nos padrões locais.
+- A Aparência apontada precisa estar ativa: apontar para uma Aparência inativa é erro de aplicação.
 
 ### 17.2 `themes`
 
-Aparência do portal: cores por token, por paleta. Singleton. Colunas **explícitas por token**, sem JSON — a decisão do legado, e ela se mantém: o frontend consome token por token, e token em coluna é legível, indexável e validável por constraint.
+As **aparências** do portal. Cada linha é uma paleta completa — a Aparência é uma entidade, não um par de paletas guardados na mesma linha. Colunas **explícitas por token**, sem JSON: o frontend consome token por token, e token em coluna é legível, indexável e validável por constraint.
 
-| Grupo | Colunas | Regras |
-| --- | --- | --- |
-| Tokens de cor | `light_background`, `light_surface`, `light_border`, `light_text_primary`, `light_text_secondary`, `light_rich_black`, `light_primary`, `light_secondary`, `light_tint`, `light_on_primary`, `light_on_dark`, `light_on_gradient` — e o mesmo conjunto com prefixo `dark_` | `ck_themes_hex` — `#RRGGBB` ou `#RRGGBBAA`, ou nulo |
-| Gradiente | `light_gradient_from`, `light_gradient_to`, `dark_gradient_from`, `dark_gradient_to` | `ck_themes_hex` |
-| Ângulo do gradiente | `light_gradient_angle`, `dark_gradient_angle` | `ck_themes_gradient_angle` — 0 a 360, ou nulo |
-| Cores por tom | `{light,dark}_status_{error,success,info,warning,neutral}_color` e `_background` | `ck_themes_hex` |
-| Bloqueio de fundo | `{light,dark}_status_{error,success,info,warning,neutral}_background_locked` | boolean |
-| Identificação | `id` | PK — singleton |
-| Marcação | `updated_at` | |
+| Coluna | Tipo | Nulo | Default | Notas |
+| --- | --- | --- | --- | --- |
+| `id` | uuid | não | — | PK, UUID v4 |
+| `name` | text | não | — | UNIQUE `uk_themes_name`, `ck_themes_name_length` ≤ 60 — nome da aparência |
+| `is_active` | boolean | não | `true` | Aparência que pode ser oferecida ao solicitante |
+| `background` | text | sim | — | `ck_themes_hex` |
+| `surface` | text | sim | — | `ck_themes_hex` |
+| `border` | text | sim | — | `ck_themes_hex` |
+| `text_primary` | text | sim | — | `ck_themes_hex` |
+| `text_secondary` | text | sim | — | `ck_themes_hex` |
+| `heading` | text | sim | — | `ck_themes_hex` — cor dos títulos |
+| `rich_black` | text | sim | — | `ck_themes_hex` |
+| `primary` | text | sim | — | `ck_themes_hex` |
+| `secondary` | text | sim | — | `ck_themes_hex` |
+| `tint` | text | sim | — | `ck_themes_hex` |
+| `on_primary` | text | sim | — | `ck_themes_hex` |
+| `on_dark` | text | sim | — | `ck_themes_hex` |
+| `on_gradient` | text | sim | — | `ck_themes_hex` |
+| `gradient_from` | text | sim | — | `ck_themes_hex` |
+| `gradient_to` | text | sim | — | `ck_themes_hex` |
+| `gradient_angle` | integer | sim | — | `ck_themes_gradient_angle` — 0 a 360, ou nulo |
+| `status_error_color` | text | sim | — | `ck_themes_hex` |
+| `status_error_background` | text | sim | — | `ck_themes_hex` |
+| `status_error_background_locked` | boolean | sim | — | |
+| `status_success_color` | text | sim | — | `ck_themes_hex` |
+| `status_success_background` | text | sim | — | `ck_themes_hex` |
+| `status_success_background_locked` | boolean | sim | — | |
+| `status_info_color` | text | sim | — | `ck_themes_hex` |
+| `status_info_background` | text | sim | — | `ck_themes_hex` |
+| `status_info_background_locked` | boolean | sim | — | |
+| `status_warning_color` | text | sim | — | `ck_themes_hex` |
+| `status_warning_background` | text | sim | — | `ck_themes_hex` |
+| `status_warning_background_locked` | boolean | sim | — | |
+| `status_neutral_color` | text | sim | — | `ck_themes_hex` |
+| `status_neutral_background` | text | sim | — | `ck_themes_hex` |
+| `status_neutral_background_locked` | boolean | sim | — | |
+| `created_at` | timestamp | não | `now` | |
+| `updated_at` | timestamp | não | `now` | |
+
+**Índices** — UNIQUE `uk_themes_name`; `idx_themes_is_active`.
 
 **Invariantes**
 
-- Uma linha, com o tema podendo iniciar **vazio**: o frontend aplica os padrões locais por token, e o contrato permite o backend começar sem tema.
+- Uma linha = uma paleta. O conjunto de tokens é definido **uma vez** — não há prefixo de paleta nas colunas, e a duplicação `light_*`/`dark_*` do singleton do legado não existe.
+- A Aparência pode começar **vazia** (tokens nulos): o frontend aplica os padrões locais por token, e o contrato permite o backend começar sem cores.
 - Toda cor é hexadecimal válido ou nulo. O predicado é escrito com `LENGTH`, `SUBSTR` e `INSTR` sobre um alfabeto literal — sem `~`, que é regex do Postgres.
+- Os cinco tons são vocabulário do código: são colunas, não linhas de referência.
+- `name` é único — é o nome que o solicitante vê na escolha de aparência.
+- Só uma Aparência **ativa** pode ser a vigente (`portal_settings.theme_id`). Desativar a vigente exige repontar antes; sem vigente, o frontend aplica os padrões locais.
+- A escolha entre as Aparências é do frontend; o backend expõe a lista e a vigente. Preferência por solicitante é conceito futuro, e não tem tabela aqui.
+
+**Regras preservadas do legado**
+
+- As cores são por token, e não um blob: o frontend consome token por token.
+- O conjunto de tokens é o mesmo — treze cores, gradiente com ângulo, e os cinco tons com cor, fundo e bloqueio de fundo.
+- O tema pode iniciar vazio, e o frontend cobre com os padrões locais.
 
 ### 17.3 `categories`
 
@@ -1163,7 +1215,7 @@ Schema sem dono de domínio ([ADR-0011](./adr/0011-infrastructure-schema-without
 | 20 | `audit_entries` | `audit` | `audit_history` | O que foi alterado |
 | 21 | `attempts` | `audit` | — (novo) | O que foi recusado |
 | 22 | `portal_settings` | `portal-config` | `system_settings` | Configuração global do portal |
-| 23 | `themes` | `portal-config` | `system_themes` | Aparência, por token e por paleta |
+| 23 | `themes` | `portal-config` | `system_themes` | As Aparências do portal — uma paleta por linha |
 | 24 | `categories` | `portal-config` | `categories` | Classificação ordenável da fila |
 | 25 | `statuses` | `portal-config` | `statuses` | Etapas do ciclo de vida |
 | 26 | `code_counters` | `platform` | — (novo) | Contador do gerador de protocolo |
@@ -1178,7 +1230,8 @@ Schema sem dono de domínio ([ADR-0011](./adr/0011-infrastructure-schema-without
 | `audit_history` → `audit_entries` + `attempts` | Alteração e recusa são trilhas com garantias diferentes ([ADR-0007](./adr/0007-event-driven-audit.md)) |
 | `professional_id` → `responsible_id` → `users.id` | O profissional é 1:1 com a conta; a referência aponta para a conta |
 | `request_internal_notes` → `internal_notes` | Nome no vocabulário do domínio |
-| `system_themes` → `themes`; `system_settings` → `portal_settings` | Nome no vocabulário do domínio |
+| `system_settings` → `portal_settings` | Nome no vocabulário do domínio |
+| `system_themes` → `themes` | A singleton com as duas paletas duplicadas em colunas (`light_*` e `dark_*`) vira entidade: uma paleta por linha, com nome; `portal_settings.theme_id` aponta a vigente |
 | `criteria.criterion_id` (texto) → `id` (uuid) + `code` | Chave primária uniforme, com código estável preservado |
 | `prioritization_evaluations.classification` (ENUM) → `priority_id` (FK) | O mesmo conjunto não é armazenado duas vezes |
 | `categories.status` (ENUM) → `is_active` (boolean) | Enum de dois valores é boolean |

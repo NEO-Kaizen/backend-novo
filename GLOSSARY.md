@@ -103,3 +103,7 @@ _Evitar_: analista (é o perfil, não o vínculo), dono, responsável técnico.
 **Modo de acesso**:
 Configuração que determina se a abertura de solicitação exige autenticação ou está liberada ao público.
 _Evitar_: modo de portal, visibilidade, tipo de acesso.
+
+**Aparência**:
+Conjunto de cores e estilos que o portal apresenta. Há mais de uma; uma delas é a vigente, e o solicitante escolhe entre as oferecidas.
+_Evitar_: tema, theme, skin, paleta.
