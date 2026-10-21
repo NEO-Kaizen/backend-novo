@@ -19,7 +19,5 @@ Decidimos que **a faixa vive só em `prioritization_evaluations.priority_id`**, 
 ## Consequências
 
 - Uma reavaliação escreve **uma** linha, em um domínio só. Não há estado em que as duas cópias discordem.
-- A § 3 do modelo de dados mapeia Prioridade → `prioritization.prioritization_evaluations.priority_id`.
-- O diagrama de entidades perde a aresta `PRIORITIES ||--o{ REQUESTS`.
 - A fila e o dashboard leem a prioridade pela porta do `prioritization`; quem precisar do valor direto faz join com `prioritization_evaluations`.
 - Nenhuma tabela fora do domínio `prioritization` guarda a faixa — nem cópia, nem rótulo em texto.

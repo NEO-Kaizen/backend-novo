@@ -33,5 +33,4 @@ Decidimos o seguinte.
 - O índice de ação passa a indexar a ação, e não o par.
 - `attempts` ganha o mesmo vocabulário e o mesmo `request_id`, e as duas trilhas respondem às mesmas perguntas do mesmo jeito.
 - O catálogo de entidades passa a ter vinte e duas entradas, com as de `forms` e as de leitura de slot incluídas.
-- A § 2.7 do modelo de dados ganha a regra "toda entidade mutável tem tipo de entidade".
-- A § 15 do modelo de dados deixa de afirmar que o vocabulário de ação é o mesmo da chave de permissão: são vocabulários diferentes, porque uma chave de permissão descreve o que se pode pedir e uma entrada de auditoria descreve o que foi feito.
+- O vocabulário de ação da auditoria é diferente do vocabulário de chave de permissão: uma chave de permissão descreve o que se pode pedir e uma entrada de auditoria descreve o que foi feito.

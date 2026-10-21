@@ -16,8 +16,5 @@ Decidimos que **o Gestor tem somente leitura** sobre solicitação, triagem, map
 
 ## Consequências
 
-- O Apêndice B do modelo de dados corrige a linha do Gestor: ganha `internal_note:write` e perde `portal_config:read`.
-- As frases do Apêndice B que apresentam a matriz como preservação do legado passam a dizer que é decisão deste modelo.
 - Com o Gestor fora da escrita, a **custódia** do Analista é a única via de escrita sobre a solicitação — e por isso a chave `request:assign` continua restrita a quem já é responsável.
 - O legado perde a edição pelo Gestor. Quem edita uma solicitação em nome da gestão é o Administrador.
-- Um relatório de atividade por perfil passa a mostrar o Gestor como leitor, com uma única exceção: as notas internas que ele escreve.

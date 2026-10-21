@@ -2,7 +2,7 @@
 
 Vocabulário do domínio do portal MAAT, que registra e acompanha demandas operacionais. Este glossário descreve **o que os termos significam** — não onde eles ficam no código, nem como são implementados.
 
-**Regra de leitura:** quando um termo aparece aqui em itálico, ele é o termo canônico do domínio. Os sinônimos listados em *Evitar* não devem ser usados em documentos, conversas de produto, nomes de campo, coluna, constraint ou chave de permissão. Os **identificadores técnicos** — nome de tabela, coluna, constraint e chave de permissão — seguem a convenção de nomenclatura em inglês do modelo de dados e estão listados na § 2.1 dele: eles são convenção, não vocabulário.
+**Regra de leitura:** quando um termo aparece aqui em itálico, ele é o termo canônico do domínio. Os sinônimos listados em *Evitar* não devem ser usados em documentos, conversas de produto, nomes de campo, coluna, constraint ou chave de permissão. Os identificadores técnicos seguem a convenção de nomenclatura em inglês do modelo de dados: são convenção, não vocabulário.
 
 ## Solicitação e acompanhamento
 
@@ -49,7 +49,7 @@ Avaliação inicial que verifica a aderência da solicitação ao escopo e defin
 _Evitar_: análise inicial, filtro, qualificação.
 
 **Veredito**:
-Desfecho da triagem: o Status em que a triagem deixa a solicitação. Não há lista fixa de vereditos — os Status que podem encerrar uma triagem são os que a equipe configura para isso.
+Desfecho da triagem: o Status em que a triagem deixa a solicitação. Não há lista fixa de vereditos — os Status que podem encerrar uma triagem são os que o Administrador configura para isso.
 _Evitar_: resultado da triagem, decisão, status da triagem.
 
 **Mapeamento**:
@@ -127,5 +127,5 @@ Configuração que determina se a abertura de solicitação exige autenticação
 _Evitar_: modo de portal, visibilidade, tipo de acesso.
 
 **Aparência**:
-Conjunto de cores e estilos que o portal apresenta. Há mais de uma; uma delas é a vigente, e o solicitante escolhe entre as oferecidas. Duas são vigentes ao mesmo tempo, uma para o slot claro e outra para o slot escuro.
+Conjunto de cores e estilos que o portal apresenta. Há mais de uma; duas são vigentes ao mesmo tempo, uma para o slot claro e outra para o slot escuro, e o solicitante escolhe entre as oferecidas.
 _Evitar_: tema, theme, skin, paleta.

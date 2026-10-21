@@ -162,7 +162,7 @@ Regras do catálogo:
 
 - **Um domínio é dono das suas tabelas.** Nenhum outro domínio escreve nelas.
 - **`forms` é um catálogo:** guarda a definição de um formulário, nunca a resposta. Quem responde é o domínio do sujeito — `requests.form_answers` — e liga por chave estrangeira (`requests.form_answers.field_id` → `forms.form_fields.id`).
-- **A classificação é coluna, não pergunta:** a categoria mora em `requests.category_id`, resolvida pelo nome contra as categorias ativas na abertura. Status, Prioridade e Categoria são as três classificações, e nenhuma delas é campo do formulário ([ADR-0012](./adr/0012-form-is-a-configurable-entity.md)).
+- **A classificação é coluna, não pergunta:** status, prioridade e categoria são colunas da solicitação — ver [`03-Data-Model.md` § 8.1](./03-Data-Model.md#81-requests).
 - **`queue` e `reports` não têm tabelas.** São projeções de leitura sobre outros domínios e consomem as portas publicadas por eles.
 - **Toda porta publicada é um contrato de leitura**, com uma única exceção: `AttemptRecorder`, que é uma porta de escrita controlada pela borda — ver [§ 9.4](#94-audit-and-log-what-each-one-guarantees).
 - **Projeções de leitura não escrevem.** `queue` e `reports` recebem apenas portas `*Reader`; por isso não estendem `BaseService` e não têm transação.
@@ -1049,7 +1049,7 @@ Solicitante  (ator externo, fora da hierarquia)
 | --- | --- | --- |
 | **Solicitante** | Abrir e acompanhar solicitações | Ver as áreas internas |
 | **Analista** | Triar, mapear, priorizar; é o **Responsável** quando designado | Gerenciar usuários ou configuração |
-| **Gestor** | Ler as áreas internas | Alterar nada |
+| **Gestor** | Ler as áreas internas; escrever nota interna | Alterar a solicitação, o status, o responsável e a configuração |
 | **Administrador** | Gerenciar usuários, conteúdo e configuração | Gerenciar outros Administradores |
 | **Admin Root** | Todas as permissões; gerencia Administradores | — |
 
@@ -1087,7 +1087,7 @@ export interface AuthorizationService {
 
 A matriz (permissão → perfis) fica em `core/authorization/profile-permissions.ts`. *Admin Root* recebe todas as permissões.
 
-O catálogo completo das chaves — 25 chaves `recurso:ação`, com o equivalente no legado — está em [`03-Data-Model.md` Apêndice B](./03-Data-Model.md#23-appendix-b-permission-catalogue). É o mesmo catálogo que vai semear `permissions` e `profile_permissions` quando o RBAC configurável entrar, sem que nenhum domínio mude — ver [ADR-0014](./adr/0014-permission-key-is-the-contract.md).
+O catálogo completo das chaves — 25 chaves `recurso:ação` — está em [`03-Data-Model.md` Apêndice B](./03-Data-Model.md#23-appendix-b-permission-catalogue). É o mesmo catálogo que vai semear `permissions` e `profile_permissions` quando o RBAC configurável entrar, sem que nenhum domínio mude — ver [ADR-0014](./adr/0014-permission-key-is-the-contract.md).
 
 | Nível | O que verifica | Onde |
 | --- | --- | --- |
@@ -1278,7 +1278,7 @@ Cada linha aponta a seção que define a regra. Um PR que muda mais de uma camad
 
 ## 22. Pendências de Arquitetura
 
-As pendências de **schema** estão no [`03-Data-Model.md` § 21](./03-Data-Model.md#21-pendências) — formulário configurável, aparências nomeadas, RBAC configurável, preferência de aparência, projeção da fila, identidade do solicitante e entropia do prefixo do protocolo. As de arquitetura são as daqui:
+As pendências de **schema** estão no [`03-Data-Model.md` § 21](./03-Data-Model.md#21-pendências). As de arquitetura são as daqui:
 
 | Pendência | Impacto | Gatilho |
 | --- | --- | --- |

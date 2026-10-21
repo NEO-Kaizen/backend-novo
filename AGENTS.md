@@ -14,7 +14,7 @@ Layout single-context: `GLOSSARY.md` na raiz e `docs/adr/`. Consulte `docs/agent
 
 ### Data model
 
-O modelo de dados — tabelas, colunas, relações e invariantes — é a especificação do schema em `docs/03-Data-Model.md`. Leia a seção do domínio antes de alterar repositório, migration ou seed.
+O modelo de dados — tabelas, colunas, relações e invariantes — é a especificação do schema em `docs/03-Data-Model.md`. Antes de alterar repositório, migration ou seed, leia **nesta ordem**: (1) `docs/03-Data-Model.md` § 2 (Convenções) e § 4 (Ordem de criação); (2) a seção do domínio. § 2 e § 4 valem para todas as tabelas; uma seção de domínio que as contradiga está errada.
 
 ## Convenções de Git
 

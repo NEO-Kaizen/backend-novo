@@ -111,6 +111,8 @@ O inventário completo, com responsabilidades e portas publicadas por cada domí
 01-Overview.md      → o que é, por que, escopo
 02-Architecture.md  → como o código se organiza e por quê
 03-Data-Model.md    → as tabelas, as relações e as invariantes do banco
+03-Data-Model-Vocabulary.md → índice termo → tabela
+03-Data-Model-Diagrams.md  → diagramas de entidade, de orientação
 GLOSSARY.md         → o que cada termo do domínio significa
 adr/                → decisões que custam caro para reverter
 CODING_STANDARDS.md → como escrever o código

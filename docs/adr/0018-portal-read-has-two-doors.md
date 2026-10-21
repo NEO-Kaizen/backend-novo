@@ -18,8 +18,7 @@ A **leitura pública** não exige autenticação e devolve apenas o que o solici
 
 ## Consequências
 
-- O payload público deixa de carregar os **onze status internos** que hoje viajam no mesmo GET. É uma **mudança de contrato** no frontend, e ela é o ponto da decisão: o `statuses.is_public` existe justamente para separar o que o solicitante vê do que ele não vê.
+- O payload público deixa de carregar os status internos. É uma **mudança de contrato** no frontend, e ela é o ponto da decisão: o `statuses.is_public` existe justamente para separar o que o solicitante vê do que ele não vê.
 - Os dois status terminais do ciclo são públicos, então o cálculo de "solicitação encerrada" na página de acompanhamento continua funcionando com o payload enxuto.
 - O Gestor não tem `portal_config:read` — a leitura administrativa é do Administrador e do Admin Root.
-- A § 17 do modelo de dados passa a declarar o que é público e o que é administrativo.
 - A consulta de status pelo nome continua disponível: `requests.last_public_status_id` aponta para um status que, por definição, é público.
