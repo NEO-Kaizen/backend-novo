@@ -97,9 +97,9 @@ A reescrita não é uma reimplementação linha a linha. O legado é a **fonte d
 
 ## 5. Domínios
 
-O backend é organizado em doze domínios, cada um dono de suas tabelas, regras e contratos:
+O backend é organizado em treze domínios, cada um dono de suas tabelas, regras e contratos:
 
-`auth` · `users` · `requests` · `triage` · `mapping` · `queue` · `prioritization` · `pending-items` · `internal-notes` · `audit` · `reports` · `portal-config`
+`auth` · `users` · `requests` · `triage` · `mapping` · `queue` · `prioritization` · `pending-items` · `internal-notes` · `audit` · `reports` · `portal-config` · `forms`
 
 O inventário completo, com responsabilidades e portas publicadas por cada domínio, está em [02-Architecture § 5 Domain Catalog](./02-Architecture.md#5-domain-catalog).
 

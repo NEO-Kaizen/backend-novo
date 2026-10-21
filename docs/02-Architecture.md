@@ -121,7 +121,8 @@ src/
     ├── internal-notes/
     ├── audit/                  # dono das tabelas audit e attempt
     ├── reports/
-    └── portal-config/
+    ├── portal-config/
+    └── forms/              # dono de forms, form_blocks e form_fields
 
 migrations/<domain>/            # migrações donas por cada domínio
 seeds/<domain>/                # seeds donos por cada domínio
@@ -136,16 +137,16 @@ knexfile.ts
 
 | Domínio | Responsabilidade | Tabelas | Portas publicadas |
 | --- | --- | --- | --- |
-| `auth` | Login, logout, sessão, troca de senha | credenciais, sessões | `AuthReader` |
-| `users` | Cadastro, perfil, dados do usuário, avatar, contato | usuários, perfis | `UserReader` |
-| `requests` | Ciclo de vida da solicitação, protocolo, anexos | solicitações, respostas do formulário, anexos | `RequestReader` |
-| `triage` | Triagem: aderência, escopo, veredito | triagens | `TriageReader` |
-| `mapping` | Sessão de mapeamento, participantes, agenda | mapeamentos, participantes | `MappingReader` |
+| `auth` | Login, logout, sessão, troca de senha | `credentials` — **não há tabela de sessões**: a sessão é o token | `AuthReader` |
+| `users` | Cadastro, perfil, dados do usuário, avatar, contato | `profiles`, `users`, `user_details`, `user_detail_categories` | `UserReader` |
+| `requests` | Ciclo de vida da solicitação, protocolo, anexos | `requests`, `form_answers`, `attachments`, `request_time_preferences` | `RequestReader` |
+| `triage` | Triagem: aderência, escopo, veredito | `triages` | `TriageReader` |
+| `mapping` | Sessão de mapeamento, participantes, agenda | `mappings`, `mapping_participants` | `MappingReader` |
 | `queue` | Fila centralizada e métricas | — (lê de `requests`) | `QueueReader` |
-| `prioritization` | Critérios, pesos e a Prioridade resultante | critérios, priorizações | `PrioritizationReader` |
-| `pending-items` | Pendências de campo e de observação | pendências, respostas | `PendingItemReader` |
-| `internal-notes` | Notas internas, marcas de leitura, linha do tempo | notas internas, marcas de leitura | `InternalNoteReader` |
-| `audit` | Trilha de auditoria imutável | auditoria, tentativas | `AuditReader` · `AttemptRecorder` |
+| `prioritization` | Critérios, pesos e a Prioridade resultante | `criteria`, `priorities`, `prioritization_evaluations` | `PrioritizationReader` |
+| `pending-items` | Pendências de campo e de observação | `pending_items`, `pending_item_fields` | `PendingItemReader` |
+| `internal-notes` | Notas internas, marcas de leitura, linha do tempo | `internal_notes`, `internal_note_read_states` | `InternalNoteReader` |
+| `audit` | Trilha de auditoria imutável | `audit_entries`, `attempts` | `AuditReader` · `AttemptRecorder` |
 | `reports` | Dashboard, métricas, exportações | — (lê de vários domínios) | — |
 | `portal-config` | Configuração do portal, categorias, status, aparência, modo de acesso | configurações, categorias, status, aparências | `PortalConfigReader` |
 | `forms` | Catálogo das definições de formulário: blocos e campos | formulários, blocos, campos | `FormReader` |
@@ -153,7 +154,8 @@ knexfile.ts
 Regras do catálogo:
 
 - **Um domínio é dono das suas tabelas.** Nenhum outro domínio escreve nelas.
-- **`forms` é um catálogo:** guarda a definição de um formulário, nunca a resposta. Quem responde é o domínio do sujeito — `requests.form_answers` — e liga por chave estrangeira, como `requests.category_id` liga em `portal-config.categories.id`.
+- **`forms` é um catálogo:** guarda a definição de um formulário, nunca a resposta. Quem responde é o domínio do sujeito — `requests.form_answers` — e liga por chave estrangeira (`requests.form_answers.field_id` → `forms.form_fields.id`).
+- **A classificação não é coluna:** a categoria é a resposta de `demand.category`, e o valor guardado é o `id` da categoria.
 - **`queue` e `reports` não têm tabelas.** São projeções de leitura sobre outros domínios e consomem as portas publicadas por eles.
 - **Toda porta publicada é um contrato de leitura**, com uma única exceção: `AttemptRecorder`, que é uma porta de escrita controlada pela borda — ver [§ 9.4](#94-audit-and-log-what-each-one-guarantees).
 - **Projeções de leitura não escrevem.** `queue` e `reports` recebem apenas portas `*Reader`; por isso não estendem `BaseService` e não têm transação.
@@ -336,6 +338,8 @@ protected async insertOne(values: Record<string, unknown>): Promise<TEntity> {
 ```
 
 Assim a garantia é do **repositório**, não da herança: uma escrita fora de transação falha com `transaction_required` (erro interno, não exposto) em vez de fazer commit parcial. Vale para qualquer service, herde ou não — a herança só evita o erro, não o impede.
+
+**Exceção: a trilha de tentativas.** `AttemptRecorder.record()` grava em `attempts` **fora** de transação, por construção ([§ 9.4](#94-audit-and-log-what-each-one-guarantees)) — a recusa existe justamente porque a transação foi desfeita. Por isso o repositório de auditoria tem um método de escrita específico (`insertAttempt`) que **não** chama `assertInTransaction()`. É o único método de escrita do modelo que não exige transação corrente; nenhuma outra escrita pode ser feita sem `execute()`.
 
 ### 7.4 Inheritance Rule
 
@@ -758,10 +762,10 @@ O contador vive em uma tabela `code_counters(name, value)`, com uma linha por do
 // dentro da transação do caso de uso
 await this.database.client("code_counters")
   .where({ name: "request" })
-  .update({ value: this.database.client.raw("value + 1") });
+  .increment("value", 1);
 ```
 
-> O `value + 1` é a única expressão não-portátil do documento, e ela é idêntica em Postgres, MySQL e SQLite. Se um dia o contador migrar para um Redis, a porta `Counter` substitui a tabela sem alterar o gerador — o ponto de troca fica explícito.
+> O incremento é feito pelo construtor do knex — sem `db.raw()`, que é proibido fora do `Dialect` ([§ 10.3](#103-portability-rules)) — e é idêntico em Postgres, MySQL e SQLite. Se um dia o contador migrar para um Redis, a porta `Counter` substitui a tabela sem alterar o gerador — o ponto de troca fica explícito.
 
 Regras de uso:
 
@@ -969,17 +973,19 @@ Tudo que entra pela borda é `unknown` até ser validado.
 // src/domains/requests/requests.schema.ts
 export const CreateRequest = z.strictObject({
   demand: z.strictObject({
-    title: z.string().min(1).max(180),
-    description: z.string().min(1).max(5000),
+    title: z.string().min(1).max(150),
+    description: z.string().min(1).max(4000),
   }),
   requester: z.strictObject({
-    fullName: z.string().min(1).max(120),
-    corporateEmail: z.email().max(180),
+    fullName: z.string().min(1).max(150),
+    corporateEmail: z.email().max(254),
   }),
 });
 ```
 
 > `demand` é o nome do bloco no contrato público já acordado; ver a exceção em [§ 3](#3-naming).
+>
+> Os limites por campo são os do **seed do formulário** ([`03-Data-Model.md` Apêndice A](./03-Data-Model.md#23-appendix-a-the-form-seed)); este exemplo é ilustrativo do formato, não da fonte dos limites. A definição do formulário é a fonte única: o schema da borda é gerado a partir dela.
 
 | Regra | Efeito |
 | --- | --- |
@@ -1052,6 +1058,7 @@ export const PERMISSIONS = {
   REQUEST_READ: "request:read",
   REQUEST_WRITE: "request:write",
   REQUEST_ASSIGN: "request:assign",
+  REQUEST_STATUS_CHANGE: "request:status_change",
   TRIAGE_WRITE: "triage:write",
   MAPPING_WRITE: "mapping:write",
   PRIORITIZATION_WRITE: "prioritization:write",
@@ -1073,7 +1080,7 @@ export interface AuthorizationService {
 
 A matriz (permissão → perfis) fica em `core/authorization/profile-permissions.ts`. *Admin Root* recebe todas as permissões.
 
-O catálogo completo das chaves — 25 chaves `recurso:ação`, com o equivalente no legado — está em [`03-Data-Model.md` § 21](./03-Data-Model.md#21-permission-catalogue). É o mesmo catálogo que vai semear `permissions` e `profile_permissions` quando o RBAC configurável entrar, sem que nenhum domínio mude — ver [ADR-0014](./adr/0014-permission-key-is-the-contract.md).
+O catálogo completo das chaves — 25 chaves `recurso:ação`, com o equivalente no legado — está em [`03-Data-Model.md` Apêndice B](./03-Data-Model.md#24-appendix-b-permission-catalogue). É o mesmo catálogo que vai semear `permissions` e `profile_permissions` quando o RBAC configurável entrar, sem que nenhum domínio mude — ver [ADR-0014](./adr/0014-permission-key-is-the-contract.md).
 
 | Nível | O que verifica | Onde |
 | --- | --- | --- |
@@ -1242,11 +1249,11 @@ Cada linha aponta a seção que define a regra. Um PR que muda mais de uma camad
 | [ ] | Toda dependência externa chega pelo construtor | [§ 8](#8-dependency-injection) | Nenhum import de `platform` dentro de `domains` |
 | [ ] | Nenhum repositório, service ou controller de outro domínio é importado | [§ 19](#19-allowed-dependencies) | Só `import type` de uma `*.port.ts` |
 | [ ] | Regras no service; tradução HTTP no controller; SQL no repository | [§ 6](#6-layer-responsibilities) | O controller não monta query |
-| [ ] | `core` não importa nada de `domains` ou `platform` | [§ 19](#19-allowed-dependencies) | `rg "from \"\.\./(domains|platform)" src/core` |
+| [ ] | `core` não importa nada de `domains` ou `platform` | [§ 19](#19-allowed-dependencies) | `rg "from \"\.\./(domains\|platform)" src/core` |
 | [ ] | Entrada validada na borda com Zod | [§ 13](#13-validation-and-the-border) | O service recebe objeto tipado, não `req.body` |
 | [ ] | Sem `any`; `unknown` na borda; sem assertion sem validação | `CODING_STANDARDS.md` | Type-check estrito passa |
 | [ ] | Erros tipados, com `cause`; causa logada uma vez, na borda | [§ 12](#12-errors) | Nenhum `log-and-rethrow` |
-| [ ] | Toda escrita é um `execute*`; nenhuma fora de transação | [§ 11](#11-transactions) | `assertInTransaction()` no repositório |
+| [ ] | Toda escrita é um `execute*`; nenhuma fora de transação — exceto a trilha de tentativas | [§ 11](#11-transactions) | `assertInTransaction()` no repositório, com a exceção de `insertAttempt` |
 | [ ] | Leitura agregada usa `runReadOnly` | [§ 11.2](#112-implicit-transactions) | Timeline e dashboard |
 | [ ] | Mudança relevante publica evento; trilha da alteração na mesma transação | [§ 9.3](#93-change-audit-via-domain-events) | Assinatura no `domains/audit` |
 | [ ] | Recusa auditável carrega contexto e é gravada na borda | [§ 9.4](#94-audit-and-log-what-each-one-guarantees) | `DomainError` com `context` |
@@ -1257,7 +1264,7 @@ Cada linha aponta a seção que define a regra. Um PR que muda mais de uma camad
 | [ ] | `ON DELETE RESTRICT` em toda chave estrangeira; nada é apagado | [`03-Data-Model.md` § 2.11](./03-Data-Model.md#211-delete-policy) | `rg "onDelete\(" src/domains` |
 | [ ] | Schema alterado, modelo documentado atualizado | [ADR-0010](./adr/0010-data-model-doc-is-the-spec.md) | Diff em `03-Data-Model.md` no mesmo PR |
 | [ ] | Autorização verificada no servidor, em um lugar só por domínio | [§ 14.4](#144-authorization) | `AuthorizationService.assert` |
-| [ ] | Log estruturado com request id; sem PII; sem `console.log` | [§ 17](#17-logging) | `rg "console\.(log|error)" src/` |
+| [ ] | Log estruturado com request id; sem PII; sem `console.log` | [§ 17](#17-logging) | `rg "console\.(log\|error)" src/` |
 | [ ] | Segredo vem de ambiente validado; nunca no repositório | [§ 16](#16-configuration) | `.env.example` sem valor |
 
 ---
@@ -1267,9 +1274,9 @@ Cada linha aponta a seção que define a regra. Um PR que muda mais de uma camad
 | Pendência | Impacto | Gatilho |
 | --- | --- | --- |
 | Envelope de erro `{ error: { code, message, requestId } }` | Frontend precisa ajustar `readErrorMessage` | Release coordenada com o frontend |
-| RBAC configurável (tabelas `profiles`, `profile_permissions`) | Troca da matriz em código por adapter de banco | Demanda do produto por perfis configuráveis |
+| RBAC configurável (tabelas novas `permissions` e `profile_permissions`; `profiles` continua sendo o eixo) | Troca da matriz em código por adapter de banco | Demanda do produto por perfis configuráveis |
 | Perfis: 5 no backend, 4 nos contratos publicados | Contrato de API desatualizado | Atualizar `contratos/` no repositório de documentação |
-| Entropia do prefixo do protocolo (80 bits em `MAAT3K7P-ABCD-EFGH`) | Enumeração do protocolo: 40 bits caem em ~127 dias a 100k rps | Endpoint público sem rate limit forte |
+| Entropia do prefixo do protocolo (o formato vigente é `MAAT-XXXX-XXXX`, 40 bits; a alternativa de 80 bits `MAAT3K7P-ABCD-EFGH` está pendente) | Enumeração do protocolo: 40 bits caem em ~127 dias a 100k rps | Endpoint público sem rate limit forte |
 | Suíte de testes automatizados | Rede de segurança ausente para a reescrita | Ferramentas de teste decididas |
 | Log de auditoria exposto na API | Pendente de contrato | Formalização do domínio de auditoria |
 | Formulário configurável | O formulário é fixo e semeado; a customização pede tela de administração e renderização dinâmica | Demanda do produto por formulário configurável |
