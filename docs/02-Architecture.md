@@ -992,7 +992,7 @@ export const CreateRequest = z.strictObject({
 
 > `demand` é o nome do bloco no contrato público já acordado; ver a exceção em [§ 3](#3-naming).
 >
-> Os limites por campo são os do **seed do formulário** ([`03-Data-Model.md` Apêndice A](./03-Data-Model.md#22-appendix-a-the-form-seed)); este exemplo é ilustrativo do formato, não da fonte dos limites. A definição do formulário é a fonte única: o schema da borda é gerado a partir dela.
+> Os limites por campo são os do **seed do formulário** ([`03-Data-Model.md` Apêndice A](./03-Data-Model.md#22-appendix-a-the-form-seed)); este exemplo é ilustrativo do formato, não da fonte dos limites. A definição do formulário é a fonte única: o schema da borda é gerado a partir dela **e do catálogo de chaves promovidas** — uma chave promovida não tem linha na definição, e a borda a valida pelo nome, contra as categorias ativas.
 
 | Regra | Efeito |
 | --- | --- |

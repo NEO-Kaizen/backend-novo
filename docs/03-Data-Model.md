@@ -81,14 +81,16 @@ Tabela que modela **uma instância** de um conceito repetível não prefixa as c
 
 **Exceção: a chave de um campo de formulário é o contrato.** O valor de `form_fields.key` e de `form_blocks.key` é a chave que o frontend envia no payload (`processName`, `desiredDeadline`), em camelCase. Não é snake_case porque não é nome interno: é a chave que liga a definição ao contrato da API, e o frontend valida contra ela.
 
-**Uma chave promovida.** Uma chave do payload pode sair do formulário e ganhar uma **coluna própria, tipada e indexada** na entidade — é o que se chama de promover. Uma chave promovida deixa de ser pergunta e passa a ser atributo da entidade: o formulário deixa de perguntá-la, e o valor continua na coluna, que com NOT NULL e FK não pode ficar pendurada. Promover é uma operação: sai o campo da definição e nasce a coluna.
+**Uma chave promovida.** Uma chave do payload pode sair do formulário e ganhar uma **coluna própria, tipada e indexada** na entidade — é o que se chama de promover. Uma chave promovida deixa de ser pergunta e passa a ser atributo da entidade: o formulário deixa de perguntá-la, e o valor continua na coluna, que com NOT NULL e FK não pode ficar pendurada.
 
-Hoje há duas:
+**A chave promovida não é um campo.** Ela **não tem linha em `form_fields`**: `form_fields` é a tabela das perguntas, e uma chave promovida deixou de ser pergunta. A consequência é mecânica — **não existe resposta para uma chave promovida**, porque a resposta aponta para uma linha de `form_fields`, e a chave promovida não tem uma.
 
-| Chave promovida | Onde vira coluna | Quem resolve |
-| --- | --- | --- |
-| `demand.category` | `requests.category_id` | Abertura, pelo nome, contra as categorias ativas |
-| `demand.newCategory` (da triagem) | `triages.new_category_id` | Triagem, pelo nome, contra as categorias ativas |
+**O conjunto das chaves promovidas é do código, e é fixo.** Promover é uma operação de código, não uma edição de formulário: o mapa — chave → coluna, chave → quem resolve — é o **catálogo de chaves promovidas**, em código, e é a fonte da verdade. O formulário configurável não o adiciona nem o remove.
+
+| Chave promovida | Onde vira coluna | Quem resolve | Quem pode pedir a correção |
+| --- | --- | --- | --- |
+| `demand.category` | `requests.category_id` | Abertura e correção por pendência, pelo nome, contra as categorias ativas | O solicitante, por pendência; a equipe, na triagem |
+| `newCategory` (da triagem) | `triages.new_category_id` | Triagem, pelo nome, contra as categorias ativas | A equipe, na triagem — é a proposta do triador, não uma pergunta ao solicitante |
 
 ### 2.3 Primary Keys
 
@@ -109,6 +111,8 @@ Coluna nomeada `<entidade_no_singular>_id`, referenciando `id` da outra tabela. 
 **Quando a FK carrega a função do ator**, o prefixo da função vem antes do nome da entidade: `actor_user_id`, `author_user_id`, `created_by_user_id`, `responsible_id`, `assignee_user_id`, `calculated_by_user_id`, `validated_by_user_id`, `updated_by_user_id`, `requester_user_id`. A entidade alvo é sempre `users.id`.
 
 **Três colunas não seguem o padrão `<entidade>_id`**, porque o nome carrega a função e não o alvo: `form_answers.field_id` e `pending_item_fields.form_field_id` apontam para `forms.form_fields.id`; `internal_note_read_states.last_read_note_id` aponta para `internal_notes.id`. São exceções intencionais.
+
+`pending_item_fields.promoted_key` não é chave estrangeira: é o vocabulário de código das chaves promovidas, espelhado em `ck_` ([§ 2.7](#27-closed-value-sets)).
 
 A referência aponta para a **entidade**, nunca para a sua extensão 1:1. A identidade de uma pessoa é `users.id`; `analyst_details` é extensão de `users` e nunca é referenciada. A mesma regra vale para qualquer extensão 1:1 — `analyst_details` também é alcançada por `users.id`.
 
@@ -151,7 +155,7 @@ Há um caso misto: um conjunto com **dados de referência** e um rótulo enumera
 Consequências:
 
 - O mesmo conjunto não é armazenado duas vezes **como coluna de classificação**. Onde existe tabela de referência, o resto referencia por FK — `prioritization_evaluations.priority_id` é a **única** casa da faixa ([ADR-0016](./adr/0016-priority-has-one-home.md)). *Exceção:* os campos `select` do formulário têm opções inline que coincidem com um conjunto do produto; são vocabulários de formulário, não de classificação, e não têm FK porque o formulário é um catálogo genérico. Nenhum deles é classificação — **status, prioridade e categoria são as três**.
-- Os quatro `select` do formulário usam duas escalas de gravidade diferentes: `perceivedCriticality` (urgência percebida pelo solicitante) e `operationalImpact` (impacto do pedido no processo). São perguntas distintas e alimentam critérios distintos da priorização.
+- Os quatro `select` do formulário usam duas escalas de gravidade diferentes: `perceivedCriticality` (urgência percebida pelo solicitante) e `operationalImpact` (impacto do pedido no processo). São perguntas distintas e alimentam critérios distintos da priorização. **Todos os `select` do formulário têm opções inline.** A **categoria** não é um `select` do formulário: as suas opções são as **categorias ativas**, e elas vivem em `portal-config.categories` — o formulário não guarda cópia delas, e a chave promovida `demand.category` não tem linha em `form_fields`.
 - Tabela de referência referenciada **pelo código** precisa de chave estável: `profiles.name` **é** a chave de `core/authorization/profile-permissions.ts`.
 - Tabela de referência referenciada **por id** não precisa de chave estável: `statuses` usa `id` e `order_number` — e `key`, que é o que o código referencia.
 - Adicionar um valor a um vocabulário do código toca o catálogo **e** a constraint `ck_` no mesmo pull request. São espelhos; um PR que muda um sem o outro está quebrado.
@@ -448,7 +452,7 @@ O **conteúdo** da solicitação não mora nesta tabela: o solicitante preenche 
 - `created_by` é um rótulo, não uma referência — o portal público não tem usuário. `created_by_user_id` é a referência quando existe.
 - **A classificação é coluna, não pergunta.** Status, Prioridade e Categoria são as três classificações da solicitação: as três são colunas tipadas e lidas pela fila, pelo dashboard e pela exportação. A customização do formulário adiciona e remove perguntas e não toca nas classificações. Ver [ADR-0012](./adr/0012-form-is-a-configurable-entity.md).
 - **A categoria chega pelo payload e é resolvida na escrita.** O frontend manda `demand.category` com o **nome** escolhido; o backend resolve o nome contra as categorias ativas e grava o `id`. Nome inválido é 400.
-- **Quem reescreve a classificação:** a equipe, quando a triagem reclassifica — é a exceção que a regra da pendência permite. A correção pedida pelo solicitante é por pendência, e a pendência não edita a solicitação. A reclassificação chega ao `requests` por **evento de domínio** publicado pelo domínio `triage`: quem escreve `requests.category_id` é o domínio dono da coluna, e a reclassificação é aplicada na mesma transação que registra a triagem.
+- **Quem reescreve a classificação:** o solicitante, quando responde a uma pendência que pede a correção da categoria; a equipe, quando a triagem reclassifica. A pendência escreve `requests.category_id` — resolvendo o nome contra as categorias ativas — e **não** uma resposta: a classificação não tem resposta. A reclassificação chega ao `requests` por **evento de domínio** publicado pelo domínio `triage`: quem escreve `requests.category_id` é o domínio dono da coluna, e a reclassificação é aplicada na mesma transação que registra a triagem.
 - **A Prioridade não mora aqui.** A faixa é atributo do domínio `prioritization` e é lida por join ou pela porta `PrioritizationReader` ([ADR-0016](./adr/0016-priority-has-one-home.md)).
 
 **Regras de negócio**
@@ -489,7 +493,7 @@ As respostas do solicitante. Uma linha por campo preenchido.
 
 **Invariantes**
 
-- Uma resposta por campo de uma solicitação.
+- Uma resposta por campo de uma solicitação. **Nenhuma chave promovida tem resposta** — a chave promovida não tem linha em `form_fields`, e a resposta só existe para uma linha de `form_fields`.
 - A coluna de valor é determinada pelo tipo do campo: `text`, `long_text`, `email` e `select` → `value_text`; `number` e `decimal` → `value_number`; `date` → `value_date`; `boolean` → `value_boolean`; `yes_no_detail` → `value_boolean` **e** `value_text` (o detalhe). `value_json` fica para valor estruturado.
 - `value_text` só pode coexistir com `value_boolean`; qualquer outra combinação de duas colunas preenchidas é rejeitada por `ck_form_answers_value_shape`.
 - As respostas de uma solicitação pertencem ao formulário em `requests.form_id`.
@@ -503,7 +507,7 @@ As respostas do solicitante. Uma linha por campo preenchido.
 *Preservadas do legado*
 
 - O formulário é o mesmo: os quatro blocos, os campos, as obrigatoriedades e os limites.
-- A categoria é validada contra as categorias ativas no momento da abertura, e gravada como coluna — não como resposta.
+- A categoria é validada contra as categorias ativas no momento da abertura **e no momento da correção por pendência**, e gravada como coluna — não como resposta.
 
 *Acrescentadas pelo modelo novo*
 
@@ -819,28 +823,33 @@ Responsabilidade: pendências de campo e de observação. Publica a porta `Pendi
 - Há **no máximo uma pendência em aberto por solicitação**; abrir outra é 409.
 - **A pendência guarda duas vozes, e elas não se misturam:** `response_text` é o que o solicitante respondeu, e `resolution` é o que a equipe escreveu ao validar. Quem validou e quando ficam em `validated_by_user_id` e `validated_at`.
 - **Abrir pendência move a solicitação para o status de `key = pendente_de_informacoes`**; quando todas as pendências em aberto da solicitação são respondidas, ela volta para `key = em_triagem`; reabrir devolve.
-- `requested_fields` só faz sentido para `type = field_edit`. Ele guarda as **chaves** do contrato, e `pending_item_fields` guarda os **ids** dos campos: as duas representações não são intercambiáveis. **A tabela filha é a fonte autoritativa**; o json é derivado dela e é regenerado quando a pendência é gravada.
+- `requested_fields` só faz sentido para `type = field_edit`. Ele guarda as **chaves** do contrato — a chave do campo, com o bloco: `demand.title` — **e a chave promovida**, quando o pedido é de uma chave promovida. As duas representações não são intercambiáveis. **A tabela filha é a fonte autoritativa**; o json é derivado dela e é regenerado quando a pendência é gravada.
 - Pendência pode pedir correção de um campo ou apenas registrar uma observação — `type` distingue os dois casos. O pedido de anexo é o par `requires_attachment` e `expected_attachment_type`, e não um terceiro tipo.
-- **Uma pendência pede a correção de um campo do formulário.** A classificação da solicitação não é campo: a categoria é corrigida pela equipe, na triagem.
+- **Uma pendência pede a correção de um campo do formulário ou de uma chave promovida.** Uma chave promovida é o atributo que a pendência pode pedir ao solicitante que corrija: a correção vai para a coluna da entidade, resolvida pelo nome contra as categorias ativas. A classificação que a equipe muda — a categoria, na triagem — não é campo nem chave promovida: é evento de domínio.
 - **Toda pendência é para o solicitante.** Não há visibilidade a configurar.
 
 ### 13.2 `pending_item_fields`
 
-Os campos que a pendência pede para corrigir, por referência ao campo do formulário.
+O que a pendência pede para corrigir: um campo do formulário **ou** uma chave promovida.
 
 | Coluna | Tipo | Nulo | Default | Notas |
 | --- | --- | --- | --- | --- |
 | `id` | uuid | não | — | PK, UUID v4 |
 | `pending_item_id` | uuid | não | — | FK → `pending_items.id` (RESTRICT) |
-| `form_field_id` | uuid | não | — | FK → `forms.form_fields.id` (RESTRICT) |
+| `form_field_id` | uuid | sim | — | FK → `forms.form_fields.id` (RESTRICT) — **nulo** quando o pedido é de uma chave promovida |
+| `promoted_key` | text | sim | — | A chave promovida pedida — `ck_pending_item_fields_promoted_key` — **nulo** quando o pedido é de um campo do formulário |
+| `corrected_value` | json | sim | — | O valor corrigido pelo solicitante, **estacionado** até a validação |
 | `created_at` | timestamp | não | `now` | |
 
-**Índices** — UNIQUE `uk_pending_item_fields_pending_field` (`pending_item_id`, `form_field_id`); `idx_pending_item_fields_field_id`.
+**Índices** — UNIQUE `uk_pending_item_fields_pending_field` (`pending_item_id`, `form_field_id`); UNIQUE `uk_pending_item_fields_pending_promoted` (`pending_item_id`, `promoted_key`); `idx_pending_item_fields_field_id`.
 
 **Invariantes**
 
+- **Exatamente um** entre `form_field_id` e `promoted_key` — `ck_pending_item_fields_subject`. Um pedido é de um campo **ou** de uma chave promovida, nunca dos dois.
 - O mesmo campo não é pedido duas vezes na mesma pendência.
+- A mesma chave promovida não é pedida duas vezes na mesma pendência.
 - O campo pedido pertence ao formulário da solicitação — regra de aplicação.
+- **A correção fica estacionada até a validação.** O solicitante responde, e o valor corrigido espera em `corrected_value`; quem aplica é a validação, que reescreve a resposta do campo ou a coluna da entidade, conforme o pedido. Reabrir **descarta** a correção, e a solicitação volta ao valor que tinha.
 
 **Regras de negócio**
 
@@ -1282,7 +1291,7 @@ Schema sem dono de domínio ([ADR-0011](./adr/0011-infrastructure-schema-without
 | `statuses.visibility` (ENUM) → `is_public` (boolean) | O `visibility` foi descartado no legado; o que resta é `is_public` |
 | `pending_items.status` — sem mudança de conjunto | O modelo novo explicita o `overdue` como derivado, e não como estado |
 | `pending_items.type` (ENUM) → `field_edit`/`observation` | O `ENUM` legado tinha quatro valores; o modelo novo reduz o tipo aos dois casos de negócio, e o pedido de anexo passa a ser o par `requires_attachment` / `expected_attachment_type` |
-| `pending_items.requested_fields` (json) → `pending_item_fields` | O campo pendente passa a ser referência ao campo do formulário |
+| `pending_items.requested_fields` (json) → `pending_item_fields` | O campo pendente passa a ser referência ao campo do formulário **ou** à chave promovida |
 | `requests.internal_notes`, `next_steps`, triagem duplicada | Uma casa por fato: `triages` |
 | Convenções alteradas (`ENUM` nativo, `CASCADE`/`SET NULL`, `sequence`, `btrim`, índice funcional, `jsonb_typeof`) | Estão em [§ 2](#2-naming-conventions) — e em [ADR-0009](./adr/0009-schema-naming-and-constraints.md) |
 
