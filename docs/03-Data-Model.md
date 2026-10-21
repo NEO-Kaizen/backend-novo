@@ -73,6 +73,8 @@ Exceção: tabelas singleton (`portal_settings`, `themes`) usam `id` UUID como c
 
 Coluna nomeada `<entidade_no_singular>_id`, referenciando `id` da outra tabela. `ON DELETE RESTRICT` em todas.
 
+A referência aponta para a **entidade**, nunca para a sua extensão 1:1. A identidade de uma pessoa é `users.id`; `user_details` é extensão de `users` e nunca é referenciada. A mesma regra vale para qualquer extensão 1:1 — `request_details` também é alcançada por `requests.id`.
+
 Relações com **naturalmente mais de uma origem** são polimórficas e **não têm FK** — é o caso de `audit_entries.entity_id`, que aponta para qualquer entidade auditável. A regra é a exceção, não o padrão.
 
 ### 2.5 Timestamps
@@ -196,10 +198,10 @@ Duas consequências operacionais:
 | --- | --- | --- |
 | 1 | `users` | `profiles`, `users`, `user_details` |
 | 2 | `portal-config` | `statuses`, `categories`, `themes` |
-| 3 | `prioritization` | `criteria`, `priorities` |
-| 4 | `auth` | `credentials` |
-| 5 | `requests` | `requesters`, `requests`, `request_details`, `attachments`, `request_time_preferences` |
-| 6 | `user_details` | `user_detail_categories` |
+| 3 | `users` | `user_detail_categories` |
+| 4 | `prioritization` | `criteria`, `priorities` |
+| 5 | `auth` | `credentials` |
+| 6 | `requests` | `requesters`, `requests`, `request_details`, `attachments`, `request_time_preferences` |
 | 7 | `triage` | `triages` |
 | 8 | `mapping` | `mappings`, `mapping_participants` |
 | 9 | `pending-items` | `pending_items` |
@@ -440,19 +442,20 @@ Dados adicionais do usuário interno: cargo, especialidades, áreas atendidas, d
 
 ### 7.4 `user_detail_categories`
 
-Áreas atendidas pelo profissional. Tabela filha, e não coluna `ARRAY` ou texto com ids ([02-Architecture § 10.3](./02-Architecture.md#103-portability-rules)).
+Áreas atendidas pelo usuário interno. Tabela filha, e não coluna `ARRAY` ou texto com ids ([02-Architecture § 10.3](./02-Architecture.md#103-portability-rules)). Aponta para `users.id` — a identidade do profissional é a conta, e não a extensão 1:1.
 
 | Coluna | Tipo | Nulo | Default | Notas |
 | --- | --- | --- | --- | --- |
 | `id` | uuid | não | — | PK, UUID v4 |
-| `user_detail_id` | uuid | não | — | FK → `user_details.id` (RESTRICT) |
+| `user_id` | uuid | não | — | FK → `users.id` (RESTRICT) |
 | `category_id` | uuid | não | — | FK → `portal-config.categories.id` (RESTRICT) |
 
-**Índices** — UNIQUE `uk_user_detail_categories_detail_category` (`user_detail_id`, `category_id`).
+**Índices** — UNIQUE `uk_user_detail_categories_user_category` (`user_id`, `category_id`).
 
 **Invariantes**
 
-- A mesma categoria não é atendida duas vezes pelo mesmo profissional.
+- A mesma categoria não é atendida duas vezes pelo mesmo usuário.
+- Quem atende categorias tem extensão: uma linha em `user_detail_categories` pressupõe a linha correspondente em `user_details`, criada na mesma transação. É regra de aplicação — uma constraint de check não enxerga outras linhas.
 
 **Regras preservadas do legado**
 
@@ -1171,7 +1174,7 @@ Schema sem dono de domínio ([ADR-0011](./adr/0011-infrastructure-schema-without
 | --- | --- |
 | `users` → `users` + `credentials` | O domínio `users` não guarda segredo; `UserReader` não pode vazar hash |
 | `requests` → `requests` + `request_details` | A entidade deixa de ser o formulário; a triagem deixa de ter cópia em `requests` |
-| `details_professional` → `user_details` + `user_detail_categories` | O profissional é o usuário interno; a lista de categorias vira tabela filha |
+| `details_professional` → `user_details` + `user_detail_categories` | O profissional é o usuário interno; a lista de categorias vira tabela filha; e toda referência ao profissional aponta para `users.id`, nunca para a extensão |
 | `audit_history` → `audit_entries` + `attempts` | Alteração e recusa são trilhas com garantias diferentes ([ADR-0007](./adr/0007-event-driven-audit.md)) |
 | `professional_id` → `responsible_id` → `users.id` | O profissional é 1:1 com a conta; a referência aponta para a conta |
 | `request_internal_notes` → `internal_notes` | Nome no vocabulário do domínio |

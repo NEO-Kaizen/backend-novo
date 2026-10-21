@@ -10,7 +10,7 @@ Decidimos que **o schema segue um conjunto único de convenções**, registradas
 
 - **Tabelas** em `snake_case` no plural, em inglês, com o nome do domínio como prefixo natural (`requests`, `internal_notes`).
 - **Colunas** em `snake_case`; booleanos com prefixo `is_` ou `has_`; campos de texto com limite de tamanho têm constraint `ck_` própria.
-- **Chave primária** sempre `id`, UUID v4 gerado pela aplicação; chave estrangeira `<entidade_no_singular>_id`.
+- **Chave primária** sempre `id`, UUID v4 gerado pela aplicação; chave estrangeira `<entidade_no_singular>_id`, apontando para a entidade e nunca para a sua extensão 1:1 — a identidade de uma pessoa é `users.id`, não `user_details.id`.
 - **Timestamps**: `created_at` e `updated_at` em linhas mutáveis; `occurred_at` em linhas de evento (`triages`, `audit_entries`, `attempts`); um único tipo de timestamp em toda a base.
 - **Exclusão**: `ON DELETE RESTRICT` em todas as chaves estrangeiras. Nenhum `CASCADE`, nenhum `SET NULL`.
 - **Conjuntos fechados de valores**: se o código enumera os valores, `text` com constraint `ck_` espelhando o catálogo do código; se o negócio administra os valores, tabela de referência.
