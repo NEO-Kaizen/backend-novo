@@ -70,6 +70,8 @@ Tabela que modela **uma instância** de um conceito repetível não prefixa as c
 
 **Exceção: a chave de um campo de formulário é o contrato.** O valor de `form_fields.key` e de `form_blocks.key` é a chave que o frontend envia no payload (`processName`, `desiredDeadline`, `demand`), em camelCase. Não é snake_case porque não é nome interno: é a chave que liga a definição ao contrato da API, e o frontend valida contra ela.
 
+**Uma chave promovida.** Uma chave do payload pode sair do formulário e ganhar uma **coluna própria, tipada e indexada** na entidade — é o que se chama de promover. Hoje há uma: `demand.category`, que é `requests.category_id`. Uma chave promovida deixa de ser pergunta e passa a ser atributo da entidade: o formulário deixa de perguntá-la, e o valor continua na coluna, que com NOT NULL e FK não pode ficar pendurada. Promover é uma operação: sai o campo da definição e nasce a coluna.
+
 ### 2.3 Primary Keys
 
 Toda chave primária é `id`, UUID v4 gerado pela aplicação via porta `IdGenerator` ([ADR-0003](./adr/0003-knex-dialect-portability.md)). O schema não depende de `sequence`, `serial` ou `auto_increment`.
@@ -191,7 +193,7 @@ O glossário é a fonte do vocabulário; estas são as tabelas onde cada termo v
 | **Anexo** | `requests.attachments` | Vinculado à solicitação e, opcionalmente, a uma pendência |
 | **Fila** | — | Projeção de leitura sobre `requests`; sem tabela própria |
 | **Status** | `portal-config.statuses` | Etapa do ciclo de vida, com visibilidade pública ou interna |
-| **Categoria** | `portal-config.categories` | Classificação ordenável da fila |
+| **Categoria** | `portal-config.categories`, `requests.category_id` | Classificação ordenável da solicitação — o solicitante propõe, a triagem confirma |
 | **Prioridade** | `prioritization.priorities` | Faixa de criticidade, definida por faixa de score |
 | **Triagem** | `triage.triages` | Histórico append-only; a triagem atual é a última linha |
 | **Veredito** | `triage.triages.result` | Resultado da triagem |
@@ -457,6 +459,7 @@ O **conteúdo** da solicitação não mora nesta tabela: o solicitante preenche 
 | `form_id` | uuid | não | — | FK → `forms.forms.id` (RESTRICT) — o formulário respondido |
 | `requester_user_id` | uuid | sim | — | FK → `users.id` (RESTRICT) — nulo quando a solicitação é anônima |
 | `status_id` | uuid | não | — | FK → `portal-config.statuses.id` (RESTRICT) — status interno atual |
+| `category_id` | uuid | não | — | FK → `portal-config.categories.id` (RESTRICT) — a classificação da solicitação |
 | `last_public_status_id` | uuid | sim | — | FK → `portal-config.statuses.id` (RESTRICT) — último status visível ao solicitante |
 | `priority_id` | uuid | sim | — | FK → `prioritization.priorities.id` (RESTRICT) |
 | `responsible_id` | uuid | sim | — | FK → `users.id` (RESTRICT) — o Responsável |
@@ -471,9 +474,9 @@ O **conteúdo** da solicitação não mora nesta tabela: o solicitante preenche 
 | `created_at` | timestamp | não | `now` | |
 | `updated_at` | timestamp | não | `now` | |
 
-**Relações** — `form_id` → `forms.forms.id`; `requester_user_id` → `users.id`; `status_id` e `last_public_status_id` → `portal-config.statuses.id`; `priority_id` → `prioritization.priorities.id`; `responsible_id` → `users.id`; `created_by_user_id` → `users.id`.
+**Relações** — `form_id` → `forms.forms.id`; `requester_user_id` → `users.id`; `status_id` e `last_public_status_id` → `portal-config.statuses.id`; `category_id` → `portal-config.categories.id`; `priority_id` → `prioritization.priorities.id`; `responsible_id` → `users.id`; `created_by_user_id` → `users.id`.
 
-**Índices** — UNIQUE `uk_requests_protocol`; `idx_requests_status_id`; `idx_requests_requester_user_id`; `idx_requests_priority_id`; `idx_requests_responsible_id`; `idx_requests_created_at`.
+**Índices** — UNIQUE `uk_requests_protocol`; `idx_requests_status_id`; `idx_requests_category_id`; `idx_requests_requester_user_id`; `idx_requests_priority_id`; `idx_requests_responsible_id`; `idx_requests_created_at`.
 
 **Invariantes**
 
@@ -483,8 +486,10 @@ O **conteúdo** da solicitação não mora nesta tabela: o solicitante preenche 
 - O solicitante pode ser anônimo: `requester_user_id` é nulo e a identidade do solicitante está nas respostas do bloco `requester`.
 - `created_by` é um rótulo, não uma referência — o portal público não tem usuário. `created_by_user_id` é a referência quando existe.
 - A solicitação não é excluída.
-- **A categoria é uma resposta do formulário** (`demand.category`), não uma coluna: o valor guardado é o `id` da categoria. Ver [ADR-0012](./adr/0012-form-is-a-configurable-entity.md).
-- **Quem reescreve uma resposta:** a equipe, quando a triagem muda a classificação — é a exceção que a regra da pendência permite. A correção pedida pelo solicitante é por pendência, e a pendência não edita a solicitação.
+- **A categoria é uma classificação, não uma pergunta.** É uma coluna — `requests.category_id` — e não um campo do formulário, porque status, prioridade e categoria são as três classificações da solicitação: as três são lidas pela fila, pelo dashboard e pela exportação, e as três são colunas tipadas. Ver [ADR-0012](./adr/0012-form-is-a-configurable-entity.md).
+- **O formulário só pergunta o que não é classificação.** A customização adiciona e remove perguntas; ela não toca nas classificações. Uma chave promovida deixa de ser perguntada, e o valor continua na coluna — que, com NOT NULL e FK, não pode ficar pendurada.
+- **A categoria chega pelo payload e é resolvida na escrita.** O frontend manda `demand.category` com o **nome** escolhido; o backend resolve o nome contra as categorias ativas e grava o `id`. Nome inválido é 400.
+- **Quem reescreve a classificação:** a equipe, quando a triagem reclassifica — é a exceção que a regra da pendência permite. A correção pedida pelo solicitante é por pendência, e a pendência não edita a solicitação.
 
 **Regras preservadas do legado**
 
@@ -519,7 +524,7 @@ As respostas do solicitante. Uma linha por campo preenchido.
 - A coluna de valor é determinada pelo tipo do campo: `text`, `long_text`, `email` e `select` → `value_text`; `number` e `decimal` → `value_number`; `date` → `value_date`; `boolean` → `value_boolean`; `yes_no_detail` → `value_boolean` **e** `value_text` (o detalhe). `value_json` fica para valor estruturado.
 - `value_text` só pode coexistir com `value_boolean`; qualquer outra combinação de duas colunas preenchidas é rejeitada por `ck_form_answers_value_shape`.
 - As respostas de uma solicitação pertencem ao formulário em `requests.form_id`.
-- O valor de um `select` é o **valor** da opção, não o rótulo. Para `demand.category`, o valor da opção é o `id` da categoria.
+- O valor de um `select` é o **valor** da opção, não o rótulo. As opções inline de um `select` são strings do próprio contrato.
 - **O banco não impõe os limites do campo.** O limite mora na definição (`form_fields.max_length`, `min_value`, `max_value`) e o valor em outra linha: a validação é da aplicação, na borda, guiada pela definição.
 - **`ck_form_answers_value_text_length` é um piso da tabela, não o limite do campo.** Ele limita o tamanho de qualquer resposta de texto, sem saber a qual campo ela pertence — o limite de 8000 é o dobro do maior limite de campo hoje (4000), e um campo que precise de mais exige uma migration para levantar o piso. Ele não substitui a validação da aplicação: um campo com `max_length` 150 continua aceitando mais, se a borda não validar.
 - Corrigir um campo reescreve a resposta; o histórico fica na auditoria.
@@ -527,7 +532,7 @@ As respostas do solicitante. Uma linha por campo preenchido.
 **Regras preservadas do legado**
 
 - O formulário é o mesmo: os quatro blocos, os campos, as obrigatoriedades e os limites.
-- `demand.category` é validado contra as categorias ativas no momento da abertura.
+- A categoria é validada contra as categorias ativas no momento da abertura, e gravada como coluna — não como resposta.
 
 ### 8.3 `attachments`
 
@@ -806,6 +811,7 @@ Responsabilidade: pendências de campo e de observação. Publica a porta `Pendi
 - A resolução fica na própria pendência: uma pendência resolvida é uma pendência com `resolution`, `resolved_by_user_id` e `resolved_at`. Não há histórico de respostas.
 - `requested_fields` só faz sentido para `type = field_edit`. Ele guarda as **chaves** do contrato, e `pending_item_fields` guarda os **ids** dos campos: as duas representações não são intercambiáveis. **A tabela filha é a fonte autoritativa**; o json é derivado dela e é regenerado quando a pendência é gravada.
 - Pendência pode pedir correção de um campo ou apenas registrar uma observação — `type` distingue os dois casos.
+- **Uma pendência pede a correção de um campo do formulário.** A classificação da solicitação não é campo: a categoria é corrigida pela equipe, na triagem.
 
 ### 13.2 `pending_item_fields`
 
@@ -949,7 +955,7 @@ O que foi recusado — por falta de permissão ou por regra de negócio. A recus
 
 Responsabilidade: dashboard, métricas, exportações. **Não tem tabelas** — é uma projeção de leitura sobre vários domínios, alimentada por consultas agregadas.
 
-As métricas de atraso (`overdue`) e de situação (`open`, `closed`, `overdue`, `unassigned`) são **derivadas** na consulta, a partir da resposta de `operational.desiredDeadline` e do conjunto de status terminais. Nada disso é armazenado. A classificação por categoria sai da resposta de `demand.category`.
+As métricas de atraso (`overdue`) e de situação (`open`, `closed`, `overdue`, `unassigned`) são **derivadas** na consulta, a partir da resposta de `operational.desiredDeadline` e do conjunto de status terminais. Nada disso é armazenado. A classificação por categoria sai da coluna `requests.category_id`.
 
 ---
 
@@ -1215,7 +1221,7 @@ Schema sem dono de domínio ([ADR-0011](./adr/0011-infrastructure-schema-without
 | `users` → `users` + `credentials` | O domínio `users` não guarda segredo; `UserReader` não pode vazar hash |
 | `requests` → `requests` + `form_answers` + `forms` | O formulário deixa de ser colunas e passa a ser definição + respostas |
 | `requesters` → respostas do bloco `requester` | O solicitante é o que foi preenchido, não uma linha por e-mail — [ADR-0013](./adr/0013-requester-is-an-answer-not-a-table.md) |
-| `requests.title`, `category_id`, `process_name` → respostas | A classificação e o conteúdo do formulário têm uma casa só |
+| `requests.title`, `process_name` → respostas | O conteúdo do formulário tem uma casa só; a classificação (a categoria) continua sendo coluna |
 | `details_professional` → `user_details` + `user_detail_categories` | O profissional é o usuário interno; a lista de categorias vira tabela filha |
 | `audit_history` → `audit_entries` + `attempts` | Alteração e recusa são trilhas com garantias diferentes ([ADR-0007](./adr/0007-event-driven-audit.md)) |
 | `professional_id` → `responsible_id` → `users.id` | O profissional é 1:1 com a conta; a referência aponta para a conta |
@@ -1249,7 +1255,9 @@ Schema sem dono de domínio ([ADR-0011](./adr/0011-infrastructure-schema-without
 
 ## 23. Appendix A — The Form Seed
 
-O formulário de abertura de solicitação, como nasce. São 33 campos em 4 blocos, com os rótulos que o produto já usa.
+O formulário de abertura de solicitação, como nasce. São **32 campos** em 4 blocos, com os rótulos que o produto já usa.
+
+A 33ª chave do catálogo do legado — `demand.category` — **não é um campo**: é a classificação, promovida a `requests.category_id`. O frontend continua mandando ela no payload; o backend resolve o nome e grava o id.
 
 **Bloco `requester` — Identificação**
 
@@ -1268,7 +1276,6 @@ O formulário de abertura de solicitação, como nasce. São 33 campos em 4 bloc
 | --- | --- | --- | --- | --- |
 | `title` | Título resumido | text | sim | 150 |
 | `requestType` | Tipo de solicitação | select | sim | `Automação`, `Melhoria`, `Manutenção` |
-| `category` | Categoria | select | sim | as categorias ativas — o único campo cujas opções não são inline |
 | `processName` | Nome do processo | text | sim | 150 |
 | `description` | Descrição da necessidade | text | sim | 4000 |
 | `problem` | Problema/oportunidade | text | sim | 4000 |

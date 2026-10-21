@@ -10,7 +10,7 @@ Para que o formulário possa ser configurável sem reescrever o backend, a defin
 
 A **chave do campo é a chave do contrato**: `form_fields.key` guarda a chave que o frontend envia (`processName`, `desiredDeadline`) e `form_blocks.key` guarda a chave do bloco (`demand`). A definição passa a ser o vocabulário único do formulário — o legado tinha dois, `approximate_volume` no banco e `volumetry` no payload — e a API lê e devolve a mesma forma aninhada, agrupando as respostas por bloco.
 
-A tabela `request_details` desaparece: os valores do formulário passam a ser linhas de `form_answers`, com colunas de valor tipadas (`value_text`, `value_number`, `value_date`, `value_boolean`, `value_json`). O catálogo de 33 campos é o seed do formulário.
+A tabela `request_details` desaparece: os valores do formulário passam a ser linhas de `form_answers`, com colunas de valor tipadas (`value_text`, `value_number`, `value_date`, `value_boolean`, `value_json`). O catálogo de 33 chaves é a origem do seed — das quais 32 são campos, e uma é a classificação promovida.
 
 ## Alternativas consideradas
 
@@ -25,5 +25,6 @@ A tabela `request_details` desaparece: os valores do formulário passam a ser li
 - **O banco não impõe mais os limites do campo.** O limite mora na definição e o valor em outra linha: a validação é da aplicação, na borda, guiada pela definição. É o preço da generalização, e é o motivo de a definição ser a fonte única.
 - O tipo de um campo não pode mudar depois que ele tem respostas; campos são desativados, nunca excluídos.
 - `pending_items.requested_fields` — um json de chaves — ganha a tabela filha `pending_item_fields`, que referencia `form_fields.id`.
-- A classificação da solicitação (a categoria) deixa de ser coluna e passa a ser a resposta de `demand.category`, com o `id` da categoria como valor — a triagem a troca reescrevendo a resposta.
+- **A classificação da solicitação continua sendo coluna.** A categoria é `requests.category_id`, como no legado: status, prioridade e categoria são as três classificações, lidas pela fila, pelo dashboard e pela exportação. O payload continua mandando `demand.category` com o nome, e o backend o resolve contra as categorias ativas e grava o id — a chave é *promovida*, sai do formulário e ganha coluna própria.
+- O formulário tem 32 campos, e não 33: **o formulário só pergunta o que não é classificação**. A customização adiciona e remove perguntas, e não toca nas classificações.
 - Vários formulários podem existir: o de abertura é um deles, e um formulário de outro assunto tem a mesma forma.
