@@ -422,7 +422,7 @@ O **conteúdo** da solicitação não mora nesta tabela: o solicitante preenche 
 | Coluna | Tipo | Nulo | Default | Notas |
 | --- | --- | --- | --- | --- |
 | `id` | uuid | não | — | PK, UUID v4 |
-| `protocol` | text | não | — | UNIQUE `uk_requests_protocol`, `ck_requests_protocol_length` ≤ 25 |
+| `protocol` | text | não | — | UNIQUE `uk_requests_protocol`, `ck_requests_protocol_length` ≤ 20 |
 | `form_id` | uuid | não | — | FK → `forms.forms.id` (RESTRICT) — o formulário da categoria escolhida |
 | `requester_user_id` | uuid | sim | — | FK → `users.id` (RESTRICT) — nulo quando a solicitação é anônima |
 | `status_id` | uuid | não | — | FK → `portal-config.statuses.id` (RESTRICT) — status interno atual |
@@ -463,8 +463,8 @@ O **conteúdo** da solicitação não mora nesta tabela: o solicitante preenche 
 
 *Preservadas do legado*
 
-- O protocolo é público, curto e não enumerável, e permite ao solicitante acompanhar a solicitação sem expor identidade interna.
-- O solicitante acompanha pelo protocolo; no modo público, a checagem de dono é feita pelo serviço.
+- O protocolo é público, curto e opaco — não é credencial e não revela a identidade interna.
+- O solicitante acompanha pelo protocolo; no modo público, o serviço confere o e-mail declarado com o da resposta `requester` e responde `404` quando não confere ([ADR-0023](./adr/0023-requester-email-is-a-lookup-key.md)).
 - A solicitação guarda data estimada de conclusão, reunião combinada e última mensagem técnica — o que o portal publica ao solicitante.
 - A abertura no modo autenticado ignora o nome e o e-mail do payload e usa os da sessão.
 
@@ -567,7 +567,7 @@ Slots de horário que o solicitante marcou como preferência.
 
 *Preservadas do legado*
 
-- O protocolo é público, curto e não enumerável; o solicitante acompanha a solicitação pelo protocolo.
+- O protocolo é público, curto e opaco; o solicitante acompanha a solicitação pelo protocolo.
 - Na abertura autenticada, nome e e-mail do payload são ignorados: valem os da sessão.
 - A solicitação guarda data estimada de conclusão, reunião combinada e última mensagem técnica.
 - O conteúdo do formulário é o mesmo: quatro blocos, campos, obrigatoriedades e limites.
@@ -1060,7 +1060,7 @@ Configuração global do portal. Singleton.
 | `id` | uuid | não | — | PK — singleton, garantido pela aplicação e pelo seed |
 | `solicitation_mode` | text | não | `PUBLIC` | `ck_portal_settings_solicitation_mode` ∈ `PUBLIC`, `AUTHENTICATED` |
 | `platform_name` | text | não | `MAAT` | `ck_portal_settings_platform_name_length` ≤ 80 |
-| `protocol_mask` | text | não | `MAAT` | `ck_portal_settings_protocol_mask_length` ≤ 10 |
+| `protocol_mask` | text | não | `MAAT` | `ck_portal_settings_protocol_mask_format` — `^[A-Z0-9]{1,10}$`, sem hífen |
 | `light_theme_id` | uuid | sim | — | FK → `themes.id` (RESTRICT) — a Aparência clara vigente |
 | `dark_theme_id` | uuid | sim | — | FK → `themes.id` (RESTRICT) — a Aparência escura vigente |
 | `updated_by_user_id` | uuid | sim | — | FK → `users.id` (RESTRICT) |
@@ -1071,6 +1071,7 @@ Configuração global do portal. Singleton.
 
 - Uma linha. A unicidade é da aplicação e do seed — nenhuma constraint portable conta linhas.
 - `solicitation_mode` é o Modo de acesso: `PUBLIC` libera a abertura de solicitação; `AUTHENTICATED` exige conta.
+- `protocol_mask` é o prefixo exibido no protocolo: `^[A-Z0-9]{1,10}$`, **sem hífen** — ele é o separador do formato `<mask>-XXXX-XXXX`. Trocar a máscara afeta só os protocolos emitidos depois; os existentes nunca são reescritos ([ADR-0008](./adr/0008-protocol-without-collision-risk.md)).
 - `light_theme_id` e `dark_theme_id` apontam as duas **Aparências vigentes** — uma por slot de Aparência. Nulo em um slot significa "sem Aparência nesse slot", e o frontend cai nos padrões locais.
 - A leitura consolidada do portal **compõe** `{ light, dark }` a partir dos dois slots: é o contrato que o frontend consome hoje, sem mudança. Ver [ADR-0015](./adr/0015-preserve-the-appearance-contract.md).
 - As duas Aparências apontadas precisam estar ativas: apontar para uma inativa é erro de aplicação.
@@ -1375,8 +1376,7 @@ Schema sem dono de domínio ([ADR-0011](./adr/0011-infrastructure-schema-without
 | RBAC configurável | As permissões são matriz em código. `permissions` e `profile_permissions` são o passo seguinte, semeadas pelo catálogo de Apêndice B | Demanda do produto por perfis configuráveis |
 | Preferência de aparência por solicitante | A escolha entre as aparências fica no cliente; o servidor não guarda preferência | A preferência precisar ser do servidor |
 | Projeção da fila | Nome do solicitante, processo e prazo saem das respostas, e a fila os junta por chave de campo. Uma tabela de projeção é a alternativa se a junção pesar | Volume da fila |
-| Identidade do solicitante | O bloco `requester` é resposta; a busca por e-mail é um índice sobre as respostas | Volume de solicitações |
-| Entropia do prefixo do protocolo | O formato vigente é `MAAT-XXXX-XXXX`, com 40 bits. O prefixo de 80 bits (`MAAT3K7P-ABCD-EFGH`) reduz a chance de colisão e muda o formato exibido ao solicitante | [ADR-0008](./adr/0008-protocol-without-collision-risk.md) |
+| Identidade do solicitante | O bloco `requester` é resposta; a busca por e-mail é um índice sobre as respostas. O e-mail declarado é chave de busca, não autenticação, e a recusa é `404` ([ADR-0023](./adr/0023-requester-email-is-a-lookup-key.md)) | Volume de solicitações |
 | Anexo restrito | A coluna `attachments.is_restricted` existe, mas nenhuma regra a implementa e nada a lê. Decidir se o conceito é implementado — quem enxerga o arquivo, e o que o solicitante vê — ou se a coluna sai | Decisão de produto sobre conteúdo restrito (LGPD) |
 
 ---
