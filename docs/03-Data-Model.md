@@ -115,7 +115,7 @@ Coluna nomeada `<entidade_no_singular>_id`, referenciando `id` da outra tabela. 
 
 **Três colunas não seguem o padrão `<entidade>_id`**, porque o nome carrega a função e não o alvo: `form_answers.field_id` e `pending_item_fields.form_field_id` apontam para `forms.form_fields.id`; `internal_note_read_states.last_read_note_id` aponta para `internal_notes.id`. São exceções intencionais.
 
-`pending_item_fields.classification_key` não é chave estrangeira: é o vocabulário de código das classificações, espelhado em `ck_` ([§ 2.7](#27-closed-value-sets)).
+`pending_item_fields.classification_key` não é chave estrangeira: é o vocabulário de código das classificações, `∈ category`, espelhado em `ck_pending_item_fields_classification_key` ([§ 2.7](#27-closed-value-sets)).
 
 A referência aponta para a **entidade**, nunca para a sua extensão 1:1. A identidade de uma pessoa é `users.id`; `analyst_details` é extensão de `users` e nunca é referenciada. A mesma regra vale para qualquer extensão 1:1 — `analyst_details` também é alcançada por `users.id`.
 
@@ -160,7 +160,7 @@ Consequências:
 - O mesmo conjunto não é armazenado duas vezes **como coluna de classificação**. Onde existe tabela de referência, o resto referencia por FK — `prioritization_evaluations.priority_id` é a **única** casa da faixa ([ADR-0016](./adr/0016-priority-has-one-home.md)). *Exceção:* os campos `select` do formulário têm opções inline que coincidem com um conjunto do produto; são vocabulários de formulário, não de classificação, e não têm FK porque o formulário é um catálogo genérico. Nenhum deles é classificação — **status, prioridade e categoria são as três**.
 - Os quatro `select` do formulário usam duas escalas de gravidade diferentes: `perceivedCriticality` (urgência percebida pelo solicitante) e `operationalImpact` (impacto do pedido no processo). São perguntas distintas e alimentam critérios distintos da priorização. **Todos os `select` do formulário têm opções inline.** A **categoria** não é um `select` do formulário: as suas opções são as **categorias ativas**, e elas vivem em `portal-config.categories` — o formulário não guarda cópia delas, e a classificação Categoria não tem linha em `form_fields`.
 - Tabela de referência referenciada **pelo código** precisa de chave estável: `profiles.name` **é** a chave de `core/authorization/profile-permissions.ts`.
-- Tabela de referência referenciada **por id** não precisa de chave estável: `statuses` usa `id` e `order_number` — e `key`, que é o que o código referencia.
+- Tabela de referência referenciada **por id** não precisa de chave estável para a FK: `statuses` usa `id` e `order_number`; a `key` existe porque o código a referencia, e é ela que o seed fixa.
 - Adicionar um valor a um vocabulário do código toca o catálogo **e** a constraint `ck_` no mesmo pull request. São espelhos; um PR que muda um sem o outro está quebrado.
 
 **Toda entidade que pode ser escrita tem tipo de entidade auditável.** A lista vive no catálogo de auditoria em código e é espelhada em `ck_audit_entries_entity_type` ([ADR-0020](./adr/0020-audit-trail-shape.md)). Entidade cujo ciclo de vida é controlado pelo pai é auditada sob o pai. Duas ficam de fora: `internal_note_read_state` é auditada sob `internal_note`, e `code_counters` é infraestrutura, fora do domínio.
@@ -244,7 +244,7 @@ Duas consequências operacionais:
 | 14 | `audit` | `audit_entries`, `attempts` |
 | 15 | `platform` | `code_counters` |
 
-**Desmontagem.** Renomear ou excluir uma tabela referenciada exige antes remover a FK que a aponta — e essa migration é do domínio que referencia. É o único ponto em que a autonomy de um domínio toca a de outro, e ele é explícito.
+**Desmontagem.** Renomear ou excluir uma tabela referenciada exige antes remover a FK que a aponta — e essa migration é do domínio que referencia. É o único ponto em que a autonomia de um domínio toca a de outro, e ele é explícito.
 
 **Exceções ao padrão.** Quatro colunas não têm FK:
 
@@ -453,7 +453,7 @@ O **conteúdo** da solicitação não mora nesta tabela: o solicitante preenche 
 - O solicitante pode ser anônimo: `requester_user_id` é nulo e a identidade do solicitante está nas respostas do bloco `requester`.
 - **Toda solicitação nasce no status de `key = solicitacao_enviada`** — o status inicial do ciclo.
 - `created_by` é um rótulo, não uma referência — o portal público não tem usuário. `created_by_user_id` é a referência quando existe.
-- **A classificação é coluna, não pergunta.** Status, Prioridade e Categoria são as três classificações da solicitação: as três são colunas tipadas e lidas pela fila, pelo dashboard e pela exportação. A customização do formulário adiciona e remove perguntas e não toca nas classificações. Ver [ADR-0012](./adr/0012-form-is-a-configurable-entity.md).
+- **A classificação é coluna, não pergunta.** Status, Prioridade e Categoria são as três classificações da solicitação: as três são lidas como colunas tipadas pela fila, pelo dashboard e pela exportação — status e categoria em `requests`, prioridade na avaliação corrente. A customização do formulário adiciona e remove perguntas e não toca nas classificações. Ver [ADR-0012](./adr/0012-form-is-a-configurable-entity.md).
 - **A categoria chega no topo da submissão e é resolvida na escrita.** O frontend manda `category` com o **nome** escolhido, **fora dos blocos**; o backend resolve o nome contra as categorias ativas, grava o `id` em `requests.category_id` e **acha o formulário pela categoria** (`categories.form_id`). Nome inválido é 400.
 - **O formulário respondido é o da categoria escolhida.** O payload não carrega o formulário: ele é derivado da categoria, e a borda valida o payload contra a definição **daquele** formulário.
 - **Quem reescreve a classificação:** o solicitante, quando responde a uma pendência que pede a correção da categoria; a equipe, quando a triagem reclassifica. A pendência escreve `requests.category_id` — resolvendo o nome contra as categorias ativas — e **não** uma resposta: a classificação não tem resposta. A reclassificação chega ao `requests` por **evento de domínio** publicado pelo domínio `triage`: quem escreve `requests.category_id` é o domínio dono da coluna, e a reclassificação é aplicada na mesma transação que registra a triagem.
@@ -541,6 +541,7 @@ Arquivos enviados com a solicitação.
 
 - O arquivo vive fora do banco; a tabela guarda o ponteiro, o tamanho e o tipo.
 - `pending_item_id` liga o anexo à pendência que ele atende.
+- **O anexo pertence à solicitação da pendência que ele atende.** Quando `pending_item_id` está preenchido, a pendência tem o mesmo `request_id` do anexo; a FK simples não expressa o par, então a regra é da aplicação.
 - No máximo cinco anexos por solicitação, e no máximo dez megabytes por arquivo.
 
 ### 8.4 `request_time_preferences`
@@ -561,6 +562,21 @@ Slots de horário que o solicitante marcou como preferência.
 - O mesmo slot não é registrado duas vezes para a mesma solicitação.
 - No máximo três slots por solicitação, e todos no futuro ou no dia de hoje.
 - **`request_time_preferences.scheduled_for` é a fronteira do fuso.** O slot chega sem offset (`yyyy-mm-ddThh:mm`), é interpretado no fuso do portal e gravado em UTC como o resto da base; o frontend traduz de volta na leitura.
+
+**Regras de negócio**
+
+*Preservadas do legado*
+
+- O protocolo é público, curto e não enumerável; o solicitante acompanha a solicitação pelo protocolo.
+- Na abertura autenticada, nome e e-mail do payload são ignorados: valem os da sessão.
+- A solicitação guarda data estimada de conclusão, reunião combinada e última mensagem técnica.
+- O conteúdo do formulário é o mesmo: quatro blocos, campos, obrigatoriedades e limites.
+
+*Acrescentadas pelo modelo novo*
+
+- `closed_at` registra o instante do encerramento; o legado derivava o fato de `statuses.is_terminal`.
+- `created_by_user_id` guarda a referência de quem abriu; `created_by` continua sendo o rótulo do portal público.
+- O conteúdo do formulário sai das colunas e vira `form_answers`; a categoria continua coluna.
 
 ---
 
@@ -727,7 +743,7 @@ Quesitos ponderados do cálculo.
 
 **Invariantes**
 
-- O peso é uma **razão relativa**, e não uma escala: só a proporção entre os pesos altera o resultado. A faixa de 0 a 10 é um limite de saneamento por critério, e não pressupõe um número fixo de critérios. Critério desativado não participa do cálculo, mas mantém a linha e o registro do seu peso.
+- O peso é uma **razão relativa**, e não uma escala: só a proporção entre os pesos altera o resultado. A faixa de 0 a 10 é um limite de saneamento por critério. O número de critérios ativos não é fixo: o legado exigia dez, e o modelo novo usa a lista ativa — ver § 12.3. Critério desativado não participa do cálculo, mas mantém a linha e o registro do seu peso.
 
 ### 12.2 `priorities`
 
@@ -776,7 +792,7 @@ A avaliação corrente da solicitação. O registro de reavaliações **não** t
 **Invariantes**
 
 - Uma avaliação corrente por solicitação.
-- **O score é uma média ponderada normalizada.** `score = 10 + 40 × (Σ notasᵢ × pesoᵢ) / (Σ pesosᵢ)`, sobre os **critérios ativos**, com as notas na escala de 1 a 5 e o peso na de 0 a 10. O denominador é a soma dos pesos dos critérios ativos, então **a fórmula acompanha a lista de critérios**: com dez critérios ou com doze, a faixa do score continua sendo 10 a 50.
+- **O score é a média ponderada das notas, na escala de 10 a 50.** `score = 10 × (Σ notasᵢ × pesoᵢ) / (Σ pesosᵢ)`, sobre os **critérios ativos**, com as notas na escala de 1 a 5 e o peso na de 0 a 10. O denominador é a soma dos pesos dos critérios ativos, então **a fórmula acompanha a lista de critérios**: com dez critérios ou com doze, a faixa do score continua sendo 10 a 50.
 - **A soma dos pesos dos critérios ativos tem de ser maior que zero.** Sem isso não há score — é erro de aplicação, não de banco.
 - A faixa resultante é uma referência à tabela de faixas, não uma cópia do texto. O legado guardava a classificação como `ENUM` duplicado aqui.
 - A reavaliação é auditada como `prioritization_evaluation`, com a ação `evaluate` — é o que guarda o registro de reavaliações que esta tabela não tem.
@@ -789,6 +805,10 @@ A avaliação corrente da solicitação. O registro de reavaliações **não** t
 - O score é normalizado na faixa 10–50, e a classificação sai das faixas configuradas.
 - As notas do cálculo são um snapshot, não uma referência.
 - Reavaliar substitui a avaliação corrente; o registro fica na trilha de auditoria.
+
+*Acrescentadas pelo modelo novo*
+
+- O cardinal fixo de dez critérios do legado sai: o cálculo usa os critérios ativos e o denominador acompanha a lista. A soma dos pesos ativos continua tendo de ser maior que zero; a faixa 10–50 é preservada pela normalização.
 
 ---
 
@@ -827,7 +847,7 @@ Responsabilidade: pendências de campo e de observação. Publica a porta `Pendi
 - Há **no máximo uma pendência em aberto por solicitação**; abrir outra é 409.
 - **A pendência guarda duas vozes, e elas não se misturam:** `response_text` é o que o solicitante respondeu, e `resolution` é o que a equipe escreveu ao validar. Quem validou e quando ficam em `validated_by_user_id` e `validated_at`.
 - **Abrir pendência move a solicitação para o status de `key = pendente_de_informacoes`**; quando todas as pendências em aberto da solicitação são respondidas, ela volta para `key = em_triagem`; reabrir devolve.
-- `requested_fields` só faz sentido para `type = field_edit`. Ele guarda as **chaves** do contrato — a chave do campo, com o bloco: `demand.title` — **e a chave da classificação**, quando o pedido é de uma classificação. As duas representações não são intercambiáveis. **A tabela filha é a fonte autoritativa**; o json é derivado dela e é regenerado quando a pendência é gravada.
+- `requested_fields` só faz sentido para `type = field_edit`. Ele guarda as **chaves** do contrato — a chave do campo (`processName`, `desiredDeadline`) — **e a chave da classificação** (`category`), quando o pedido é de uma classificação. As duas representações não são intercambiáveis. **A tabela filha é a fonte autoritativa**; o json é derivado dela e é regenerado quando a pendência é gravada.
 - Pendência pode pedir correção de um campo ou apenas registrar uma observação — `type` distingue os dois casos. O pedido de anexo é o par `requires_attachment` e `expected_attachment_type`, e não um terceiro tipo.
 - **Uma pendência pede a correção de um campo do formulário ou de uma classificação.** A classificação é o atributo que a pendência pode pedir ao solicitante que corrija: a correção vai para a coluna da entidade, resolvida pelo nome contra as categorias ativas. A classificação que a equipe muda — a categoria, na triagem — não é campo nem é pedida ao solicitante: é evento de domínio.
 - **Toda pendência é para o solicitante.** Não há visibilidade a configurar.
@@ -841,7 +861,7 @@ O que a pendência pede para corrigir: um campo do formulário **ou** uma classi
 | `id` | uuid | não | — | PK, UUID v4 |
 | `pending_item_id` | uuid | não | — | FK → `pending_items.id` (RESTRICT) |
 | `form_field_id` | uuid | sim | — | FK → `forms.form_fields.id` (RESTRICT) — **nulo** quando o pedido é de uma classificação |
-| `classification_key` | text | sim | — | A classificação pedida — `ck_pending_item_fields_classification_key` — **nulo** quando o pedido é de um campo do formulário |
+| `classification_key` | text | sim | — | A classificação pedida — `ck_pending_item_fields_classification_key` ∈ `category` — **nulo** quando o pedido é de um campo do formulário |
 | `corrected_value` | json | sim | — | O valor corrigido pelo solicitante, **estacionado** até a validação |
 | `created_at` | timestamp | não | `now` | |
 
@@ -922,6 +942,19 @@ Marca de leitura por usuário.
 - Uma marca por usuário por solicitação.
 - A nota marcada como lida pertence à mesma solicitação da marca.
 
+**Regras de negócio**
+
+*Preservadas do legado*
+
+- Nota interna é comunicação do time, visível só para o time e integrada à linha do tempo.
+- O conteúdo tem limite de 4000 caracteres e não pode ser vazio.
+
+*Acrescentadas pelo modelo novo*
+
+- A nota é imutável: não há edição nem exclusão.
+- `author_profile_at_creation` congela o perfil do autor no momento da escrita.
+- A marca de leitura é por usuário e por solicitação, e só aponta para nota da mesma solicitação.
+
 ---
 
 ## 15. Domain `audit`
@@ -989,6 +1022,20 @@ O que foi recusado — por falta de permissão ou por regra de negócio. A recus
 - A gravação é best-effort: se falhar, o log estruturado registra e a resposta segue. A assimetria em relação à auditoria é deliberada.
 - O critério de auditabilidade é explícito no erro, não inferido de uma lista na borda.
 - `attempts` espelha o vocabulário de `audit_entries`: as duas trilhas respondem às mesmas perguntas do mesmo jeito.
+
+**Regras de negócio**
+
+*Preservadas do legado*
+
+- A auditoria é imutável e registra autor, momento, valor anterior e novo.
+- A recusa é registrada mesmo quando a transação é desfeita; a gravação é best-effort e não bloqueia a resposta.
+- Erro de validação (400) não é auditado; falha de autenticação (401) pertence ao log de segurança.
+
+*Acrescentadas pelo modelo novo*
+
+- Alteração e recusa são trilhas separadas (`audit_entries` e `attempts`), com garantias diferentes.
+- `attempts` é gravada fora da transação, pela porta `AttemptRecorder`, e é o único método de escrita que não exige transação corrente.
+- A entidade auditada é identificada por `entity_type`/`entity_id`; a referência é polimórfica e não tem FK.
 
 ---
 
@@ -1218,6 +1265,21 @@ As perguntas. A chave do campo é a chave do campo no payload.
 - O **tipo** de um campo não muda depois que ele tem respostas — regra de aplicação.
 - `options` só existe para `select`. O **valor** da opção é o que se guarda; o rótulo é o que se mostra. No seed, valor e rótulo são a mesma string.
 - Os limites do campo são validados pela aplicação, na borda — o banco não os impõe, porque o valor vive em outra tabela.
+
+**Regras de negócio**
+
+*Preservadas do legado*
+
+- O formulário de abertura tem quatro blocos e 32 campos, com os rótulos, obrigatoriedades e limites do contrato atual.
+- A categoria é pedida no topo, fora dos blocos, e escolhe o formulário.
+- A chave do campo é a chave do payload; o frontend valida contra ela.
+
+*Acrescentadas pelo modelo novo*
+
+- O formulário é uma entidade editável in-place; o seed é andaime, não a definição imutável.
+- A definição é a fonte única dos limites; o banco não impõe `max_length`, `min_value` ou `max_value`.
+- A chave é única no formulário inteiro; o tipo de um campo não muda depois que ele tem respostas.
+- Uma categoria ativa tem sempre um formulário ligado; duas categorias podem apontar o mesmo formulário.
 
 ---
 
