@@ -46,12 +46,12 @@ O backend legado (`NEO-Kaizen/backend`) funciona, mas carrega problemas estrutur
 | Domínios importando repositórios de outros domínios | Fronteiras entre áreas dissolvidas, ciclos entre módulos | [ADR-0001](./adr/0001-layered-architecture-per-domain.md), [ADR-0007](./adr/0007-event-driven-audit.md) |
 | Regras de autorização duplicadas em vários arquivos | Regra divergente por área, correção parcial | [ADR-0006](./adr/0006-static-profile-authorization.md) |
 | SQL específico de Postgres espalhado pelos repositórios | Troca de engine inviável | [ADR-0003](./adr/0003-knex-dialect-portability.md) |
-| `console.log` como logging | Sem correlação, sem redação de dados sensíveis | [02-Architecture § 17](./02-Architecture.md#17-logging) |
+| `console.log` como logging | Sem correlação, sem redação de dados sensíveis | [02-Architecture § 17](./02-Architecture.md#17-log) |
 | Zero testes automatizados | Nenhuma rede de segurança para uma reescrita | [ADR-0002](./adr/0002-manual-dependency-injection.md) |
 | Schema espalhado em três pastas de migration, sem dono | Modelagem sem responsabilidade clara | [ADR-0004](./adr/0004-domain-owned-schema-and-migrations.md) |
 | Protocolo lido com `.first()`, sem dono verificado no modo público | Risco de exibir dados de outra solicitação | [ADR-0008](./adr/0008-protocol-without-collision-risk.md) |
 
-A lista completa de anti‑padrões que esta arquitetura existe para não repetir está em [02-Architecture § 20](./02-Architecture.md#20-anti-patterns).
+A lista completa de anti‑padrões que esta arquitetura existe para não repetir está em [02-Architecture § 20](./02-Architecture.md#20-anti-padrões).
 
 A reescrita não é uma reimplementação linha a linha. O legado é a **fonte de requisitos** — regras de negócio, estados, contratos de API e vocabulário — mas a organização do código é nova.
 
@@ -87,7 +87,7 @@ A reescrita não é uma reimplementação linha a linha. O legado é a **fonte d
 | Linguagem | TypeScript 7, modo estrito | `CODING_STANDARDS.md` |
 | HTTP | Express 5 | `CODING_STANDARDS.md` |
 | Persistência | Knex como query builder, sem ORM | [ADR-0003](./adr/0003-knex-dialect-portability.md) |
-| Validação | Zod na borda | [02-Architecture § 13](./02-Architecture.md#13-validation-and-the-border) |
+| Validação | Zod na borda | [02-Architecture § 13](./02-Architecture.md#13-validação-e-a-borda) |
 | Autorização | Matriz de permissões em código | [ADR-0006](./adr/0006-static-profile-authorization.md) |
 | Auditoria | Alteração orientada a evento; tentativa gravada na borda | [ADR-0007](./adr/0007-event-driven-audit.md) |
 
@@ -101,7 +101,7 @@ O backend é organizado em treze domínios, cada um dono de suas tabelas, regras
 
 `auth` · `users` · `requests` · `triage` · `mapping` · `queue` · `prioritization` · `pending-items` · `internal-notes` · `audit` · `reports` · `portal-config` · `forms`
 
-O inventário completo, com responsabilidades e portas publicadas por cada domínio, está em [02-Architecture § 5 Domain Catalog](./02-Architecture.md#5-domain-catalog).
+O inventário completo, com responsabilidades e portas publicadas por cada domínio, está em [02-Architecture § 5 Catálogo de Domínios](./02-Architecture.md#5-catálogo-de-domínios).
 
 ---
 

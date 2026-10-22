@@ -1,4 +1,4 @@
-# Data Model — Vocabulário para Schema
+# Modelo de Dados — Vocabulário para Schema
 
 Índice **termo → tabela**. O glossário é a fonte do vocabulário ([`../GLOSSARY.md`](../GLOSSARY.md)); este arquivo é só o mapa de onde cada termo mora no schema.
 

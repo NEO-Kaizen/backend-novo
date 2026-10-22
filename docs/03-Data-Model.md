@@ -1,4 +1,4 @@
-# Data Model
+# Modelo de Dados
 
 O modelo de dados do **MAAT** (Tirador de Pedidos): as tabelas, as colunas, as relações e as invariantes que a aplicação assume.
 
@@ -15,7 +15,7 @@ Documentos relacionados:
 
 ---
 
-## 1. Scope and Source of Truth
+## 1. Escopo e Fonte de Verdade
 
 O backend é organizado em treze domínios, cada um dono das suas tabelas ([ADR-0004](./adr/0004-domain-owned-schema-and-migrations.md)). Este documento descreve o schema completo: a soma das tabelas de cada domínio, mais a tabela de infraestrutura que não tem dono de domínio ([ADR-0011](./adr/0011-infrastructure-schema-without-domain-owner.md)).
 
@@ -59,19 +59,19 @@ Por isso cada seção de domínio fecha com o bloco **Regras de negócio**, divi
 
 ---
 
-## 2. Naming Conventions
+## 2. Convenções de Nomenclatura
 
 As regras valem para todas as tabelas deste documento. A justificativa de cada uma está em [ADR-0009](./adr/0009-schema-naming-and-constraints.md).
 
-### 2.1 Tables
+### 2.1 Tabelas
 
 `snake_case`, no plural, em inglês, com o nome do domínio refletido no nome quando a tabela é específica dele (`internal_notes`, `mapping_participants`). Tabela que descreve um **documento 1:1** com outro usa o nome do pai com o sufixo `_details` (`analyst_details`).
 
 **Identificadores técnicos não são vocabulário.** Os nomes de tabela, coluna, constraint e chave de permissão seguem a convenção de nomenclatura em inglês e não o vocabulário do domínio, que está em [`GLOSSARY.md`](../GLOSSARY.md). Exceções, por usarem palavra do domínio: `themes` (a Aparência) e `pending_items` / `pending_item_fields` (a Pendência).
 
-### 2.2 Columns
+### 2.2 Colunas
 
-`snake_case`. Booleanos com prefixo `is_` ou `has_`, com as exceções registradas em [§ 2.6](#26-booleans).
+`snake_case`. Booleanos com prefixo `is_` ou `has_`, com as exceções registradas em [§ 2.6](#26-booleanos).
 
 Colunas de texto com limite de tamanho têm constraint `ck_` própria, nomeada `ck_<tabela>_<coluna>_length`. É a única forma de impor o limite nas três engines: o SQLite ignora o comprimento declarado em `varchar(n)`, e o `ck_` torna o limite explícito e uniforme em Postgres e MySQL. Onde a tabela deste documento escreve apenas "≤ N", o nome da constraint é o implícito acima.
 
@@ -95,7 +95,7 @@ Duas consequências, e ambas são mecânicas: **a classificação não tem linha
 | --- | --- | --- | --- |
 | Categoria | `requests.category_id` | Abertura e correção por pendência, pelo nome, contra as categorias ativas | O solicitante, por pendência; a equipe, na triagem |
 
-### 2.3 Primary Keys
+### 2.3 Chaves Primárias
 
 Toda chave primária é `id`, UUID v4 gerado pela aplicação via porta `IdGenerator` ([ADR-0003](./adr/0003-knex-dialect-portability.md)). O schema não depende de `sequence`, `serial` ou `auto_increment`.
 
@@ -107,7 +107,7 @@ Três exceções, todas com chave natural ou composta, e nenhuma delas é um id 
 
 A tabela singleton `portal_settings` usa `id` UUID como chave e é garantida pela aplicação e pelo seed — nenhuma constraint portable conta linhas.
 
-### 2.4 Foreign Keys
+### 2.4 Chaves Estrangeiras
 
 Coluna nomeada `<entidade_no_singular>_id`, referenciando `id` da outra tabela. `ON DELETE RESTRICT` em todas.
 
@@ -115,7 +115,7 @@ Coluna nomeada `<entidade_no_singular>_id`, referenciando `id` da outra tabela. 
 
 **Três colunas não seguem o padrão `<entidade>_id`**, porque o nome carrega a função e não o alvo: `form_answers.field_id` e `pending_item_fields.form_field_id` apontam para `forms.form_fields.id`; `internal_note_read_states.last_read_note_id` aponta para `internal_notes.id`. São exceções intencionais.
 
-`pending_item_fields.classification_key` não é chave estrangeira: é o vocabulário de código das classificações, `∈ category`, espelhado em `ck_pending_item_fields_classification_key` ([§ 2.7](#27-closed-value-sets)).
+`pending_item_fields.classification_key` não é chave estrangeira: é o vocabulário de código das classificações, `∈ category`, espelhado em `ck_pending_item_fields_classification_key` ([§ 2.7](#27-conjuntos-fechados)).
 
 A referência aponta para a **entidade**, nunca para a sua extensão 1:1. A identidade de uma pessoa é `users.id`; `analyst_details` é extensão de `users` e nunca é referenciada. A mesma regra vale para qualquer extensão 1:1 — `analyst_details` também é alcançada por `users.id`.
 
@@ -137,13 +137,13 @@ Coluna que guarda um instante do processo, e não da escrita, é declarada por c
 
 Um único tipo de timestamp em toda a base, via `dialect.timestampType()`. `occurred_at` é tempo de negócio, não ordem de commit ([ADR-0007](./adr/0007-event-driven-audit.md)).
 
-### 2.6 Booleans
+### 2.6 Booleanos
 
 Prefixo `is_` ou `has_`. Um "enum" de dois valores é boolean: `categories.status` (active/inactive) virou `categories.is_active`, e `analyst_details.status` virou `analyst_details.is_available`.
 
 **Exceções, já no modelo:** `form_fields.required` e `form_fields.must_be_future` (o prefixo seria redundante com o nome do campo); `credentials.must_change_password` e `pending_items.requires_attachment` (o prefixo repetiria o verbo do substantivo que já está no nome); `form_answers.value_boolean` (é a **coluna de valor** de uma resposta booleana, não uma marca); e os tokens de Aparência `themes.logo_use_primary_color` e `themes.status_*_background_locked` (o prefixo quebraria o nome do token que o frontend consome).
 
-### 2.7 Closed Value Sets
+### 2.7 Conjuntos Fechados
 
 Cada conjunto fechado de valores é decidido por três testes, em ordem:
 
@@ -165,7 +165,7 @@ Consequências:
 
 **Toda entidade que pode ser escrita tem tipo de entidade auditável.** A lista vive no catálogo de auditoria em código e é espelhada em `ck_audit_entries_entity_type` ([ADR-0020](./adr/0020-audit-trail-shape.md)). Entidade cujo ciclo de vida é controlado pelo pai é auditada sob o pai. Duas ficam de fora: `internal_note_read_state` é auditada sob `internal_note`, e `code_counters` é infraestrutura, fora do domínio.
 
-### 2.8 Indexes and Constraints
+### 2.8 Índices e Constraints
 
 | Prefixo | Objeto |
 | --- | --- |
@@ -181,20 +181,20 @@ Constraints são declaradas com o construtor do knex (`table.check(predicate, un
 
 Uma constraint de check **não enxerga outras linhas**. Invariante que depende de mais de uma linha — duas faixas de prioridade que não podem se sobrepor, por exemplo — é regra de aplicação e aparece listada como invariante na seção do domínio.
 
-### 2.9 Text, Numbers and JSON
+### 2.9 Texto, Números e JSON
 
 - Texto com limite: `text` + `ck_` de comprimento. Texto sem limite: `text`.
 - Decimal com precisão explícita: `decimal(5,1)` para o score de priorização, `decimal(4,1)` para a faixa de score da prioridade, `decimal(3,2)` para o peso padrão da faixa, `decimal(10,2)` para o número de uma resposta de formulário e para os limites de um campo numérico.
-- JSON via `dialect.jsonType()`. A **forma** do JSON é validada na borda, com Zod ([02-Architecture § 13](./02-Architecture.md#13-validation-and-the-border)): `json_typeof()` é Postgres, e o equivalente diverge entre MySQL e SQLite.
+- JSON via `dialect.jsonType()`. A **forma** do JSON é validada na borda, com Zod ([02-Architecture § 13](./02-Architecture.md#13-validação-e-a-borda)): `json_typeof()` é Postgres, e o equivalente diverge entre MySQL e SQLite.
 
-### 2.10 Normalization
+### 2.10 Normalização
 
 - **E-mail** é armazenado em minúsculas (`trim().toLowerCase()`) e único sobre o valor armazenado. O login normaliza antes de comparar.
 - **Unicidade sem distinção de caixa** que não possa ser feita com `LOWER()` — porque índice funcional não é portátil — usa **coluna normalizada** mantida pela aplicação e única: `categories.normalized_name`.
 - O e-mail do **solicitante** — a resposta de `requester.corporateEmail` — **não** é único, de propósito: mais de uma pessoa pode usar a mesma caixa corporativo. Não é um defeito. O e-mail da **conta** (`users.email`) é único.
 - O e-mail do solicitante é **normalizado** como o da conta (`trim().toLowerCase()`), mesmo sem ser único — a busca por e-mail compara o valor normalizado.
 
-### 2.11 Delete Policy
+### 2.11 Política de Exclusão
 
 `ON DELETE RESTRICT` em todas as chaves estrangeiras. Não há `CASCADE` nem `SET NULL` em lugar nenhum do modelo.
 
@@ -214,11 +214,11 @@ Por isso a exclusão de um status em uso é bloqueada pelo banco, e o caminho pa
 
 ---
 
-## 3. Vocabulary to Schema
+## 3. Vocabulário para Schema
 
 O índice **termo → tabela** está em [`03-Data-Model-Vocabulary.md`](./03-Data-Model-Vocabulary.md). É um índice de leitura, não parte da especificação.
 
-## 4. Referential Integrity and Creation Order
+## 4. Integridade Referencial e Ordem de Criação
 
 Toda referência entre tabelas é uma FK com `ON DELETE RESTRICT`, inclusive entre domínios — **exceto as referências polimórficas** listadas no fim desta seção. A FK é declarada **na migration do domínio que referencia** e altera só a tabela que referencia: a [ADR-0004](./adr/0004-domain-owned-schema-and-migrations.md) proíbe alterar tabelas de dois domínios, não apontar para a tabela de outro.
 
@@ -257,11 +257,11 @@ Duas consequências operacionais:
 
 ---
 
-## 5. Entity-Relationship Overview
+## 5. Visão Geral das Entidades
 
 Os diagramas de entidade estão em [`03-Data-Model-Diagrams.md`](./03-Data-Model-Diagrams.md). São de orientação, não normativos.
 
-## 6. Domain `auth`
+## 6. Domínio `auth`
 
 Responsabilidade: login, logout, sessão, troca de senha. Publica a porta `AuthReader`. É o único domínio que enxerga material de senha.
 
@@ -286,7 +286,7 @@ Material de credencial do usuário. Separado de `users` para que o domínio `use
 - O hash é bcrypt (`$2b$10$…`): algoritmo e custo estão na própria string, então trocar de algoritmo não exige migration.
 - `password_changed_at` nunca anda para trás. Um token emitido antes do valor atual é recusado — é o mecanismo de revogação.
 - A senha nunca é armazenada; só o hash. A resposta de login é idêntica para e-mail inexistente, conta inativa e senha errada.
-- **Não existe tabela de sessões.** A sessão é o token: JWT em cookie `HttpOnly`, relido do banco a cada requisição ([02-Architecture § 14.1](./02-Architecture.md#141-session)). Logout encerra o cookie; a janela de exposição é o TTL. Desativar a conta ou trocar a senha invalida todos os tokens emitidos.
+- **Não existe tabela de sessões.** A sessão é o token: JWT em cookie `HttpOnly`, relido do banco a cada requisição ([02-Architecture § 14.1](./02-Architecture.md#141-sessão)). Logout encerra o cookie; a janela de exposição é o TTL. Desativar a conta ou trocar a senha invalida todos os tokens emitidos.
 
 **Regras de negócio**
 
@@ -304,7 +304,7 @@ Material de credencial do usuário. Separado de `users` para que o domínio `use
 
 ---
 
-## 7. Domain `users`
+## 7. Domínio `users`
 
 Responsabilidade: cadastro, perfil, dados do usuário, avatar. Publica a porta `UserReader`. As permissões são uma matriz em código ([ADR-0006](./adr/0006-static-profile-authorization.md)); o banco guarda **quem é** cada perfil, não **o que ele pode**.
 
@@ -354,7 +354,7 @@ A conta. Não carrega material de senha — esse é do domínio `auth`.
 
 - O e-mail é armazenado normalizado e único sobre o valor armazenado. E-mails que diferem só por caixa são o mesmo e-mail.
 - A conta guarda a **própria cópia** de contato — área, departamento, gestor e contato adicional. O que a solicitação carrega é uma resposta, e não esta cópia ([ADR-0013](./adr/0013-requester-is-an-answer-not-a-table.md)).
-- O token **não** carrega o perfil como autoridade: o middleware relê usuário e perfil do banco a cada requisição ([02-Architecture § 14.1](./02-Architecture.md#141-session)). Desativação e mudança de perfil valem na hora.
+- O token **não** carrega o perfil como autoridade: o middleware relê usuário e perfil do banco a cada requisição ([02-Architecture § 14.1](./02-Architecture.md#141-sessão)). Desativação e mudança de perfil valem na hora.
 
 ### 7.3 `analyst_details`
 
@@ -382,7 +382,7 @@ Dados profissionais do Analista: cargo, especialidades, áreas atendidas, dispon
 
 ### 7.4 `analyst_detail_categories`
 
-Áreas atendidas pelo Analista. Tabela filha, e não coluna `ARRAY` ou texto com ids ([02-Architecture § 10.3](./02-Architecture.md#103-portability-rules)). Aponta para `users.id` — a identidade do analista é a conta, e não a extensão 1:1.
+Áreas atendidas pelo Analista. Tabela filha, e não coluna `ARRAY` ou texto com ids ([02-Architecture § 10.3](./02-Architecture.md#103-regras-de-portabilidade)). Aponta para `users.id` — a identidade do analista é a conta, e não a extensão 1:1.
 
 | Coluna | Tipo | Nulo | Default | Notas |
 | --- | --- | --- | --- | --- |
@@ -411,7 +411,7 @@ Dados profissionais do Analista: cargo, especialidades, áreas atendidas, dispon
 
 ---
 
-## 8. Domain `requests`
+## 8. Domínio `requests`
 
 Responsabilidade: ciclo de vida da solicitação, protocolo, anexos. Publica a porta `RequestReader`.
 
@@ -580,7 +580,7 @@ Slots de horário que o solicitante marcou como preferência.
 
 ---
 
-## 9. Domain `triage`
+## 9. Domínio `triage`
 
 Responsabilidade: triagem — aderência, escopo, veredito. Publica a porta `TriageReader`.
 
@@ -641,7 +641,7 @@ Conjunto append-only de triagens. Cada triagem é uma linha nova; a triagem atua
 
 ---
 
-## 10. Domain `mapping`
+## 10. Domínio `mapping`
 
 Responsabilidade: sessão de mapeamento, participantes, agenda. Publica a porta `MappingReader`.
 
@@ -710,9 +710,9 @@ Participantes do mapeamento: internos (ligados a uma conta) ou externos (nome e 
 
 ---
 
-## 11. Domain `queue`
+## 11. Domínio `queue`
 
-Responsabilidade: fila centralizada e métricas. **Não tem tabelas** — é uma projeção de leitura sobre `requests` e as tabelas de configuração, e consome as portas publicadas por outros domínios ([02-Architecture § 5](./02-Architecture.md#5-domain-catalog)).
+Responsabilidade: fila centralizada e métricas. **Não tem tabelas** — é uma projeção de leitura sobre `requests` e as tabelas de configuração, e consome as portas publicadas por outros domínios ([02-Architecture § 5](./02-Architecture.md#5-catálogo-de-domínios)).
 
 A ordenação na fila é **derivada**, nunca armazenada: `categories.display_order` ordena o card, `statuses.order_number` ordena a etapa, e a Prioridade vem da avaliação corrente, ordenada pela faixa de `prioritization.priorities.min_score`. Não existe coluna de ordenação em `requests` — ela envelheceria e passaria a discordar da configuração.
 
@@ -720,7 +720,7 @@ A projeção consome: `requests.requests`, `requests.form_answers`, `forms.form_
 
 ---
 
-## 12. Domain `prioritization`
+## 12. Domínio `prioritization`
 
 Responsabilidade: critérios, pesos e a Prioridade resultante. Publica a porta `PrioritizationReader`.
 
@@ -812,7 +812,7 @@ A avaliação corrente da solicitação. O registro de reavaliações **não** t
 
 ---
 
-## 13. Domain `pending-items`
+## 13. Domínio `pending-items`
 
 Responsabilidade: pendências de campo e de observação. Publica a porta `PendingItemReader`.
 
@@ -888,7 +888,7 @@ O que a pendência pede para corrigir: um campo do formulário **ou** uma classi
 
 ---
 
-## 14. Domain `internal-notes`
+## 14. Domínio `internal-notes`
 
 Responsabilidade: notas internas, marcas de leitura, linha do tempo. Publica a porta `InternalNoteReader`.
 
@@ -957,9 +957,9 @@ Marca de leitura por usuário.
 
 ---
 
-## 15. Domain `audit`
+## 15. Domínio `audit`
 
-Responsabilidade: trilha de auditoria imutável e trilha de tentativas. Publica `AuditReader` e `AttemptRecorder` — a única porta de escrita publicada por um domínio ([02-Architecture § 9.4](./02-Architecture.md#94-audit-and-log-what-each-one-guarantees)).
+Responsabilidade: trilha de auditoria imutável e trilha de tentativas. Publica `AuditReader` e `AttemptRecorder` — a única porta de escrita publicada por um domínio ([02-Architecture § 9.4](./02-Architecture.md#94-auditoria-e-log-o-que-cada-um-garante)).
 
 ### 15.1 `audit_entries`
 
@@ -990,7 +990,7 @@ O que foi de fato criado ou alterado. Gravada na mesma transação da alteraçã
 - O payload do evento de auditoria é um snapshot autocontido — nunca uma referência que obrigue o consumidor a puxar o agregado de volta ([ADR-0007](./adr/0007-event-driven-audit.md)).
 - `occurred_at` é tempo de negócio: a ordem de commit não é a ordem de ocorrência, e a linha do tempo ordena por `occurred_at`.
 - **O catálogo de entidades e de ações é o do código; as constraints `ck_` são o espelho.** `entity_type` e `action` são colunas separadas: a entidade nomeia *o que* foi escrito, a ação nomeia *o que aconteceu*. O par (entidade, ação) é validado pelo catálogo em código — `entity_type` tem a lista de entidades, `action` tem a união das ações de todas elas. Nenhuma ação é `read` nem `write`: a trilha registra criação e alteração, não leitura.
-- **Toda entidade que pode ser escrita tem `entity_type`** — ver [§ 2.7](#27-closed-value-sets).
+- **Toda entidade que pode ser escrita tem `entity_type`** — ver [§ 2.7](#27-conjuntos-fechados).
 - `request_id` é preenchido quando a entidade auditada pertence a uma solicitação, e é o que torna a **Linha do tempo** uma consulta indexada.
 - Erro de validação (400) não é auditado. Falha de autenticação (401) pertence ao log de segurança do domínio `auth`.
 
@@ -1039,7 +1039,7 @@ O que foi recusado — por falta de permissão ou por regra de negócio. A recus
 
 ---
 
-## 16. Domain `reports`
+## 16. Domínio `reports`
 
 Responsabilidade: dashboard, métricas, exportações. **Não tem tabelas** — é uma projeção de leitura sobre vários domínios, alimentada por consultas agregadas.
 
@@ -1047,7 +1047,7 @@ As métricas são **derivadas** na consulta: o atraso (`overdue`) e o recorte (`
 
 ---
 
-## 17. Domain `portal-config`
+## 17. Domínio `portal-config`
 
 Responsabilidade: configuração do portal — categorias, status, aparência, modo de acesso. Publica a porta `PortalConfigReader`.
 
@@ -1192,7 +1192,7 @@ As etapas do ciclo de vida — a configuração mais carregada do portal.
 
 ---
 
-## 18. Domain `forms`
+## 18. Domínio `forms`
 
 Responsabilidade: o catálogo das definições de formulário — o que um sujeito pede. Publica a porta `FormReader`.
 
@@ -1261,7 +1261,7 @@ As perguntas. A chave do campo é a chave do campo no payload.
 
 **Invariantes**
 
-- **A chave do campo é o contrato** — ver [§ 2.2](#22-columns).
+- **A chave do campo é o contrato** — ver [§ 2.2](#22-colunas).
 - **A chave é única no formulário inteiro**, e o banco garante — é a `uk_form_fields_form_key`. Uma chave repetida entre blocos seria um contrato ambíguo para o frontend.
 - O **tipo** de um campo não muda depois que ele tem respostas — regra de aplicação.
 - `options` só existe para `select`. O **valor** da opção é o que se guarda; o rótulo é o que se mostra. No seed, valor e rótulo são a mesma string.
@@ -1284,7 +1284,7 @@ As perguntas. A chave do campo é a chave do campo no payload.
 
 ---
 
-## 19. Infrastructure Schema
+## 19. Schema de Infraestrutura
 
 Schema sem dono de domínio ([ADR-0011](./adr/0011-infrastructure-schema-without-domain-owner.md)). A tabela é consumida pela porta `Counter`, em `core/repository/`.
 
@@ -1304,7 +1304,7 @@ Schema sem dono de domínio ([ADR-0011](./adr/0011-infrastructure-schema-without
 
 ---
 
-## 20. Table Catalog
+## 20. Catálogo de Tabelas
 
 | # | Tabela | Domínio | No legado |
 | --- | --- | --- | --- |
@@ -1338,7 +1338,7 @@ Schema sem dono de domínio ([ADR-0011](./adr/0011-infrastructure-schema-without
 | 28 | `statuses` | `portal-config` | `statuses` |
 | 29 | `code_counters` | `platform` | — (novo) |
 
-### 20.1 What Changed From the Legacy
+### 20.1 O que Mudou em Relação ao Legado
 
 | Mudança | Por quê |
 | --- | --- |
@@ -1363,7 +1363,7 @@ Schema sem dono de domínio ([ADR-0011](./adr/0011-infrastructure-schema-without
 | `pending_items.type` (ENUM) → `field_edit`/`observation` | O `ENUM` legado tinha quatro valores; o modelo novo reduz o tipo aos dois casos de negócio, e o pedido de anexo passa a ser o par `requires_attachment` / `expected_attachment_type` |
 | `pending_items.requested_fields` (json) → `pending_item_fields` | O campo pendente passa a ser referência ao campo do formulário **ou** à classificação |
 | `requests.internal_notes`, `next_steps`, triagem duplicada | Uma casa por fato: `triages` |
-| Convenções alteradas (`ENUM` nativo, `CASCADE`/`SET NULL`, `sequence`, `btrim`, índice funcional, `jsonb_typeof`) | Estão em [§ 2](#2-naming-conventions) — e em [ADR-0009](./adr/0009-schema-naming-and-constraints.md) |
+| Convenções alteradas (`ENUM` nativo, `CASCADE`/`SET NULL`, `sequence`, `btrim`, índice funcional, `jsonb_typeof`) | Estão em [§ 2](#2-convenções-de-nomenclatura) — e em [ADR-0009](./adr/0009-schema-naming-and-constraints.md) |
 
 ---
 
@@ -1381,7 +1381,7 @@ Schema sem dono de domínio ([ADR-0011](./adr/0011-infrastructure-schema-without
 
 ---
 
-## 22. Appendix A — The Form Seed
+## 22. Apêndice A — o Seed do Formulário
 
 O formulário de abertura de solicitação, como nasce. São **32 campos** em 4 blocos, com os rótulos que o produto já usa.
 
@@ -1457,7 +1457,7 @@ O seed é andaime: a definição semeada é editável in-place e descreve o form
 
 ---
 
-## 23. Appendix B — Permission Catalogue
+## 23. Apêndice B — Catálogo de Permissões
 
 A chave de permissão é `recurso:ação` e é **contrato**: o frontend decide o que mostrar a partir dela, e o RBAC configurável vai semear exatamente estas chaves. O recurso da chave é o **nome do domínio em inglês**, com `_` como separador interno; a ação é um dos sete verbos do catálogo. A matriz continua em código ([ADR-0006](./adr/0006-static-profile-authorization.md)); o catálogo abaixo é a lista única que a matriz usa e que a futura tabela `permissions` recebe.
 

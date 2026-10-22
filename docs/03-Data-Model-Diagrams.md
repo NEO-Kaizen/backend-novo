@@ -1,10 +1,10 @@
-# Data Model — Diagramas de Entidade
+# Modelo de Dados — Diagramas de Entidade
 
-Diagramas de **orientação**: mostram como os domínios se conectam, não cada chave estrangeira. A relação completa está na coluna `FK →` de cada tabela, em [`03-Data-Model.md`](./03-Data-Model.md), e a ordem de criação em [§ 4](./03-Data-Model.md#4-referential-integrity-and-creation-order).
+Diagramas de **orientação**: mostram como os domínios se conectam, não cada chave estrangeira. A relação completa está na coluna `FK →` de cada tabela, em [`03-Data-Model.md`](./03-Data-Model.md), e a ordem de criação em [§ 4](./03-Data-Model.md#4-integridade-referencial-e-ordem-de-criação).
 
 Não é parte da especificação: nenhum diagrama aqui é normativo.
 
-## The Request Cycle
+## O Ciclo da Solicitação
 
 ```mermaid
 erDiagram
@@ -32,7 +32,7 @@ erDiagram
     USERS ||--o{ REQUESTS : "responsável"
 ```
 
-## Access and Configuration
+## Acesso e Configuração
 
 ```mermaid
 erDiagram
@@ -44,7 +44,7 @@ erDiagram
     THEMES ||--o{ PORTAL_SETTINGS : "aparência vigente"
 ```
 
-## Audit
+## Auditoria
 
 ```mermaid
 erDiagram
