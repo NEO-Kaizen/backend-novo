@@ -10,7 +10,7 @@ Decidimos que **cada domínio é dono do seu schema**: a definição knex das ta
 
 ## Alternativas consideradas
 
-- **Tudo centralizado em `db/`** — schema, migrations e seeds num único lugar. Facilita ver o modelo total, mas quebra a localize: a tabela deixa de estar ao lado da regra que a usa, e a migration continua órfã de um dono.
+- **Tudo centralizado em `db/`** — schema, migrations e seeds num único lugar. Facilita ver o modelo total, mas quebra a coesão local: a tabela deixa de estar ao lado da regra que a usa, e a migration continua órfã de um dono.
 - **Manter migrations em pasta única, só com prefixo do domínio no nome.** O nome indica o dono, mas o arquivo continua longe do código que depende da tabela.
 
 ## Consequências
