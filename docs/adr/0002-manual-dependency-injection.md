@@ -10,7 +10,7 @@ Decidimos que **toda dependência chega pelo construtor** e que a montagem acont
 
 ## Alternativas consideradas
 
-- **Container com decorators (`tsyringe`, `typedi`).** Resolveria as dependências sozinho, ao custo de exigir metadata de tipo em runtime (`reflect-metadata`), acoplar o domínio ao framework de injeção e conflita com a proposta de módulos ESM enxutos. A Constructed dependência deixa de ser visível na assinatura.
+- **Container com decorators (`tsyringe`, `typedi`).** Resolveria as dependências sozinho, ao custo de exigir metadata de tipo em runtime (`reflect-metadata`), acoplar o domínio ao framework de injeção e conflita com a proposta de módulos ESM enxutos. A dependência deixa de ser visível na assinatura.
 - **Service locator com registro global.** Reduz boilerplate, mas esconde exatamente a dependência que se quer visível e concentra o estado em um ponto acessível por qualquer módulo.
 
 ## Consequências

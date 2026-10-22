@@ -43,7 +43,7 @@ O backend legado (`NEO-Kaizen/backend`) funciona, mas carrega problemas estrutur
 | Serviço de 1.330 linhas misturando seis casos de uso | Mudança arriscada, revisão inviável | [ADR-0001](./adr/0001-layered-architecture-per-domain.md) |
 | Transações abertas em serviços **e** repositórios | Escopo de transação indefinido, risco de escrita parcial | [ADR-0001](./adr/0001-layered-architecture-per-domain.md) |
 | Domínios importando repositórios de outros domínios | Fronteiras entre áreas dissolvidas, ciclos entre módulos | [ADR-0001](./adr/0001-layered-architecture-per-domain.md), [ADR-0007](./adr/0007-event-driven-audit.md) |
-| Regras de autorização duplicadas em seis arquivos | Regra divergente por área, correção parcial | [ADR-0006](./adr/0006-static-profile-authorization.md) |
+| Regras de autorização duplicadas em vários arquivos | Regra divergente por área, correção parcial | [ADR-0006](./adr/0006-static-profile-authorization.md) |
 | SQL específico de Postgres espalhado pelos repositórios | Troca de engine inviável | [ADR-0003](./adr/0003-knex-dialect-portability.md) |
 | `console.log` como logging | Sem correlação, sem redação de dados sensíveis | [02-Architecture § 17](./02-Architecture.md#17-logging) |
 | Zero testes automatizados | Nenhuma rede de segurança para uma reescrita | [ADR-0002](./adr/0002-manual-dependency-injection.md) |
@@ -73,7 +73,7 @@ A reescrita não é uma reimplementação linha a linha. O legado é a **fonte d
 - regras de interface do usuário (pertencem ao frontend);
 - integração com calendário ou ITSM — o mapeamento é registro manual;
 - RBAC configurável pelo administrador — ver [ADR-0006](./adr/0006-static-profile-authorization.md);
-- qualquer decisão de infraestrutura de deploy, que vive no repositório de frontend.
+- qualquer decisão de infraestrutura de deploy — fora do escopo deste documento.
 
 ---
 
@@ -127,4 +127,4 @@ Decisões já tomadas e follow-up que dependem de outro time:
 | Envelope de erro | Decidido: manter o legado por ora; migração exige mudança coordenada no frontend | [ADR-0005](./adr/0005-legacy-error-envelope-temporary.md) |
 | Perfis: cinco ou quatro | Decidido: cinco no backend; os contratos publicados ainda listam quatro | [ADR-0006](./adr/0006-static-profile-authorization.md) |
 | Remodelagem do banco | Decidido: cada domínio é dono do seu schema; as migrações do legado são referência de dados, não de estrutura | [ADR-0004](./adr/0004-domain-owned-schema-and-migrations.md) |
-| Entropia do prefixo do protocolo | Em aberto: 40 bits são enumeráveis em ~127 dias a 100k rps | [02-Architecture § 22](./02-Architecture.md#22-pending-items) |
+| Entropia do prefixo do protocolo | Decidido: 40 bits mantidos; a máscara é configurável e a defesa contra enumeração é o rate limit do endpoint público com a conferência de identidade | [ADR-0008](./adr/0008-protocol-without-collision-risk.md) |

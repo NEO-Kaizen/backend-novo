@@ -11,7 +11,7 @@ O registro submetido por um solicitante para atender uma necessidade operacional
 _Evitar_: pedido, demanda, requisição, ticket, chamado.
 
 **Protocolo**:
-Identificador público, curto e não enumerável que permite ao solicitante acompanhar uma solicitação sem expor sua identidade interna.
+Identificador público e curto que permite acompanhar uma solicitação sem expor a identidade interna; é opaco e não é credencial.
 _Evitar_: código, referência, número do pedido, id público.
 
 **Solicitante**:
@@ -24,7 +24,7 @@ _Evitar_: documento, upload, arquivo.
 
 **Fila**:
 Conjunto ordenado de solicitações em aberto, com critérios de ordenação e métricas de acompanhamento.
-_Evitar_: lista, backlog, caixa de entrada.
+_Evitar_: lista, caixa de entrada.
 
 **Status**:
 Etapa do ciclo de vida de uma solicitação, com visibilidade definida (pública, interna ou restrita).
@@ -50,7 +50,7 @@ _Evitar_: resultado da triagem, decisão, status da triagem.
 
 **Mapeamento**:
 Sessão de levantamento com as áreas envolvidas na solução, com participantes, responsável designado e registro próprio.
-_Evitar_: reunião, call, workshop, análise de viabilidade.
+_Evitar_: reunião, call, workshop.
 
 **Análise de viabilidade**:
 Etapa em que se avalia a possibilidade técnica e operacional de atender a solicitação já mapeada.
@@ -93,7 +93,7 @@ Conjunto fixo de permissões atribuído a um usuário. São cinco: *Solicitante*
 _Evitar_: papel, cargo, função, role.
 
 **Admin Root**:
-Perfil raiz do sistema, com todas as permissões e capacidade de gerir os demais *Administradores*. Existe no seed e nunca é criado por auto-registro.
+Perfil raiz do sistema, com todas as permissões e capacidade de gerir os demais *Administradores*. Não é criado por auto-registro.
 _Evitar_: super-admin, root, administrador mestre.
 
 **Responsável**:

@@ -1,5 +1,5 @@
 ---
-status: aceito (temporário)
+status: aceito
 ---
 
 # Envelope de erro legado mantido por ora
@@ -15,6 +15,6 @@ Decidimos **manter o envelope legado** enquanto o frontend não for alterado, e 
 
 ## Consequências
 
-- A implementação diverge do `CODING_STANDARDS.md` até a migração. Este ADR é o registro dessa divergência.
+- A implementação diverge do `CODING_STANDARDS.md` até a migração. Este ADR é o registro dessa divergência, e a decisão é **temporária**: sai quando a migração do envelope for coordenada com o frontend.
 - O campo `code` pode ser adicionado ao envelope legado como passo intermediário — é aditivo e não quebra o cliente atual.
 - Quando a migração acontecer, `core/http/error-mapper.ts` e o error handler mudam em um único lugar.

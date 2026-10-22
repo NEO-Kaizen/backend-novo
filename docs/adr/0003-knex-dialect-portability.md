@@ -19,4 +19,4 @@ Decidimos manter **Knex como query builder, sem ORM**, e tornar a portabilidade 
 - Sem convenções de ORM: relações, cascatas e migrações geradas são escritas à mão. É mais código, e é código explícito.
 - O schema não depende de sequence, `serial` ou `auto_increment`; o id é conhecido antes do insert.
 - A portabilidade passa a ser testável: a mesma suíte de repositório pode rodar em duas engines.
-- O `Dialect` não é uma abstração vazia: ele concentra `uuidType`, `jsonType`, `timestampType`, `booleanType` e as três capacidades que diferem entre engines (`returning`, row lock, upsert merge).
+- O `Dialect` não é uma abstração vazia: ele concentra `uuidType`, `jsonType`, `timestampType`, `booleanType` e as duas capacidades que diferem entre engines (`returning` e row lock).
