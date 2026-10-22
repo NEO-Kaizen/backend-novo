@@ -66,7 +66,7 @@ Valores de domínio (status, prioridades, vereditos) permanecem em português, p
 
 > **Exceção:** nomes de campo do contrato público seguem o formato já acordado em `tirador-pedidos-NEO/contratos/`. Quando o contrato existente usa um termo, o contrato prevalece sobre a tabela acima.
 >
-> O mapa é o **radical** do identificador, não o nome da tabela: a tabela concreta é o plural em `snake_case` — `pending-item` → `pending_items`, `audit` → `audit_entries`.
+> O mapa é o **radical** do identificador, não o nome da tabela: a tabela concreta é o `snake_case` plural — `pending-item` → `pending_items` — e há casos em que o nome da tabela é outro substantivo: `audit` → `audit_entries`.
 
 ---
 
@@ -1056,6 +1056,7 @@ Efeito: dentro de `execute`, qualquer repositório chamado — inclusive de outr
 | **Lote** | Processamento em lote faz `execute` por chunk, não um por item — cada chunk é uma transação, e um chunk que falha não desfaz os anteriores. |
 | **Leitura agregada** | Leitura que junta várias tabelas dentro de um domínio (a linha do tempo) usa `this.readOnly(...)`, para que todos os statements vejam o mesmo snapshot. O `KnexDatabase` abre a transação raiz com `isolationLevel: "repeatable read"` no Postgres e no MySQL; no SQLite o nível é ignorado, porque o driver serializa escritores. Não é um modo *read only* imposto pelo banco — a transação é de leitura por decisão do caso de uso. Sem isso, o resultado pode ser uma leitura rasgada — o que a linha do tempo mostra pode não ter coexistido. |
 | **Leitura simples** | Uma tabela, um statement: sem transação, sem snapshot retido. |
+| **Leitura entre domínios** | Projeção (`reports`) que agrega portas de vários domínios não tem snapshot único: cada porta responde na sua própria leitura. Consistência entre domínios é eventual — é o custo de a projeção receber apenas `*Reader` ([§ 7.4](#74-inheritance-rule)). |
 
 ### 11.3 What Belongs in the Same Transaction
 
@@ -1218,7 +1219,7 @@ export type Actor =
 ```
 
 - `authenticated` — há sessão. O `profile` diz o que a pessoa pode fazer.
-- `requester` — sem sessão. O e-mail vem do header `X-Requester-Email` e serve **como chave de busca, não como autenticação**: o header não prova identidade e não autoriza nada por si. Vale só no modo de acesso público; no modo autenticado ele é ignorado. O serviço libera o acompanhamento apenas quando o e-mail confere com a resposta `corporate_email` da **própria** solicitação (trim e comparação case-insensitive); sem correspondência, a resposta é `404`, nunca `403` — `403` confirmaria que o protocolo existe. O nome exibido vem da resposta gravada, nunca do cliente. O endpoint público tem rate limit por IP e por protocolo.
+- `requester` — sem sessão. O e-mail vem do header `X-Requester-Email` e serve **como chave de busca, não como autenticação**: o header não prova identidade e não autoriza nada por si. Vale só no modo de acesso público; no modo autenticado ele é ignorado. O ator cobre o acompanhamento por protocolo e a resposta a pendências de campo. O serviço libera o acesso apenas quando o e-mail confere com a resposta `corporate_email` da **própria** solicitação (trim e comparação case-insensitive); sem correspondência, a resposta é `404`, nunca `403` — `403` confirmaria que o protocolo existe. O nome exibido vem da resposta gravada, nunca do cliente. O endpoint público tem rate limit por IP e por protocolo.
 - `anonymous` — sem sessão e sem identidade.
 
 O header é validado na borda (formato de e-mail, Zod) e o middleware monta o ator; a comparação com o e-mail gravado é feita no serviço, em um lugar só. O `CODING_STANDARDS.md` § 8 proíbe confiar em identidade enviada pelo cliente — este header não autoriza nada: ele só localiza uma solicitação cujo e-mail já gravado coincide.
