@@ -820,9 +820,15 @@ export interface TransactionManager {
 
 ```ts
 const database = createDatabase(config);
-// createDatabase(config: Config): KnexDatabase — escolhe o Dialect pela engine.
 // config.database.engine === "postgres" → KnexDatabase com PostgresDialect
 // config.database.engine === "sqlite"   → KnexDatabase com SqliteDialect
+```
+
+```ts
+// src/platform/database/create-database.ts
+export function createDatabase(config: Config): KnexDatabase {
+  // KnexDatabase + Dialect escolhido pela engine; implementa Database e TransactionManager.
+}
 ```
 
 ### 10.2 The Dialect
@@ -839,10 +845,11 @@ export interface Dialect {
   booleanType(): string;
   supportsReturning(): boolean;
   supportsRowLocks(): boolean;
+  supportsUpsertMerge(): boolean;
 }
 ```
 
-Implementações: `PostgresDialect`, `SqliteDialect`, `MySqlDialect`.
+Implementações: `PostgresDialect`, `SqliteDialect`, `MySqlDialect`. O `supportsUpsertMerge()` declara se a engine aceita merge no alvo do conflito: quem precisa de upsert consulta a capacidade e degrada para `insert` + `update` quando ela é falsa — a divergência fica declarada no `Dialect`, não espalhada em `if` de repositório.
 
 ### 10.3 Portability Rules
 
