@@ -4,6 +4,8 @@ description: Break a plan, spec, or the current conversation into a set of trace
 disable-model-invocation: true
 ---
 
+Output language: Portuguese.
+
 # To Tickets
 
 Break a plan, spec, or conversation into a set of **tickets**: tracer-bullet vertical slices, each declaring the tickets that **block** it.
@@ -43,9 +45,9 @@ Give each ticket its **blocking edges**: the other tickets that must complete be
 
 Present the proposed breakdown as a numbered list. For each ticket, show:
 
-- **Title**: short descriptive name
-- **Blocked by**: which other tickets (if any) must complete first
-- **What it delivers**: the end-to-end behaviour this ticket makes work
+- **Título**: nome curto e descritivo
+- **Bloqueado por**: quais outros tickets (se houver) precisam terminar antes
+- **O que entrega**: o comportamento ponta a ponta que este ticket torna possível
 
 Ask the user:
 
@@ -59,8 +61,8 @@ Iterate until the user approves the breakdown.
 
 Publish the approved tickets. **How** depends on the tracker `/setup-matt-pocock-skills` configured; the tickets are the same either way, only the shape of the blocking edges changes:
 
-- **Local files** → write one file per ticket under `.scratch/<feature-slug>/issues/<NN>-<slug>.md`, numbered from `01` in dependency order (blockers first). Each file's "Blocked by" lists the numbers/titles it depends on. Use the per-ticket file template below: one ticket per file, never a single combined file.
-- **A real issue tracker (GitHub, Linear, …)** → publish one issue per ticket in dependency order (blockers first) so each ticket's blocking edges can reference real identifiers. Use the platform's native blocking relationship where it has one; otherwise set each ticket's "Blocked by" to the blocking issues. If the source was an existing issue, make each ticket its sub-issue (tracker doc's operation). Apply the `ready-for-agent` triage label unless instructed otherwise; the tickets are agent-grabbable by construction.
+- **Local files** → write one file per ticket under `.scratch/<feature-slug>/issues/<NN>-<slug>.md`, numbered from `01` in dependency order (blockers first). Each file's "Bloqueado por" lists the numbers/titles it depends on. Use the per-ticket file template below: one ticket per file, never a single combined file.
+- **A real issue tracker (GitHub, Linear, …)** → publish one issue per ticket in dependency order (blockers first) so each ticket's blocking edges can reference real identifiers. Use the platform's native blocking relationship where it has one; otherwise set each ticket's "Bloqueado por" to the blocking issues. If the source was an existing issue, make each ticket its sub-issue (tracker doc's operation). Apply the `ready-for-agent` triage label unless instructed otherwise; the tickets are agent-grabbable by construction.
 
 Work the **frontier**: any ticket whose blockers are all done. For a purely linear chain that means top to bottom.
 
@@ -68,37 +70,37 @@ Do NOT close or modify any parent issue.
 
 <local-ticket-template>
 
-# <NN>: <Ticket title>
+# <NN>: <Título do ticket>
 
-**What to build:** the end-to-end behaviour this ticket makes work, from the user's perspective, not a layer-by-layer implementation list.
+**O que construir:** o comportamento ponta a ponta que este ticket torna possível, da perspectiva do usuário, não uma lista de implementação por camada.
 
-**Blocked by:** the numbers/titles of the tickets that gate this one, or "None (can start immediately)".
+**Bloqueado por:** os números/títulos dos tickets que bloqueiam este, ou "Nenhum (pode começar imediatamente)".
 
 **Status:** ready-for-agent
 
-- [ ] Acceptance criterion 1
-- [ ] Acceptance criterion 2
+- [ ] Critério de aceite 1
+- [ ] Critério de aceite 2
 
 </local-ticket-template>
 
 <issue-template>
 
-## Parent
+## Issue pai
 
-A reference to the parent issue on the tracker (if the source was an existing issue, otherwise omit this section).
+Uma referência à issue pai no rastreador (se a origem foi uma issue existente; caso contrário, omita esta seção).
 
-## What to build
+## O que construir
 
-The end-to-end behaviour this ticket makes work, from the user's perspective, not layer-by-layer implementation.
+O comportamento ponta a ponta que este ticket torna possível, da perspectiva do usuário, não uma implementação por camada.
 
-## Acceptance criteria
+## Critérios de aceite
 
-- [ ] Criterion 1
-- [ ] Criterion 2
+- [ ] Critério 1
+- [ ] Critério 2
 
-## Blocked by
+## Bloqueado por
 
-- A reference to each blocking ticket, or "None (can start immediately)". Omit this section when blockers were set as native edges.
+- Uma referência a cada ticket bloqueador, ou "Nenhum (pode começar imediatamente)". Omita esta seção quando os bloqueadores forem definidos como arestas nativas.
 
 </issue-template>
 
