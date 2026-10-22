@@ -6,7 +6,7 @@ status: aceito
 
 Uma **classificação** é um atributo da solicitação que **não é pergunta**: Status, Prioridade e Categoria. O Status vem do ciclo, a Prioridade é calculada, e **só a Categoria é pedida ao solicitante**.
 
-A Categoria tinha uma anatomia que não fechava. O modelo a chamava de **chave promovida** — uma chave do payload que "saiu do formulário e ganhou coluna própria". Mas ela **nunca foi uma pergunta do formulário**: o seed tem 32 campos e a categoria não é um deles (é a 33ª chave do catálogo do legado), e o frontend já a perguntava **hard-coded**, dentro do bloco `demand`, sem que houvesse linha que a declarasse. Dizer que ela "saiu do formulário" era-fiction: ela nunca morou lá.
+A Categoria tinha uma anatomia que não fechava. O modelo a chamava de **chave promovida** — uma chave do payload que "saiu do formulário e ganhou coluna própria". Mas ela **nunca foi uma pergunta do formulário**: o seed tem 32 campos e a categoria não é um deles (é a 33ª chave do catálogo do legado), e o frontend já a perguntava **hard-coded**, dentro do bloco `demand`, sem que houvesse linha que a declarasse. Dizer que ela "saiu do formulário" era ficção: ela nunca morou lá.
 
 Decidimos que **a classificação é pedida no topo da submissão, fora dos blocos** — e que **a Categoria escolhe o formulário** que o solicitante preenche, por `categories.form_id`.
 

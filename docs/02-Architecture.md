@@ -53,7 +53,7 @@ O domínio fala português; o código fala inglês. A conversão é fixa e vale 
 | Análise de viabilidade | `viability_analysis` |
 | Priorização | `prioritization` |
 | Critério | `criterion` |
-| Classificação | `classification_key` |
+| Classificação (chave) | `classification_key` |
 | Formulário | `form` |
 | Bloco | `form_block` |
 | Campo | `form_field` |
@@ -993,7 +993,7 @@ export const CreateRequest = z.strictObject({
 
 > `demand` é o nome do bloco no contrato público já acordado; ver a exceção em [§ 3](#3-naming). `category` é a **Classificação**, e é pedida **no topo** — fora dos blocos, porque ela escolhe o formulário.
 >
-> Os limites por campo são os do **seed do formulário** ([`03-Data-Model.md` Apêndice A](./03-Data-Model.md#22-appendix-a-the-form-seed)); este exemplo é ilustrativo do formato, não da fonte dos limites. A definição do formulário é a fonte única: o schema da borda é gerado a partir dela **e do catálogo de classificações** — a classificação não tem linha na definição, e a borda a valida pelo nome, contra as categorias ativas.
+> Os limites por campo são os do **seed do formulário** ([`03-Data-Model.md` Apêndice A](./03-Data-Model.md#22-appendix-a--the-form-seed)); este exemplo é ilustrativo do formato, não da fonte dos limites. A definição do formulário é a fonte única: o schema da borda é gerado a partir dela **e do catálogo de classificações** — a classificação não tem linha na definição, e a borda a valida pelo nome, contra as categorias ativas.
 
 | Regra | Efeito |
 | --- | --- |
@@ -1088,7 +1088,7 @@ export interface AuthorizationService {
 
 A matriz (permissão → perfis) fica em `core/authorization/profile-permissions.ts`. *Admin Root* recebe todas as permissões.
 
-O catálogo completo das chaves — 25 chaves `recurso:ação` — está em [`03-Data-Model.md` Apêndice B](./03-Data-Model.md#23-appendix-b-permission-catalogue). É o mesmo catálogo que vai semear `permissions` e `profile_permissions` quando o RBAC configurável entrar, sem que nenhum domínio mude — ver [ADR-0014](./adr/0014-permission-key-is-the-contract.md).
+O catálogo completo das chaves — 25 chaves `recurso:ação` — está em [`03-Data-Model.md` Apêndice B](./03-Data-Model.md#23-appendix-b--permission-catalogue). É o mesmo catálogo que vai semear `permissions` e `profile_permissions` quando o RBAC configurável entrar, sem que nenhum domínio mude — ver [ADR-0014](./adr/0014-permission-key-is-the-contract.md).
 
 | Nível | O que verifica | Onde |
 | --- | --- | --- |

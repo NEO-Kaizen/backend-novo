@@ -37,10 +37,10 @@ erDiagram
 ```mermaid
 erDiagram
     PROFILES ||--o{ USERS : "classifica"
-    USERS ||--o| USER_DETAILS : "detalha"
+    USERS ||--o| ANALYST_DETAILS : "detalha"
     USERS ||--|| CREDENTIALS : "autentica"
-    USERS ||--o{ USER_DETAIL_CATEGORIES : "atende"
-    CATEGORIES ||--o{ USER_DETAIL_CATEGORIES : "atendida"
+    USERS ||--o{ ANALYST_DETAIL_CATEGORIES : "atende"
+    CATEGORIES ||--o{ ANALYST_DETAIL_CATEGORIES : "atendida"
     THEMES ||--o{ PORTAL_SETTINGS : "aparência vigente"
 ```
 
