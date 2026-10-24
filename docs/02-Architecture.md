@@ -1424,6 +1424,8 @@ export interface Config {
 }
 ```
 
+> **Seed-only.** `ADMIN_ROOT_EMAIL` e `ADMIN_ROOT_PASSWORD` são lidas pelo comando de seed, não pelo `EnvironmentSchema`; o boot da aplicação não as exige. A regra e o comportamento do seed estão em [`03-Data-Model.md` § 25.3](./03-Data-Model.md#253-admin-root).
+
 | Regra | Motivo |
 | --- | --- |
 | Segredo ausente ou curto demais derruba o boot em produção | Falhar cedo é melhor que falhar no primeiro request |

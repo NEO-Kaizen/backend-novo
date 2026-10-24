@@ -39,7 +39,7 @@ Regras:
 
 - O seed **não usa id fixo**. O `id` é UUID gerado pela aplicação; a identidade é a chave natural.
 - O seed **não sobrescreve** linha existente. Se a chave existe com valor diferente, a linha é preservada e a divergência é registrada no log do seed.
-- `Admin Root` cria `users` e `credentials` na **mesma transação**; se a conta já existe, a credencial não é reescrita.
+- `Admin Root` cria `users` e `credentials` na **mesma transação**; se a conta já existe, a credencial não é reescrita. Lê `ADMIN_ROOT_EMAIL` e `ADMIN_ROOT_PASSWORD` do ambiente; falta de qualquer uma falha antes de escrever. Se o e-mail existir com outro perfil, falha em vez de promover.
 - `portal_settings` é singleton: insere apenas se não houver linha.
 - O formulário é andaime: se o campo já existe, o seed não altera tipo, limites, obrigatoriedade nem rótulo. Ajuste de definição é migration.
 - Um seed por domínio, como as migrations ([ADR-0004](../adr/0004-domain-owned-schema-and-migrations.md)).
@@ -51,7 +51,7 @@ Os valores estão no [Apêndice D](../03-Data-Model.md#25-apêndice-d--seed-de-r
 | Grupo | Regra |
 | --- | --- |
 | Perfis | Cinco nomes; só o `Analista` nasce com `is_assignable_triage` e `is_assignable_mapping` em `true` ([§ 7.6](../03-Data-Model.md#76-atribuibilidade)). |
-| Admin Root | Conta ativa, perfil `Admin Root`, credencial com `must_change_password = true`; e-mail e senha inicial **pendentes** ([§ 21](../03-Data-Model.md#21-pendências)). |
+| Admin Root | Conta ativa, perfil `Admin Root`, credencial com `must_change_password = true`; e-mail e senha vêm de `ADMIN_ROOT_EMAIL` e `ADMIN_ROOT_PASSWORD` ([§ 25.3](../03-Data-Model.md#253-admin-root)). |
 | Aparências e portal | Dois temas (`Claro`, `Escuro`) com tokens e assets nulos; `portal_settings` com `PUBLIC`, `MAAT`, `MAAT`, apontando os dois slots. |
 | Categorias | Dez ativas, `display_order` 1–10, `form_id` para o formulário `solicitacao`. |
 | Status | Dezessete do v4: 7 core, 2 terminais, 1 restrito (`priorizado`, que exige `request:status_override`). |
@@ -78,12 +78,12 @@ Conflitos encontrados e a escolha registrada:
 | --- | --- | --- | --- |
 | Peso dos critérios | Backend `10`; frontend `1.0` | Inteiro 0–10 | **10** |
 | Código dos critérios | Português (`impacto_operacional`) com ponte para inglês | `code` é a chave do contrato | **Inglês** (`operationalImpact`) |
-| Status `nao_elegivel` | Seed original `is_final = true`; v4 `is_terminal = false` | Segue o v4 | **`false`**, com pendência |
+| Status `nao_elegivel` | Seed original `is_final = true`; v4 `is_terminal = false` | Só `concluido`/`cancelado` são terminais | **`false`**, decisão v4 |
 | Quantidade de status | 17 no v4/frontend; 19 nas migrations antigas (18/19) | 17 | **17** |
 | Reexecução do seed | `.ignore()` em categorias; `.merge()` em critérios/prioridades | Configuração editável no lugar | **Create-if-absent** |
 | Aparências no seed | Legado começava vazio; frontend tem defaults | Pode começar vazio | **Dois temas com tokens; assets nulos** |
 | `logo_use_primary_color` | Coluna `false`; sync do legado grava `true` | Default `false` | **`true` no seed** |
-| `Admin Root` | Não existe no legado | Existe só no seed | **Pendente** (e-mail/senha) |
+| `Admin Root` | Não existe no legado | Existe só no seed | **Env vars** (`ADMIN_ROOT_EMAIL`/`ADMIN_ROOT_PASSWORD`) |
 | `display_order` das categorias | Backfill = `category_id` (1–10) | Inteiro | **1–10** |
 | `statuses.is_restricted` | “status protegido” misturava visibilidade e autorização | Exige `request:status_override`; `priorizado` continua `true` | **Flag + chave**, não perfil fixo |
 
@@ -93,6 +93,7 @@ Consultas de sanidade, portáveis nas três engines:
 
 ```sql
 select count(*) from profiles;                    -- 5
+select count(*) from users u join profiles p on p.id = u.profile_id where p.name = 'Admin Root'; -- 1
 select count(*) from profiles where is_assignable_triage; -- 1 (Analista)
 select count(*) from profiles where is_assignable_mapping; -- 1 (Analista)
 select count(*) from statuses;                    -- 17
@@ -133,7 +134,6 @@ order by min_score;
 
 Reexecutar o seed não restaura valores editados. Para voltar ao estado de referência, recrie o banco e rode migrations + seed ([`05-operations.md`](./05-operations.md)); não trunque tabelas em um ambiente compartilhado.
 
-## Decisões em aberto
+## Decisões de seed
 
-- **Identidade do `Admin Root`** — e-mail e senha inicial ([§ 21](../03-Data-Model.md#21-pendências)).
-- **Terminalidade de `nao_elegivel`** — v4 `false`; o seed original o marcava final ([§ 21](../03-Data-Model.md#21-pendências)).
+Não há decisão de seed em aberto: `Admin Root` usa as variáveis de ambiente e a terminalidade segue o v4. As pendências do modelo continuam em [§ 21](../03-Data-Model.md#21-pendências).

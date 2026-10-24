@@ -50,8 +50,6 @@ Use antes de abrir ou aprovar um PR que toque o schema:
 
 ## Decisões em aberto
 
-- **Identidade do `Admin Root`** — e-mail e senha inicial ([§ 21](../03-Data-Model.md#21-pendências)).
-- **Terminalidade de `nao_elegivel`** — o v4 a deixa não terminal; o seed original a marcava final ([§ 21](../03-Data-Model.md#21-pendências)).
 - **SLA e atraso** — `overdue` não é derivado do prazo desejado; a regra de SLA é pendência ([ADR-0024](../adr/0024-requested-deadline-is-not-sla.md)).
 - **Credencial de auditoria** — o append-only exige runtime e migração separados; o bloco `DATABASE` atual tem uma credencial.
 - **RBAC alvo** — `permissions`/`profile_permissions` estão no [Apêndice C](../03-Data-Model.md#24-apêndice-c--modelo-alvo-de-rbac-configurável), fora das 29 tabelas vigentes.

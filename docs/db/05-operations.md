@@ -35,6 +35,8 @@ O schema de ambiente é `z.strictObject`, então variável desconhecida ou ausen
 
 > **Lacuna conhecida.** O legado usa variáveis planas `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER` e `DB_PASSWORD`; o modelo novo define o bloco `DATABASE`, mas os nomes das variáveis de ambiente ainda não foram decididos. Não invente um prefixo: a decisão entra com o adapter de configuração.
 
+> **Seed do Admin Root.** O comando de seed lê `ADMIN_ROOT_EMAIL` e `ADMIN_ROOT_PASSWORD` do ambiente; elas são **seed-only** e não entram no `EnvironmentSchema` do boot. O e-mail é normalizado e validado; a senha tem ≥ 14 caracteres e é gravada só como hash. Se a conta não existe, `users` e `credentials` são criadas na mesma transação com `must_change_password = true`. Se o e-mail já existe com outro perfil, o seed falha; se já é `Admin Root`, a senha não é reescrita. Sem as duas variáveis, o seed falha antes de escrever.
+
 > **Credencial de auditoria.** O append-only de `audit_entries` é garantido no banco: triggers `BEFORE UPDATE`/`BEFORE DELETE` nas três engines e, no Postgres/MySQL, uma credencial de aplicação sem `UPDATE`/`DELETE`/`DROP`/`TRUNCATE`. Isso exige **duas credenciais** — runtime e migração — e o bloco `DATABASE` atual tem uma. A separação é pendência de deploy ([02-Architecture § 22](../02-Architecture.md#22-pendências-de-arquitetura)).
 
 ## Schema, migrations e seeds
@@ -154,7 +156,7 @@ A estratégia concreta (in-memory, arquivo temporário, container) está **em ab
 
 - **Acesso ao banco:** o modelo não define papéis de banco, usuário de aplicação nem usuário de leitura para relatórios. É uma decisão de operação em aberto; o princípio é o menor privilégio. O append-only da auditoria exige a separação entre runtime e migração descrita acima.
 - **Autorização:** as 26 chaves `recurso:ação` são matriz em código ([Apêndice B](../03-Data-Model.md#23-apêndice-b--catálogo-de-permissões)); o alvo com `permissions`/`profile_permissions` está no [Apêndice C](../03-Data-Model.md#24-apêndice-c--modelo-alvo-de-rbac-configurável) e não é schema vigente.
-- **Segredos:** senha e hash nunca em log, resposta ou fixture; o `.env` não é versionado.
+- **Segredos:** senha e hash nunca em log, resposta ou fixture; o `.env` não é versionado. `ADMIN_ROOT_PASSWORD` existe só no ambiente do seed e não é impresso; a senha inicial é trocada no primeiro acesso.
 - **PII:** o banco guarda nome, e-mail, área, departamento e contato do solicitante; a auditoria guarda autor e IP. A retenção e a anonimização não estão definidas.
 - **Exclusão:** `ON DELETE RESTRICT` em todas as FKs; nada é apagado. Solicitação encerra (`closed_at`), usuário desativa (`is_active = false`), configuração desativa. A lista completa está em [§ 2.11](../03-Data-Model.md#211-política-de-exclusão).
 - **Anexo restrito:** `attachments.is_restricted` existe sem regra; a decisão de LGPD está em [§ 21](../03-Data-Model.md#21-pendências).
