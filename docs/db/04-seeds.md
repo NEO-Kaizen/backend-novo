@@ -44,52 +44,23 @@ Regras:
 - O formulário é andaime: se o campo já existe, o seed não altera tipo, limites, obrigatoriedade nem rótulo. Ajuste de definição é migration.
 - Um seed por domínio, como as migrations ([ADR-0004](../adr/0004-domain-owned-schema-and-migrations.md)).
 
-## O que cada grupo semeia
+## O que o seed garante
 
-### Perfis
+Os valores estão no [Apêndice D](../03-Data-Model.md#25-apêndice-d--seed-de-referência); aqui fica o que o runbook precisa saber.
 
-Cinco linhas: `Solicitante`, `Analista`, `Gestor`, `Administrador`, `Admin Root`, todas ativas. As flags de atribuibilidade nascem explícitas: só o `Analista` tem `is_assignable_triage` e `is_assignable_mapping` em `true`; os demais perfis, em `false`, mesmo quando têm as chaves ([§ 7.6](../03-Data-Model.md#76-atribuibilidade)). Os nomes são exatamente os do catálogo de permissões em código ([ADR-0006](../adr/0006-static-profile-authorization.md)); divergência é bug de autorização silencioso.
+| Grupo | Regra |
+| --- | --- |
+| Perfis | Cinco nomes; só o `Analista` nasce com `is_assignable_triage` e `is_assignable_mapping` em `true` ([§ 7.6](../03-Data-Model.md#76-atribuibilidade)). |
+| Admin Root | Conta ativa, perfil `Admin Root`, credencial com `must_change_password = true`; e-mail e senha inicial **pendentes** ([§ 21](../03-Data-Model.md#21-pendências)). |
+| Aparências e portal | Dois temas (`Claro`, `Escuro`) com tokens e assets nulos; `portal_settings` com `PUBLIC`, `MAAT`, `MAAT`, apontando os dois slots. |
+| Categorias | Dez ativas, `display_order` 1–10, `form_id` para o formulário `solicitacao`. |
+| Status | Dezessete do v4: 7 core, 2 terminais, 1 restrito (`priorizado`, que exige `request:status_override`). |
+| Critérios | Dez ativos, peso 10, `code` na chave do contrato (`operationalImpact`, …). |
+| Prioridades | Quatro faixas contíguas de 10,0 a 50,0; `default_weight` é referência e não entra no cálculo. |
+| Formulário | Quatro blocos e 32 campos do Apêndice A; a categoria é coluna, não campo, e viaja em `demand.category`. |
+| Pendências | `pending_batches`/`pending_items` **não** são semeados: dependem de uma solicitação. |
 
-### Admin Root
-
-Uma conta com `users.name = 'Admin Root'`, `profile_id` de `Admin Root`, `is_active = true`, e uma credencial com `must_change_password = true`. O e-mail e a senha inicial **não estão definidos** — ver [§ 21](../03-Data-Model.md#21-pendências). A senha nunca é versionada: o seed recebe o segredo do ambiente e grava apenas o hash. O e-mail deve ser normalizado (`trim().toLowerCase()`) como qualquer conta.
-
-### Aparências e configuração do portal
-
-Duas Aparências nomeadas, `Claro` e `Escuro`, com os tokens do design system atual e os assets **nulos** — o frontend aplica os defaults locais por token, como o contrato permite. `portal_settings` nasce com `PUBLIC`, `MAAT`, `MAAT`, e aponta os dois slots para essas Aparências. `logo_use_primary_color = true` preserva o contrato atual do frontend.
-
-As URLs de asset do legado (`/uploads/portal/...`) **não** são copiadas para o novo seed: o caminho de upload do backend novo ainda não foi decidido. O frontend cai nos assets locais até que uma Aparência com assets seja configurada.
-
-### Categorias
-
-Dez categorias ativas, `display_order` 1–10, `normalized_name` em minúsculas, e `form_id` apontando para o formulário `solicitacao`. Nenhuma categoria nasce sem formulário: a invariante “categoria ativa tem formulário” vale desde o seed.
-
-### Status
-
-Os 17 status do ciclo de referência, com as chaves estáveis do código e a matriz de flags do motor v4:
-
-- **7 core:** `solicitacao_enviada`, `em_triagem`, `pendente_de_informacoes`, `mapeamento_agendado`, `em_mapeamento`, `concluido`, `cancelado`.
-- **2 terminais:** `concluido`, `cancelado`.
-- **1 restrito:** `priorizado` — exige `request:status_override` para ser assumido; o flag não é “ninguém pode”, é “só com a chave”.
-- **8 públicos:** `solicitacao_enviada`, `aguardando_triagem`, `em_triagem`, `pendente_de_informacoes`, `aguardando_mapeamento`, `em_mapeamento`, `concluido`, `cancelado`.
-
-O legado v4 tem 17 status; as saídas de triagem 18/19 da versão anterior foram removidas do contrato. O desfecho da triagem é um status com `triage_mode = conclusion_only`, não um vocabulário paralelo. `nao_elegivel` fica com `is_terminal = false` no v4; a terminalidade é uma decisão de produto em aberto ([§ 21](../03-Data-Model.md#21-pendências)).
-
-### Critérios
-
-Dez critérios ativos, todos com peso 10. O peso é uma razão relativa; pesos iguais não mudam o resultado. O `code` usa a chave do contrato (`operationalImpact`, …), e `prioritization_evaluations.notes` é indexado por ele. O legado usava ids em português (`impacto_operacional`) e mantinha uma ponte português ↔ inglês; o modelo novo elimina a ponte.
-
-### Faixas de prioridade
-
-Quatro faixas, contíguas na precisão de um decimal: 10,0–20,0 (`Baixa`), 20,1–30,0 (`Média`), 30,1–40,0 (`Alta`) e 40,1–50,0 (`Crítica`). `default_weight` é referência da faixa e nenhum cálculo o usa. A ausência de sobreposição e de lacuna é regra de aplicação, verificada quando a faixa é salva — uma constraint de check não enxerga outras linhas.
-
-### Formulário
-
-`forms.key = 'solicitacao'`, nome `Solicitação`, quatro blocos (`requester`, `demand`, `operational`, `complementary`) e os 32 campos do [Apêndice A](../03-Data-Model.md#22-apêndice-a--o-seed-do-formulário). `display_order` é a posição dentro do bloco; `help_text` é nulo. A categoria não é campo: é a classificação em `requests.category_id`; no wire vigente ela viaja em `demand.category`.
-
-### Pendências
-
-`pending_batches` e `pending_items` não são semeados. O seed de referência não cria solicitação, e um lote de pendência depende de uma. O runbook não cria lote “vazio”: todo lote tem ao menos um item ([§ 13.1](../03-Data-Model.md#131-pending_batches)).
+`form_answers.value_lookup` é projeção derivada da resposta de e-mail, mantida na escrita e na correção; não é semeada.
 
 ## Proveniência e conflitos
 

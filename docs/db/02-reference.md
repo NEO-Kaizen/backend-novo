@@ -2,7 +2,7 @@
 
 > **Derivado, não normativo.** Fatos estruturais mantidos à mão a partir de [`../03-Data-Model.md`](../03-Data-Model.md). Em caso de divergência, a especificação vence. Atualize este arquivo no mesmo PR que alterar o schema.
 
-Colunas, tipos, nulabilidade, default, constraints, índices e FKs. As invariantes e as regras de negócio ficam na seção do domínio da especificação; o link está no fim de cada tabela. O mapa visual está em [`03-erd.md`](./03-erd.md) e a versão para ferramenta em [`schema.dbml`](./schema.dbml).
+Colunas, tipos, nulabilidade, default, constraints, índices e FKs. O índice abaixo aponta para a seção da especificação de cada tabela; as invariantes e as regras de negócio ficam lá. O mapa visual está em [`03-erd.md`](./03-erd.md) e a versão para ferramenta em [`schema.dbml`](./schema.dbml).
 
 ## Índice
 
@@ -55,7 +55,6 @@ Colunas, tipos, nulabilidade, default, constraints, índices e FKs. As invariant
 
 **Índices** — `uk_credentials_user_id` (único).
 
-Definição completa, invariantes e regras: [§ 6.1](../03-Data-Model.md#61-credentials).
 
 ## `users`
 
@@ -75,7 +74,6 @@ Definição completa, invariantes e regras: [§ 6.1](../03-Data-Model.md#61-cred
 
 **Índices** — `uk_profiles_name`.
 
-Definição completa, invariantes e regras: [§ 7.1](../03-Data-Model.md#71-profiles).
 
 ### `users`
 
@@ -98,7 +96,6 @@ Definição completa, invariantes e regras: [§ 7.1](../03-Data-Model.md#71-prof
 
 **Índices** — `uk_users_email`.
 
-Definição completa, invariantes e regras: [§ 7.2](../03-Data-Model.md#72-users).
 
 ### `analyst_details`
 
@@ -118,7 +115,6 @@ Definição completa, invariantes e regras: [§ 7.2](../03-Data-Model.md#72-user
 
 **Índices** — `uk_analyst_details_user_id`.
 
-Definição completa, invariantes e regras: [§ 7.3](../03-Data-Model.md#73-analyst_details).
 
 ### `analyst_detail_categories`
 
@@ -133,7 +129,6 @@ Definição completa, invariantes e regras: [§ 7.3](../03-Data-Model.md#73-anal
 
 **Índices** — UNIQUE `uk_analyst_detail_categories_user_category` (`user_id`, `category_id`).
 
-Definição completa, invariantes e regras: [§ 7.4](../03-Data-Model.md#74-analyst_detail_categories).
 
 ## `requests`
 
@@ -165,7 +160,6 @@ Definição completa, invariantes e regras: [§ 7.4](../03-Data-Model.md#74-anal
 
 **Índices** — UNIQUE `uk_requests_protocol`; `idx_requests_status_id`; `idx_requests_category_id`; `idx_requests_requester_user_id`; `idx_requests_responsible_id`; `idx_requests_created_at`.
 
-Definição completa, invariantes e regras: [§ 8.1](../03-Data-Model.md#81-requests).
 
 ### `form_answers`
 
@@ -189,7 +183,6 @@ Definição completa, invariantes e regras: [§ 8.1](../03-Data-Model.md#81-requ
 
 **Constraints de tabela** — `ck_form_answers_value_shape`.
 
-Definição completa, invariantes e regras: [§ 8.2](../03-Data-Model.md#82-form_answers).
 
 ### `attachments`
 
@@ -211,7 +204,6 @@ Definição completa, invariantes e regras: [§ 8.2](../03-Data-Model.md#82-form
 
 **Índices** — `idx_attachments_request_id`; `idx_attachments_pending_item_id`; `idx_attachments_is_restricted`.
 
-Definição completa, invariantes e regras: [§ 8.3](../03-Data-Model.md#83-attachments).
 
 ### `request_time_preferences`
 
@@ -226,7 +218,6 @@ Definição completa, invariantes e regras: [§ 8.3](../03-Data-Model.md#83-atta
 
 **Índices** — UNIQUE `uk_request_time_preferences_slot` (`request_id`, `scheduled_for`).
 
-Definição completa, invariantes e regras: [§ 8.4](../03-Data-Model.md#84-request_time_preferences).
 
 ## `triage`
 
@@ -257,7 +248,6 @@ Definição completa, invariantes e regras: [§ 8.4](../03-Data-Model.md#84-requ
 
 **Índices** — `idx_triages_request_id_occurred_at` (`request_id`, `occurred_at`).
 
-Definição completa, invariantes e regras: [§ 9.1](../03-Data-Model.md#91-triages).
 
 ## `mapping`
 
@@ -286,9 +276,8 @@ Definição completa, invariantes e regras: [§ 9.1](../03-Data-Model.md#91-tria
 
 **Relações** — `request_id` → `requests.id`; `responsible_id`, `created_by_user_id` e `updated_by_user_id` → `users.id`; `target_status_id` → `portal-config.statuses.id`.
 
-**Índices** — `idx_mappings_request_id`; `idx_mappings_request_id_is_concluded`.
+**Índices** — `idx_mappings_request_id`; `idx_mappings_request_id_is_concluded` (`request_id`, `is_concluded`).
 
-Definição completa, invariantes e regras: [§ 10.1](../03-Data-Model.md#101-mappings).
 
 ### `mapping_participants`
 
@@ -305,7 +294,6 @@ Definição completa, invariantes e regras: [§ 10.1](../03-Data-Model.md#101-ma
 
 **Índices** — UNIQUE `uk_mapping_participants_user` (`mapping_id`, `user_id`); UNIQUE `uk_mapping_participants_email` (`mapping_id`, `email`).
 
-Definição completa, invariantes e regras: [§ 10.2](../03-Data-Model.md#102-mapping_participants).
 
 ## `prioritization`
 
@@ -326,7 +314,6 @@ Definição completa, invariantes e regras: [§ 10.2](../03-Data-Model.md#102-ma
 
 **Índices** — UNIQUE `uk_criteria_code`.
 
-Definição completa, invariantes e regras: [§ 12.1](../03-Data-Model.md#121-criteria).
 
 ### `priorities`
 
@@ -349,7 +336,6 @@ Definição completa, invariantes e regras: [§ 12.1](../03-Data-Model.md#121-cr
 
 **Constraints de tabela** — `ck_priorities_score_range`.
 
-Definição completa, invariantes e regras: [§ 12.2](../03-Data-Model.md#122-priorities).
 
 ### `prioritization_evaluations`
 
@@ -369,7 +355,6 @@ Definição completa, invariantes e regras: [§ 12.2](../03-Data-Model.md#122-pr
 
 **Índices** — UNIQUE `uk_prioritization_evaluations_request_id`.
 
-Definição completa, invariantes e regras: [§ 12.3](../03-Data-Model.md#123-prioritization_evaluations).
 
 ## `pending-items`
 
@@ -389,7 +374,6 @@ Definição completa, invariantes e regras: [§ 12.3](../03-Data-Model.md#123-pr
 
 **Índices** — `idx_pending_batches_request_id`.
 
-Definição completa, invariantes e regras: [§ 13.1](../03-Data-Model.md#131-pending_batches).
 
 ### `pending_items`
 
@@ -416,7 +400,6 @@ Definição completa, invariantes e regras: [§ 13.1](../03-Data-Model.md#131-pe
 
 **Constraints de tabela** — `ck_pending_items_subject`.
 
-Definição completa, invariantes e regras: [§ 13.2](../03-Data-Model.md#132-pending_items).
 
 ## `internal-notes`
 
@@ -435,7 +418,6 @@ Definição completa, invariantes e regras: [§ 13.2](../03-Data-Model.md#132-pe
 
 **Índices** — `idx_internal_notes_request_id_created_at` (`request_id`, `created_at`); UNIQUE `uk_internal_notes_request_id_id` (`request_id`, `id`) — sustenta a FK composta das marcas de leitura.
 
-Definição completa, invariantes e regras: [§ 14.1](../03-Data-Model.md#141-internal_notes).
 
 ### `internal_note_read_states`
 
@@ -450,7 +432,6 @@ Definição completa, invariantes e regras: [§ 14.1](../03-Data-Model.md#141-in
 
 **Índices** — PK `pk_internal_note_read_states`; `idx_internal_note_read_states_last_read_note_id`.
 
-Definição completa, invariantes e regras: [§ 14.2](../03-Data-Model.md#142-internal_note_read_states).
 
 ## `audit`
 
@@ -477,7 +458,6 @@ Definição completa, invariantes e regras: [§ 14.2](../03-Data-Model.md#142-in
 
 **Índices** — `idx_audit_entries_request_id` (`request_id`, `occurred_at`); `idx_audit_entries_entity` (`entity_type`, `entity_id`); `idx_audit_entries_action`; `idx_audit_entries_actor_user_id`; `idx_audit_entries_occurred_at`.
 
-Definição completa, invariantes e regras: [§ 15.1](../03-Data-Model.md#151-audit_entries).
 
 ### `attempts`
 
@@ -498,7 +478,6 @@ Definição completa, invariantes e regras: [§ 15.1](../03-Data-Model.md#151-au
 
 **Índices** — `idx_attempts_correlation_id`; `idx_attempts_request_id`; `idx_attempts_actor_user_id`; `idx_attempts_occurred_at`.
 
-Definição completa, invariantes e regras: [§ 15.2](../03-Data-Model.md#152-attempts).
 
 ## `portal-config`
 
@@ -520,7 +499,6 @@ Definição completa, invariantes e regras: [§ 15.2](../03-Data-Model.md#152-at
 
 **Índices** — PK `pk_portal_settings` (singleton).
 
-Definição completa, invariantes e regras: [§ 17.1](../03-Data-Model.md#171-portal_settings).
 
 ### `themes`
 
@@ -572,7 +550,6 @@ Definição completa, invariantes e regras: [§ 17.1](../03-Data-Model.md#171-po
 
 **Índices** — UNIQUE `uk_themes_name`; `idx_themes_is_active`.
 
-Definição completa, invariantes e regras: [§ 17.2](../03-Data-Model.md#172-themes).
 
 ### `categories`
 
@@ -592,7 +569,6 @@ Definição completa, invariantes e regras: [§ 17.2](../03-Data-Model.md#172-th
 
 **Índices** — UNIQUE `uk_categories_normalized_name`; `idx_categories_is_active`; `idx_categories_display_order`; `idx_categories_form_id`.
 
-Definição completa, invariantes e regras: [§ 17.3](../03-Data-Model.md#173-categories).
 
 ### `statuses`
 
@@ -618,7 +594,6 @@ Definição completa, invariantes e regras: [§ 17.3](../03-Data-Model.md#173-ca
 
 **Índices** — UNIQUE `uk_statuses_key`; UNIQUE `uk_statuses_order_number`; UNIQUE `uk_statuses_name`; `idx_statuses_is_active`.
 
-Definição completa, invariantes e regras: [§ 17.4](../03-Data-Model.md#174-statuses).
 
 ## `forms`
 
@@ -638,7 +613,6 @@ Definição completa, invariantes e regras: [§ 17.4](../03-Data-Model.md#174-st
 
 **Índices** — UNIQUE `uk_forms_key`.
 
-Definição completa, invariantes e regras: [§ 18.1](../03-Data-Model.md#181-forms).
 
 ### `form_blocks`
 
@@ -657,7 +631,6 @@ Definição completa, invariantes e regras: [§ 18.1](../03-Data-Model.md#181-fo
 
 **Índices** — UNIQUE `uk_form_blocks_form_key` (`form_id`, `key`).
 
-Definição completa, invariantes e regras: [§ 18.2](../03-Data-Model.md#182-form_blocks).
 
 ### `form_fields`
 
@@ -685,8 +658,6 @@ Definição completa, invariantes e regras: [§ 18.2](../03-Data-Model.md#182-fo
 
 **Índices** — UNIQUE `uk_form_fields_form_key` (`form_id`, `key`); `idx_form_fields_block_id`.
 
-Definição completa, invariantes e regras: [§ 18.3](../03-Data-Model.md#183-form_fields).
-
 ## `platform (infraestrutura)`
 
 ### `code_counters`
@@ -700,211 +671,3 @@ Definição completa, invariantes e regras: [§ 18.3](../03-Data-Model.md#183-fo
 **Relações** — sem FK. O contador é referenciado pelo código, via porta `Counter`.
 
 **Índices** — PK `pk_code_counters` (`name`).
-
-Definição completa, invariantes e regras: [§ 19.1](../03-Data-Model.md#191-code_counters).
-
----
-
-## Apêndice — catálogo de constraints e índices
-
-Nomes declarados na especificação, mais as FKs implícitas (`fk_<tabela>_<coluna>`) e os comprimentos implícitos (`ck_<tabela>_<coluna>_length`).
-
-| Tabela | Objeto | Coluna(s) / alvo |
-| --- | --- | --- |
-| `credentials` | `ck_credentials_password_hash_length` | — |
-| `credentials` | `uk_credentials_user_id` | — |
-| `credentials` | `fk_credentials_user_id` | `users.id` |
-| `profiles` | `ck_profiles_name_length` | — |
-| `profiles` | `uk_profiles_name` | — |
-| `users` | `ck_users_additional_contact_length` | — |
-| `users` | `ck_users_area_length` | — |
-| `users` | `ck_users_avatar_url_length` | — |
-| `users` | `ck_users_department_length` | — |
-| `users` | `ck_users_email_length` | — |
-| `users` | `ck_users_manager_name_length` | — |
-| `users` | `ck_users_name_length` | — |
-| `users` | `uk_users_email` | — |
-| `users` | `fk_users_profile_id` | `profiles.id` |
-| `analyst_details` | `ck_analyst_details_capacity_non_negative` | — |
-| `analyst_details` | `ck_analyst_details_job_title_length` | — |
-| `analyst_details` | `ck_analyst_details_notes_length` | — |
-| `analyst_details` | `uk_analyst_details_user_id` | — |
-| `analyst_details` | `fk_analyst_details_user_id` | `users.id` |
-| `analyst_detail_categories` | `uk_analyst_detail_categories_user_category` | — |
-| `analyst_detail_categories` | `fk_analyst_detail_categories_user_id` | `users.id` |
-| `analyst_detail_categories` | `fk_analyst_detail_categories_category_id` | `portal-config.categories.id` |
-| `requests` | `ck_requests_created_by_length` | — |
-| `requests` | `ck_requests_meeting_link_length` | — |
-| `requests` | `ck_requests_protocol_length` | — |
-| `requests` | `idx_requests_category_id` | — |
-| `requests` | `idx_requests_created_at` | — |
-| `requests` | `idx_requests_requester_user_id` | — |
-| `requests` | `idx_requests_responsible_id` | — |
-| `requests` | `idx_requests_status_id` | — |
-| `requests` | `uk_requests_protocol` | — |
-| `requests` | `fk_requests_form_id` | `forms.forms.id` |
-| `requests` | `fk_requests_requester_user_id` | `users.id` |
-| `requests` | `fk_requests_status_id` | `portal-config.statuses.id` |
-| `requests` | `fk_requests_category_id` | `portal-config.categories.id` |
-| `requests` | `fk_requests_last_public_status_id` | `portal-config.statuses.id` |
-| `requests` | `fk_requests_responsible_id` | `users.id` |
-| `requests` | `fk_requests_created_by_user_id` | `users.id` |
-| `requests` | `fk_requests_updated_by_user_id` | `users.id` |
-| `form_answers` | `ck_form_answers_value_lookup_length` | — |
-| `form_answers` | `ck_form_answers_value_shape` | — |
-| `form_answers` | `ck_form_answers_value_text_length` | — |
-| `form_answers` | `idx_form_answers_field_lookup` | — |
-| `form_answers` | `idx_form_answers_field_request` | — |
-| `form_answers` | `uk_form_answers_request_field` | — |
-| `form_answers` | `fk_form_answers_request_id` | `requests.id` |
-| `form_answers` | `fk_form_answers_field_id` | `forms.form_fields.id` |
-| `attachments` | `ck_attachments_content_type` | — |
-| `attachments` | `ck_attachments_file_name_length` | — |
-| `attachments` | `ck_attachments_file_path_length` | — |
-| `attachments` | `ck_attachments_size_bytes` | — |
-| `attachments` | `ck_attachments_uploaded_by_length` | — |
-| `attachments` | `idx_attachments_is_restricted` | — |
-| `attachments` | `idx_attachments_pending_item_id` | — |
-| `attachments` | `idx_attachments_request_id` | — |
-| `attachments` | `fk_attachments_request_id` | `requests.id` |
-| `attachments` | `fk_attachments_pending_item_id` | `pending-items.pending_items.id` |
-| `attachments` | `fk_attachments_uploaded_by_user_id` | `users.id` |
-| `request_time_preferences` | `uk_request_time_preferences_slot` | — |
-| `request_time_preferences` | `fk_request_time_preferences_request_id` | `requests.id` |
-| `triages` | `ck_triages_suggested_responsible_length` | — |
-| `triages` | `idx_triages_request_id_occurred_at` | — |
-| `triages` | `fk_triages_request_id` | `requests.id` |
-| `triages` | `fk_triages_new_category_id` | `portal-config.categories.id` |
-| `triages` | `fk_triages_assignee_user_id` | `users.id` |
-| `triages` | `fk_triages_exit_status_id` | `portal-config.statuses.id` |
-| `triages` | `fk_triages_author_user_id` | `users.id` |
-| `mappings` | `ck_mappings_duration_minutes` | — |
-| `mappings` | `ck_mappings_location_length` | — |
-| `mappings` | `ck_mappings_meeting_link_length` | — |
-| `mappings` | `ck_mappings_modality` | — |
-| `mappings` | `ck_mappings_notes_length` | — |
-| `mappings` | `idx_mappings_request_id` | — |
-| `mappings` | `idx_mappings_request_id_is_concluded` | — |
-| `mappings` | `fk_mappings_request_id` | `requests.id` |
-| `mappings` | `fk_mappings_responsible_id` | `users.id` |
-| `mappings` | `fk_mappings_target_status_id` | `portal-config.statuses.id` |
-| `mappings` | `fk_mappings_created_by_user_id` | `users.id` |
-| `mappings` | `fk_mappings_updated_by_user_id` | `users.id` |
-| `mapping_participants` | `ck_mapping_participants_email_length` | — |
-| `mapping_participants` | `ck_mapping_participants_name_length` | — |
-| `mapping_participants` | `uk_mapping_participants_email` | — |
-| `mapping_participants` | `uk_mapping_participants_user` | — |
-| `mapping_participants` | `fk_mapping_participants_mapping_id` | `mappings.id` |
-| `mapping_participants` | `fk_mapping_participants_user_id` | `users.id` |
-| `criteria` | `ck_criteria_code_length` | — |
-| `criteria` | `ck_criteria_name_length` | — |
-| `criteria` | `ck_criteria_weight_range` | — |
-| `criteria` | `uk_criteria_code` | — |
-| `priorities` | `ck_priorities_color_code_length` | — |
-| `priorities` | `ck_priorities_level` | — |
-| `priorities` | `ck_priorities_max_score_range` | — |
-| `priorities` | `ck_priorities_min_score_range` | — |
-| `priorities` | `ck_priorities_score_range` | — |
-| `priorities` | `uk_priorities_level` | — |
-| `prioritization_evaluations` | `ck_prioritization_evaluations_score_range` | — |
-| `prioritization_evaluations` | `uk_prioritization_evaluations_request_id` | — |
-| `prioritization_evaluations` | `fk_prioritization_evaluations_request_id` | `requests.id` |
-| `prioritization_evaluations` | `fk_prioritization_evaluations_priority_id` | `priorities.id` |
-| `prioritization_evaluations` | `fk_prioritization_evaluations_calculated_by_user_id` | `users.id` |
-| `pending_batches` | `ck_pending_batches_expected_attachment_type_length` | — |
-| `pending_batches` | `idx_pending_batches_request_id` | — |
-| `pending_batches` | `fk_pending_batches_request_id` | `requests.id` |
-| `pending_batches` | `fk_pending_batches_created_by_user_id` | `users.id` |
-| `pending_items` | `ck_pending_items_classification_key` | — |
-| `pending_items` | `ck_pending_items_comment_length` | — |
-| `pending_items` | `ck_pending_items_response_text_length` | — |
-| `pending_items` | `ck_pending_items_status` | — |
-| `pending_items` | `ck_pending_items_subject` | — |
-| `pending_items` | `ck_pending_items_type` | — |
-| `pending_items` | `idx_pending_items_batch_id` | — |
-| `pending_items` | `idx_pending_items_form_field_id` | — |
-| `pending_items` | `idx_pending_items_status` | — |
-| `pending_items` | `uk_pending_items_batch_classification` | — |
-| `pending_items` | `uk_pending_items_batch_field` | — |
-| `pending_items` | `fk_pending_items_batch_id` | `pending_batches.id` |
-| `pending_items` | `fk_pending_items_form_field_id` | `forms.form_fields.id` |
-| `pending_items` | `fk_pending_items_validated_by_user_id` | `users.id` |
-| `internal_notes` | `ck_internal_notes_author_profile` | — |
-| `internal_notes` | `ck_internal_notes_content_length` | — |
-| `internal_notes` | `idx_internal_notes_request_id_created_at` | — |
-| `internal_notes` | `uk_internal_notes_request_id_id` | — |
-| `internal_notes` | `fk_internal_notes_request_id` | `requests.id` |
-| `internal_notes` | `fk_internal_notes_author_user_id` | `users.id` |
-| `internal_note_read_states` | `idx_internal_note_read_states_last_read_note_id` | — |
-| `internal_note_read_states` | `pk_internal_note_read_states` | — |
-| `internal_note_read_states` | `fk_internal_note_read_states_request_id` | `requests.id` |
-| `internal_note_read_states` | `fk_internal_note_read_states_user_id` | `users.id` |
-| `internal_note_read_states` | `fk_internal_note_read_states_last_read_note_id` | `internal_notes.id` |
-| `audit_entries` | `ck_audit_entries_action` | — |
-| `audit_entries` | `ck_audit_entries_actor_profile` | — |
-| `audit_entries` | `ck_audit_entries_change_origin_length` | — |
-| `audit_entries` | `ck_audit_entries_entity_type` | — |
-| `audit_entries` | `idx_audit_entries_action` | — |
-| `audit_entries` | `idx_audit_entries_actor_user_id` | — |
-| `audit_entries` | `idx_audit_entries_entity` | — |
-| `audit_entries` | `idx_audit_entries_occurred_at` | — |
-| `audit_entries` | `idx_audit_entries_request_id` | — |
-| `audit_entries` | `fk_audit_entries_request_id` | `requests.id` |
-| `audit_entries` | `fk_audit_entries_actor_user_id` | `users.id` |
-| `attempts` | `ck_attempts_action` | — |
-| `attempts` | `ck_attempts_entity_type` | — |
-| `attempts` | `ck_attempts_reason_code_length` | — |
-| `attempts` | `idx_attempts_actor_user_id` | — |
-| `attempts` | `idx_attempts_correlation_id` | — |
-| `attempts` | `idx_attempts_occurred_at` | — |
-| `attempts` | `idx_attempts_request_id` | — |
-| `attempts` | `fk_attempts_request_id` | `requests.id` |
-| `attempts` | `fk_attempts_actor_user_id` | `users.id` |
-| `portal_settings` | `ck_portal_settings_platform_name_length` | — |
-| `portal_settings` | `ck_portal_settings_protocol_mask_format` | — |
-| `portal_settings` | `ck_portal_settings_solicitation_mode` | — |
-| `portal_settings` | `pk_portal_settings` | — |
-| `portal_settings` | `fk_portal_settings_light_theme_id` | `themes.id` |
-| `portal_settings` | `fk_portal_settings_dark_theme_id` | `themes.id` |
-| `portal_settings` | `fk_portal_settings_updated_by_user_id` | `users.id` |
-| `themes` | `ck_themes_avatar_url_length` | — |
-| `themes` | `ck_themes_favicon_url_length` | — |
-| `themes` | `ck_themes_gradient_angle` | — |
-| `themes` | `ck_themes_hex` | — |
-| `themes` | `ck_themes_login_image_url_length` | — |
-| `themes` | `ck_themes_logo_url_length` | — |
-| `themes` | `ck_themes_name_length` | — |
-| `themes` | `idx_themes_is_active` | — |
-| `themes` | `uk_themes_name` | — |
-| `categories` | `ck_categories_name_length` | — |
-| `categories` | `ck_categories_normalized_name_length` | — |
-| `categories` | `idx_categories_display_order` | — |
-| `categories` | `idx_categories_form_id` | — |
-| `categories` | `idx_categories_is_active` | — |
-| `categories` | `uk_categories_normalized_name` | — |
-| `categories` | `fk_categories_form_id` | `forms.forms.id` |
-| `statuses` | `ck_statuses_key_length` | — |
-| `statuses` | `ck_statuses_mapping_mode` | — |
-| `statuses` | `ck_statuses_name_length` | — |
-| `statuses` | `ck_statuses_tone` | — |
-| `statuses` | `ck_statuses_triage_mode` | — |
-| `statuses` | `idx_statuses_is_active` | — |
-| `statuses` | `uk_statuses_key` | — |
-| `statuses` | `uk_statuses_name` | — |
-| `statuses` | `uk_statuses_order_number` | — |
-| `forms` | `ck_forms_key_length` | — |
-| `forms` | `ck_forms_name_length` | — |
-| `forms` | `uk_forms_key` | — |
-| `form_blocks` | `ck_form_blocks_key_length` | — |
-| `form_blocks` | `ck_form_blocks_title_length` | — |
-| `form_blocks` | `uk_form_blocks_form_key` | — |
-| `form_blocks` | `fk_form_blocks_form_id` | `forms.id` |
-| `form_fields` | `ck_form_fields_key_length` | — |
-| `form_fields` | `ck_form_fields_label_length` | — |
-| `form_fields` | `ck_form_fields_type` | — |
-| `form_fields` | `idx_form_fields_block_id` | — |
-| `form_fields` | `uk_form_fields_form_key` | — |
-| `form_fields` | `fk_form_fields_form_id` | `forms.id` |
-| `form_fields` | `fk_form_fields_block_id` | `form_blocks.id` |
-| `code_counters` | `ck_code_counters_name_length` | — |
-| `code_counters` | `pk_code_counters` | — |

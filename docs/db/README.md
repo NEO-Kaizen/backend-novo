@@ -18,7 +18,7 @@ Os valores do seed de referência estão no [Apêndice D](../03-Data-Model.md#25
 ## Por onde começar
 
 - **Vou implementar uma tabela ou migration.** Leia [`../03-Data-Model.md`](../03-Data-Model.md) § 2 (convenções) e § 4 (ordem de criação), depois a seção do domínio. Use [`02-reference.md`](./02-reference.md) para conferir coluna, tipo e constraint.
-- **Vou revisar um schema ou uma migration.** Use o [checklist de paridade](#checklist-de-paridade) abaixo, o catálogo de constraints em [`02-reference.md`](./02-reference.md) e o mapa em [`03-erd.md`](./03-erd.md).
+- **Vou revisar um schema ou uma migration.** Use o [checklist de paridade](#checklist-de-paridade) abaixo, as constraints por tabela em [`02-reference.md`](./02-reference.md) e o mapa em [`03-erd.md`](./03-erd.md).
 - **Vou rodar o banco.** Leia [`05-operations.md`](./05-operations.md) e [`04-seeds.md`](./04-seeds.md).
 - **Quero entender um termo.** Comece em [`01-vocabulary.md`](./01-vocabulary.md) e no [`../../GLOSSARY.md`](../../GLOSSARY.md).
 - **Quero ver o modelo visualmente.** Abra [`03-erd.md`](./03-erd.md) ou importe [`schema.dbml`](./schema.dbml) no [dbdiagram.io](https://dbdiagram.io).
@@ -42,7 +42,7 @@ Use antes de abrir ou aprovar um PR que toque o schema:
 - [ ] Cada tabela tem a **PK** correta em [`02-reference.md`](./02-reference.md) e em [`schema.dbml`](./schema.dbml); as PKs compostas são `internal_note_read_states` (`request_id`, `user_id`) e a futura `profile_permissions`.
 - [ ] Cada **FK** da especificação tem uma aresta no ERD e um `ref` no DBML. As exceções são as referências polimórficas `audit_entries.entity_id` e `attempts.entity_id`, que não têm FK; `attempts.correlation_id` é correlação HTTP, também sem FK.
 - [ ] Cada **índice/unicidade** nomeado (`uk_`, `idx_`) aparece na referência e no DBML.
-- [ ] Cada **constraint nomeada** (`ck_`, `uk_`, `idx_`, `pk_`) aparece na referência; o catálogo no fim da referência não tem nome inventado.
+- [ ] Cada **constraint nomeada** (`ck_`, `uk_`, `idx_`, `pk_`) aparece na seção da tabela em [`02-reference.md`](./02-reference.md); nenhum nome é inventado.
 - [ ] Cada mudança de coluna tem o **tipo, a nulabilidade e o default** iguais aos da especificação.
 - [ ] O **Apêndice D** e [`04-seeds.md`](./04-seeds.md) contam a mesma história: mesmas tabelas, mesmas chaves naturais, mesma ordem.
 - [ ] O Mermaid de [`03-erd.md`](./03-erd.md) renderiza e o DBML importa sem erro.

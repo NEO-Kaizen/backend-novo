@@ -9,10 +9,10 @@
 | **Solicitação** | `requests.requests` | O registro e seu ciclo de vida |
 | **Protocolo** | `requests.requests.protocol` | Identificador público, único, nunca reemitido |
 | **Solicitante** | as respostas do bloco `requester` + `requests.requester_user_id` | Quem preencheu a solicitação; pode ser anônimo, e nesse caso não há conta |
-| **Anexo** | `requests.attachments` | Vinculado à solicitação e, opcionalmente, a uma pendência |
+| **Anexo** | `requests.attachments` | Vinculado à solicitação e, opcionalmente, a um item de pendência |
 | **Fila** | — | Projeção de leitura sobre `requests`; sem tabela própria |
-| **Status** | `portal-config.statuses` | Etapa do ciclo de vida, com visibilidade pública ou interna |
-| **Categoria** | `portal-config.categories`, `requests.category_id` | Classificação ordenável da solicitação — o solicitante propõe, a triagem confirma |
+| **Status** | `portal-config.statuses` | Etapa do ciclo de vida; `is_public` define a visibilidade e `is_restricted` exige `request:status_override` |
+| **Categoria** | `portal-config.categories`, `requests.category_id` | Classificação ordenável da solicitação — o solicitante escolhe na abertura; a triagem pode reclassificar |
 | **Prioridade** | `prioritization.prioritization_evaluations.priority_id` | Faixa de criticidade, definida por faixa de score; a avaliação corrente é a única casa |
 | **Classificação** | `requests.status_id`, `requests.category_id`, `prioritization.prioritization_evaluations.priority_id` | Os três atributos que situam a solicitação no fluxo — status e categoria na própria solicitação, prioridade na avaliação corrente |
 | **Triagem** | `triage.triages` | Conjunto append-only de triagens; a triagem atual é a última linha |
