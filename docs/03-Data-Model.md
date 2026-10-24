@@ -8,10 +8,47 @@ Documentos relacionados:
 
 - [`01-Overview.md`](./01-Overview.md) — o sistema, o escopo, a stack.
 - [`02-Architecture.md`](./02-Architecture.md) — camadas, injeção de dependências, persistência com Knex.
-- [`03-Data-Model-Vocabulary.md`](./03-Data-Model-Vocabulary.md) — índice termo → tabela.
-- [`03-Data-Model-Diagrams.md`](./03-Data-Model-Diagrams.md) — diagramas de entidade.
+- [`db/README.md`](./db/README.md) — porta de entrada da documentação derivada do banco.
+- [`db/01-vocabulary.md`](./db/01-vocabulary.md) — índice termo → tabela.
+- [`db/02-reference.md`](./db/02-reference.md) — dicionário de dados para consulta.
+- [`db/03-erd.md`](./db/03-erd.md) — diagramas de entidade.
+- [`db/schema.dbml`](./db/schema.dbml) — schema para dbdiagram/dbdocs.
+- [`db/04-seeds.md`](./db/04-seeds.md) — inventário e ordem dos seeds.
+- [`db/05-operations.md`](./db/05-operations.md) — operação do banco, migrations e seeds.
 - [`../GLOSSARY.md`](../GLOSSARY.md) — vocabulário do domínio.
 - [`adr/`](./adr/) — decisões de arquitetura registradas.
+
+> **Fonte de verdade.** Este documento é a especificação. Os arquivos em [`db/`](./db/) são derivados ou operacionais: quando divergirem, vale o que está aqui ([ADR-0010](./adr/0010-data-model-doc-is-the-spec.md)).
+
+## Índice
+
+| § | Seção |
+| --- | --- |
+| [1](#1-escopo-e-fonte-de-verdade) | Escopo e Fonte de Verdade |
+| [2](#2-convenções-de-nomenclatura) | Convenções de Nomenclatura |
+| [3](#3-vocabulário-para-schema) | Vocabulário para Schema |
+| [4](#4-integridade-referencial-e-ordem-de-criação) | Integridade Referencial e Ordem de Criação |
+| [5](#5-visão-geral-das-entidades) | Visão Geral das Entidades |
+| [6](#6-domínio-auth) | Domínio `auth` — `credentials` |
+| [7](#7-domínio-users) | Domínio `users` — `profiles`, `users`, `analyst_details`, `analyst_detail_categories` |
+| [8](#8-domínio-requests) | Domínio `requests` — `requests`, `form_answers`, `attachments`, `request_time_preferences` |
+| [9](#9-domínio-triage) | Domínio `triage` — `triages` |
+| [10](#10-domínio-mapping) | Domínio `mapping` — `mappings`, `mapping_participants` |
+| [11](#11-domínio-queue) | Domínio `queue` — projeção de leitura |
+| [12](#12-domínio-prioritization) | Domínio `prioritization` — `criteria`, `priorities`, `prioritization_evaluations` |
+| [13](#13-domínio-pending-items) | Domínio `pending-items` — `pending_batches`, `pending_items` |
+| [14](#14-domínio-internal-notes) | Domínio `internal-notes` — `internal_notes`, `internal_note_read_states` |
+| [15](#15-domínio-audit) | Domínio `audit` — `audit_entries`, `attempts` |
+| [16](#16-domínio-reports) | Domínio `reports` — projeção de leitura |
+| [17](#17-domínio-portal-config) | Domínio `portal-config` — `portal_settings`, `themes`, `categories`, `statuses` |
+| [18](#18-domínio-forms) | Domínio `forms` — `forms`, `form_blocks`, `form_fields` |
+| [19](#19-schema-de-infraestrutura) | Schema de Infraestrutura — `code_counters` |
+| [20](#20-catálogo-de-tabelas) | Catálogo de Tabelas |
+| [21](#21-pendências) | Pendências |
+| [22](#22-apêndice-a--o-seed-do-formulário) | Apêndice A — o Seed do Formulário |
+| [23](#23-apêndice-b--catálogo-de-permissões) | Apêndice B — Catálogo de Permissões |
+| [24](#24-apêndice-c--modelo-alvo-de-rbac-configurável) | Apêndice C — Modelo alvo de RBAC configurável |
+| [25](#25-apêndice-d--seed-de-referência) | Apêndice D — Seed de Referência |
 
 ---
 
@@ -38,7 +75,7 @@ Por isso cada seção de domínio fecha com o bloco **Regras de negócio**, divi
 
 ### 1.1 Inventário
 
-28 tabelas em 13 domínios, mais 1 tabela de infraestrutura:
+28 tabelas distribuídas por **11 dos 13 domínios** — `queue` e `reports` são projeções de leitura, sem tabela própria — mais 1 tabela de infraestrutura:
 
 | Domínio | Tabelas | Escreve |
 | --- | --- | --- |
@@ -221,7 +258,7 @@ Por isso a exclusão de um status em uso é bloqueada pelo banco, e o caminho pa
 
 ## 3. Vocabulário para Schema
 
-O índice **termo → tabela** está em [`03-Data-Model-Vocabulary.md`](./03-Data-Model-Vocabulary.md). É um índice de leitura, não parte da especificação.
+O índice **termo → tabela** está em [`db/01-vocabulary.md`](./db/01-vocabulary.md). É um índice de leitura, não parte da especificação.
 
 ## 4. Integridade Referencial e Ordem de Criação
 
@@ -264,7 +301,24 @@ Duas consequências operacionais:
 
 ## 5. Visão Geral das Entidades
 
-Os diagramas de entidade estão em [`03-Data-Model-Diagrams.md`](./03-Data-Model-Diagrams.md). São de orientação, não normativos.
+O schema tem uma entidade central e quatro agrupamentos de leitura. A solicitação (`requests`) é o sujeito do ciclo; o conteúdo dela é uma resposta de formulário, e o que a situa no fluxo são as três classificações — Status, Categoria e Prioridade.
+
+| Agrupamento | Entidades | Papel |
+| --- | --- | --- |
+| **Ciclo da solicitação** | `requests`, `form_answers`, `attachments`, `request_time_preferences`, `triages`, `mappings`, `mapping_participants`, `prioritization_evaluations`, `pending_batches`, `pending_items`, `internal_notes`, `internal_note_read_states` | O que acontece com a solicitação, da abertura ao encerramento |
+| **Acesso e configuração** | `profiles`, `users`, `analyst_details`, `analyst_detail_categories`, `credentials`, `portal_settings`, `themes`, `categories`, `statuses`, `criteria`, `priorities`, `forms`, `form_blocks`, `form_fields` | Quem acessa, o que o portal oferece e como o formulário é definido |
+| **Auditoria** | `audit_entries`, `attempts` | O que foi alterado e o que foi recusado |
+| **Infraestrutura** | `code_counters` | O contador que alimenta o protocolo |
+
+`queue` e `reports` não têm tabela: são projeções de leitura sobre as entidades acima. A linha do tempo também é projeção — `audit_entries` somados a `internal_notes`.
+
+**Caminhos de leitura**
+
+- Para implementar uma tabela: comece por [§ 2](#2-convenções-de-nomenclatura), confira a posição em [§ 4](#4-integridade-referencial-e-ordem-de-criação) e leia a seção do domínio. O dicionário de consulta está em [`db/02-reference.md`](./db/02-reference.md).
+- Para revisar um schema ou uma migration: use o catálogo de [§ 20](#20-catálogo-de-tabelas), o catálogo de constraints em [`db/02-reference.md`](./db/02-reference.md) e os diagramas em [`db/03-erd.md`](./db/03-erd.md).
+- Para operar o banco: leia [`db/04-seeds.md`](./db/04-seeds.md) e [`db/05-operations.md`](./db/05-operations.md).
+
+Os diagramas são de **orientação** e não são normativos. O mapa completo e os diagramas por domínio estão em [`db/03-erd.md`](./db/03-erd.md); a versão legível por ferramenta está em [`db/schema.dbml`](./db/schema.dbml).
 
 ## 6. Domínio `auth`
 
@@ -282,6 +336,8 @@ Material de credencial do usuário. Separado de `users` para que o domínio `use
 | `password_changed_at` | timestamp | não | `now` | Época de revogação dos tokens |
 | `must_change_password` | boolean | não | `true` | Trava todas as rotas exceto `/auth/me` e `/auth/change-password` |
 | `created_at` | timestamp | não | `now` | Sem `updated_at`: a única mutação é a troca de senha, já marcada em `password_changed_at` |
+
+**Relações** — `user_id` → `users.id`.
 
 **Índices** — `uk_credentials_user_id` (único).
 
@@ -357,6 +413,8 @@ A conta. Não carrega material de senha — esse é do domínio `auth`.
 | `created_at` | timestamp | não | `now` | |
 | `updated_at` | timestamp | não | `now` | |
 
+**Relações** — `profile_id` → `profiles.id`. As colunas de ator, solicitante, responsável e autor nos outros domínios apontam para `users.id`.
+
 **Índices** — `uk_users_email`.
 
 **Invariantes**
@@ -381,6 +439,8 @@ Dados profissionais do Analista: cargo, especialidades, áreas atendidas, dispon
 | `created_at` | timestamp | não | `now` | |
 | `updated_at` | timestamp | não | `now` | |
 
+**Relações** — `user_id` → `users.id`.
+
 **Índices** — `uk_analyst_details_user_id`.
 
 **Invariantes**
@@ -399,6 +459,8 @@ Dados profissionais do Analista: cargo, especialidades, áreas atendidas, dispon
 | `user_id` | uuid | não | — | FK → `users.id` (RESTRICT) |
 | `category_id` | uuid | não | — | FK → `portal-config.categories.id` (RESTRICT) |
 | `created_at` | timestamp | não | `now` | |
+
+**Relações** — `user_id` → `users.id`; `category_id` → `portal-config.categories.id`.
 
 **Índices** — UNIQUE `uk_analyst_detail_categories_user_category` (`user_id`, `category_id`).
 
@@ -610,6 +672,8 @@ Slots de horário que o solicitante marcou como preferência.
 | `scheduled_for` | timestamp | não | — | Mesmo tipo de timestamp do resto da base |
 | `created_at` | timestamp | não | `now` | |
 
+**Relações** — `request_id` → `requests.id`.
+
 **Índices** — UNIQUE `uk_request_time_preferences_slot` (`request_id`, `scheduled_for`).
 
 **Invariantes**
@@ -725,6 +789,8 @@ Responsabilidade: sessão de mapeamento, participantes, agenda. Publica a porta 
 | `updated_by_user_id` | uuid | sim | — | FK → `users.id` (RESTRICT) |
 | `updated_at` | timestamp | não | `now` | |
 
+**Relações** — `request_id` → `requests.id`; `responsible_id`, `created_by_user_id` e `updated_by_user_id` → `users.id`; `target_status_id` → `portal-config.statuses.id`.
+
 **Índices** — `idx_mappings_request_id`; `idx_mappings_request_id_is_concluded`.
 
 **Invariantes**
@@ -751,6 +817,8 @@ Participantes do mapeamento: internos (ligados a uma conta) ou externos (nome e 
 | `name` | text | sim | — | `ck_mapping_participants_name_length` ≤ 255 |
 | `email` | varchar(255) | sim | — | `ck_mapping_participants_email_length` ≤ 255 — armazenado em minúsculas |
 | `created_at` | timestamp | não | `now` | |
+
+**Relações** — `mapping_id` → `mappings.id`; `user_id` → `users.id`.
 
 **Índices** — UNIQUE `uk_mapping_participants_user` (`mapping_id`, `user_id`); UNIQUE `uk_mapping_participants_email` (`mapping_id`, `email`).
 
@@ -798,6 +866,8 @@ Quesitos ponderados do cálculo.
 | `created_at` | timestamp | não | `now` | |
 | `updated_at` | timestamp | não | `now` | |
 
+**Relações** — sem FK de saída. `criteria.code` é a chave usada no json `prioritization_evaluations.notes`, sem constraint.
+
 **Índices** — UNIQUE `uk_criteria_code`.
 
 **Invariantes**
@@ -820,6 +890,8 @@ Faixas de criticidade. A faixa é definida por faixa de score — por isso a tab
 | `is_active` | boolean | não | `true` | Faixa desativada sai da classificação |
 | `created_at` | timestamp | não | `now` | |
 | `updated_at` | timestamp | não | `now` | |
+
+**Relações** — `prioritization_evaluations.priority_id` → `priorities.id`.
 
 **Índices** — UNIQUE `uk_priorities_level`.
 
@@ -845,6 +917,8 @@ A avaliação corrente da solicitação. O registro de reavaliações **não** t
 | `calculated_at` | timestamp | não | `now` | Momento do cálculo — tempo de negócio |
 | `created_at` | timestamp | não | `now` | |
 | `updated_at` | timestamp | não | `now` | |
+
+**Relações** — `request_id` → `requests.id`; `priority_id` → `priorities.id`; `calculated_by_user_id` → `users.id`.
 
 **Índices** — UNIQUE `uk_prioritization_evaluations_request_id`.
 
@@ -888,6 +962,8 @@ O lote: o pedido de alteração criado de uma vez. Ele agrupa itens e carrega o 
 | `created_by_user_id` | uuid | não | — | FK → `users.id` (RESTRICT) |
 | `created_at` | timestamp | não | `now` | |
 | `updated_at` | timestamp | não | `now` | |
+
+**Relações** — `request_id` → `requests.id`; `created_by_user_id` → `users.id`.
 
 **Índices** — `idx_pending_batches_request_id`.
 
@@ -968,6 +1044,8 @@ Responsabilidade: notas internas, marcas de leitura, linha do tempo. Publica a p
 | `content` | text | não | — | `ck_internal_notes_content_length` — `trim(content)` entre 1 e 4000 |
 | `created_at` | timestamp | não | `now` | |
 
+**Relações** — `request_id` → `requests.id`; `author_user_id` → `users.id`.
+
 **Índices** — `idx_internal_notes_request_id_created_at` (`request_id`, `created_at`); UNIQUE `uk_internal_notes_request_id_id` (`request_id`, `id`) — sustenta a FK composta das marcas de leitura.
 
 **Invariantes**
@@ -1046,6 +1124,8 @@ O que foi de fato criado ou alterado. Gravada na mesma transação da alteraçã
 | `last_technical_message` | text | sim | — | Mensagem técnica associada |
 | `ip_address` | text | sim | — | |
 | `occurred_at` | timestamp | não | `now` | Tempo de negócio, não ordem de commit |
+
+**Relações** — `request_id` → `requests.id`; `actor_user_id` → `users.id`. `entity_id` é polimórfico e não tem FK.
 
 **Índices** — `idx_audit_entries_request_id` (`request_id`, `occurred_at`); `idx_audit_entries_entity` (`entity_type`, `entity_id`); `idx_audit_entries_action`; `idx_audit_entries_actor_user_id`; `idx_audit_entries_occurred_at`.
 
@@ -1137,6 +1217,10 @@ Configuração global do portal. Singleton.
 | `created_at` | timestamp | não | `now` | |
 | `updated_at` | timestamp | não | `now` | |
 
+**Relações** — `light_theme_id` e `dark_theme_id` → `themes.id`; `updated_by_user_id` → `users.id`.
+
+**Índices** — PK `pk_portal_settings` (singleton).
+
 **Invariantes**
 
 - Uma linha. A unicidade é da aplicação e do seed — nenhuma constraint portable conta linhas.
@@ -1171,13 +1255,15 @@ As **aparências** do portal. Cada linha é um conjunto completo de cores e esti
 | `created_at` | timestamp | não | `now` | |
 | `updated_at` | timestamp | não | `now` | |
 
+**Relações** — inbound: `portal_settings.light_theme_id` e `portal_settings.dark_theme_id` → `themes.id`.
+
 **Índices** — UNIQUE `uk_themes_name`; `idx_themes_is_active`.
 
 **Invariantes**
 
 - Uma linha = uma Aparência. O conjunto de tokens é definido **uma vez** — não há prefixo de Aparência nas colunas, e a duplicação `light_*`/`dark_*` do singleton do legado não existe.
 - A Aparência pode começar **vazia** (tokens nulos): o frontend aplica os padrões locais por token, e o contrato permite o backend começar sem cores.
-- Toda cor é hexadecimal válido ou nulo. O predicado vem do `Dialect` — regex no Postgres/MySQL e `GLOB` no SQLite —, porque `INSTR` não existe no Postgres e o Knex não traduz função dentro de `table.check`. A migration precisa ser testada nas três engines com cor válida, inválida e nula ([02-Architecture § 10.2](./02-Architecture.md#102-o-dialect)); a suíte automatizada é pendência (§22 da arquitetura).
+- Toda cor é hexadecimal válido ou nulo: `#RRGGBB` ou `#RRGGBBAA`. O predicado vem do `Dialect` — regex no Postgres/MySQL e `GLOB` no SQLite —, porque `INSTR` não existe no Postgres e o Knex não traduz função dentro de `table.check`. A migration precisa ser testada nas três engines com cor válida, inválida e nula ([02-Architecture § 10.2](./02-Architecture.md#102-o-dialect)); a suíte automatizada é pendência (§22 da arquitetura).
 - Os cinco tons são vocabulário do código: são colunas, não linhas de referência.
 - `name` é único — é o nome que o solicitante vê na escolha de aparência.
 - Só uma Aparência **ativa** pode estar vigente, em cada slot (`portal_settings.light_theme_id` e `portal_settings.dark_theme_id`). Desativar a vigente de um slot exige repontar antes; sem vigente em um slot, o frontend aplica os padrões locais naquele slot.
@@ -1204,6 +1290,8 @@ As **aparências** do portal. Cada linha é um conjunto completo de cores e esti
 | `form_id` | uuid | sim | — | FK → `forms.forms.id` (RESTRICT) — o formulário que esta categoria pede |
 | `created_at` | timestamp | não | `now` | |
 | `updated_at` | timestamp | não | `now` | |
+
+**Relações** — `form_id` → `forms.forms.id`; inbound: `requests.requests.category_id`, `triage.triages.new_category_id` e `users.analyst_detail_categories.category_id` → `categories.id`.
 
 **Índices** — UNIQUE `uk_categories_normalized_name`; `idx_categories_is_active`; `idx_categories_display_order`; `idx_categories_form_id`.
 
@@ -1236,7 +1324,9 @@ As etapas do ciclo de vida — a configuração mais carregada do portal.
 | `created_at` | timestamp | não | `now` | |
 | `updated_at` | timestamp | não | `now` | |
 
-**Índices** — UNIQUE `uk_statuses_order_number`; UNIQUE `uk_statuses_name`; `idx_statuses_is_active`.
+**Relações** — inbound: `requests.requests.status_id` e `last_public_status_id`, `triage.triages.exit_status_id` e `mapping.mappings.target_status_id` → `portal-config.statuses.id`.
+
+**Índices** — UNIQUE `uk_statuses_key`; UNIQUE `uk_statuses_order_number`; UNIQUE `uk_statuses_name`; `idx_statuses_is_active`.
 
 **Invariantes**
 
@@ -1283,6 +1373,10 @@ O domínio é um **catálogo**: guarda a definição, nunca a resposta. Quem res
 | `created_at` | timestamp | não | `now` | |
 | `updated_at` | timestamp | não | `now` | |
 
+**Relações** — inbound: `form_blocks.form_id`, `form_fields.form_id`, `categories.form_id` e `requests.form_id` → `forms.forms.id`.
+
+**Índices** — UNIQUE `uk_forms_key`.
+
 **Invariantes** — a chave do formulário é estável e é o que a API e as seeds referenciam.
 
 ### 18.2 `form_blocks`
@@ -1299,6 +1393,8 @@ As seções do formulário. A chave do bloco é a chave do bloco no payload.
 | `is_active` | boolean | não | `true` | |
 | `created_at` | timestamp | não | `now` | |
 | `updated_at` | timestamp | não | `now` | |
+
+**Relações** — `form_id` → `forms.forms.id`; inbound: `form_fields.block_id` → `form_blocks.id`.
 
 **Índices** — UNIQUE `uk_form_blocks_form_key` (`form_id`, `key`).
 
@@ -1327,6 +1423,8 @@ As perguntas. A chave do campo é a chave do campo no payload.
 | `display_order` | integer | não | — | |
 | `created_at` | timestamp | não | `now` | |
 | `updated_at` | timestamp | não | `now` | |
+
+**Relações** — `form_id` → `forms.forms.id`; `block_id` → `form_blocks.id`; inbound: `form_answers.field_id` e `pending_items.form_field_id` → `form_fields.id`.
 
 **Índices** — UNIQUE `uk_form_fields_form_key` (`form_id`, `key`); `idx_form_fields_block_id`.
 
@@ -1367,6 +1465,10 @@ Schema sem dono de domínio ([ADR-0011](./adr/0011-infrastructure-schema-without
 | `value` | bigint | não | `0` | Valor corrente do contador |
 | `updated_at` | timestamp | não | `now` | |
 
+**Relações** — sem FK. O contador é referenciado pelo código, via porta `Counter`.
+
+**Índices** — PK `pk_code_counters` (`name`).
+
 **Invariantes**
 
 - O contador **nunca** é resetado nem renumerado.
@@ -1376,6 +1478,8 @@ Schema sem dono de domínio ([ADR-0011](./adr/0011-infrastructure-schema-without
 ---
 
 ## 20. Catálogo de Tabelas
+
+Para colunas, tipos, constraints e índices por tabela, use o dicionário de consulta em [`db/02-reference.md`](./db/02-reference.md).
 
 | # | Tabela | Domínio | No legado |
 | --- | --- | --- | --- |
@@ -1452,6 +1556,8 @@ Schema sem dono de domínio ([ADR-0011](./adr/0011-infrastructure-schema-without
 | Projeção da fila | Nome do solicitante, processo e prazo desejado saem das respostas, e a fila os junta por chave de campo. Uma tabela de projeção é a alternativa se a junção pesar | Volume da fila |
 | Identidade do solicitante | O bloco `requester` é resposta; a busca por e-mail usa a projeção `form_answers.value_lookup`. O e-mail declarado é chave de busca, não autenticação, e a recusa é `404` ([ADR-0023](./adr/0023-requester-email-is-a-lookup-key.md)) | Volume de solicitações |
 | Anexo restrito | A coluna `attachments.is_restricted` existe, mas nenhuma regra a implementa e nada a lê. Decidir se o conceito é implementado — quem enxerga o arquivo, e o que o solicitante vê — ou se a coluna sai | Decisão de produto sobre conteúdo restrito (LGPD) |
+| Identidade do Admin Root | O seed precisa de e-mail e senha inicial da conta `Admin Root`, e nenhum dos dois está definido. A senha nunca é versionada; o seed deve receber um segredo do ambiente e gravar o hash | Operação definir a origem do e-mail e do segredo, antes do primeiro ambiente |
+| Terminalidade de `nao_elegivel` | O motor v4 marca `nao_elegivel` com `is_terminal = false`, mas o seed original do legado o marcava final. O valor decide se a solicitação encerra (`closed_at`) ou pode voltar ao fluxo | Produto confirmar a regra de encerramento da triagem |
 
 ---
 
@@ -1751,3 +1857,221 @@ Até o passo 3, o Apêndice B é o contrato. O Apêndice C não autoriza uma imp
 ### 24.12 Invariantes que não viram chave
 
 Continuam no código as invariantes da ADR-0025 e das § 7.5 e § 8.1: status inativo, solicitação terminal, último Admin Root, autoedição administrativa, escalação de perfil, matriz de contas e justificativa de status. Nenhuma delas vira chave.
+
+---
+
+## 25. Apêndice D — Seed de Referência
+
+O **seed de referência** é o conjunto mínimo para o portal funcionar: os perfis, a conta `Admin Root`, a configuração inicial do portal, as categorias, os status do ciclo, os critérios e as faixas de prioridade. Ele não contém dados de demonstração — solicitações, usuários fictícios, notas e cenários de dashboard ficam em um seed separado e não fazem parte deste apêndice. O runbook de ordem e idempotência está em [`db/04-seeds.md`](./db/04-seeds.md).
+
+**Regra de idempotência.** Todo seed é **create-if-absent pela chave natural**: se a linha já existe, ela não é alterada. A configuração é editável no lugar ([ADR-0019](./adr/0019-form-is-editable-in-place.md)), e reexecutar o seed não pode desfazer uma edição administrativa. Mudança de valor em linha existente é migration, não seed. Nenhum seed usa id fixo; a identidade é a chave natural e o `id` é o UUID gerado pela aplicação.
+
+### 25.1 Ordem e chaves naturais
+
+| # | Grupo | Tabela | Chave natural |
+| --- | --- | --- | --- |
+| 1 | Perfis | `profiles` | `name` |
+| 2 | Admin Root | `users` | `email` |
+| 3 | Credencial do Admin Root | `credentials` | `user_id` |
+| 4 | Formulário | `forms` | `key` |
+| 5 | Blocos | `form_blocks` | (`form_id`, `key`) |
+| 6 | Campos | `form_fields` | (`form_id`, `key`) |
+| 7 | Aparências | `themes` | `name` |
+| 8 | Configuração do portal | `portal_settings` | singleton (`id`) |
+| 9 | Categorias | `categories` | `normalized_name` |
+| 10 | Status | `statuses` | `key` |
+| 11 | Critérios | `criteria` | `code` |
+| 12 | Faixas de prioridade | `priorities` | `level` |
+
+`code_counters` não é semeado: o contador começa vazio e a primeira emissão consome o valor 1. `pending_batches` e `pending_items` também não são semeados: dependem de uma solicitação. `permissions` e `profile_permissions` só entram quando o RBAC configurável chegar ([§ 23.2](#232-o-que-o-rbac-configurável-vai-semear)).
+
+### 25.2 `profiles`
+
+| `name` | `is_active` | `is_assignable_triage` | `is_assignable_mapping` |
+| --- | --- | --- | --- |
+| `Solicitante` | `true` | `false` | `false` |
+| `Analista` | `true` | `true` | `true` |
+| `Gestor` | `true` | `false` | `false` |
+| `Administrador` | `true` | `false` | `false` |
+| `Admin Root` | `true` | `false` | `false` |
+
+Os nomes são exatamente os do catálogo de permissões em código ([ADR-0006](./adr/0006-static-profile-authorization.md)); divergência entre seed e matriz é bug de autorização. As flags de atribuibilidade são explícitas: o Analista nasce atribuível nos dois pools; os demais perfis não, mesmo quando têm as chaves ([§ 7.6](#76-atribuibilidade)).
+
+### 25.3 Admin Root
+
+| Campo | Valor |
+| --- | --- |
+| `users.name` | `Admin Root` |
+| `users.email` | **decisão pendente** — ver [§ 21](#21-pendências) |
+| `users.profile_id` | `profiles.name = 'Admin Root'` |
+| `users.is_active` | `true` |
+| `credentials.password_hash` | hash da senha inicial recebida pelo seed; **nunca em texto** |
+| `credentials.must_change_password` | `true` |
+
+A senha inicial não é documentada nem versionada: o seed recebe o segredo do ambiente e grava apenas o hash. O `must_change_password = true` força a troca no primeiro acesso.
+
+### 25.4 `portal_settings` e `themes`
+
+`portal_settings` é o singleton:
+
+| Coluna | Valor |
+| --- | --- |
+| `solicitation_mode` | `PUBLIC` |
+| `platform_name` | `MAAT` |
+| `protocol_mask` | `MAAT` |
+| `light_theme_id` | `themes.name = 'Claro'` |
+| `dark_theme_id` | `themes.name = 'Escuro'` |
+| `updated_by_user_id` | `NULL` |
+
+As duas Aparências nascem com os tokens do design system atual. Os assets ficam **nulos**: o contrato permite que o frontend aplique os defaults locais por token, e o seed não copia arquivos.
+
+| Token | `Claro` | `Escuro` |
+| --- | --- | --- |
+| `background` | `#f0f4f8` | `#0b0f1a` |
+| `surface` | `#fafafa` | `#141b2e` |
+| `border` | `#e5e7eb` | `#2a3346` |
+| `text_primary` | `#3c3e47` | `#e5e7eb` |
+| `text_secondary` | `#757682` | `#9aa3b2` |
+| `heading` | `#00236f` | `#4c7dff` |
+| `rich_black` | `#0f1a2a` | `#0f1a2a` |
+| `primary` | `#00236f` | `#4c7dff` |
+| `secondary` | `#0058be` | `#5b9bff` |
+| `tint` | `#d6e7fb` | `#1b2942` |
+| `on_primary` | `#ffffff` | `#0b0f1a` |
+| `on_dark` | `#ffffff` | `#ffffff` |
+| `on_gradient` | `#ffffff` | `#ffffff` |
+| `gradient_from` | `#002068` | `#002068` |
+| `gradient_to` | `#003399` | `#003399` |
+| `gradient_angle` | `143` | `143` |
+| `status_error_color` | `#ef4444` | `#f87171` |
+| `status_error_background` | `#ef444410` | `#4c0f0a` |
+| `status_error_background_locked` | `true` | `true` |
+| `status_success_color` | `#10b981` | `#4ade80` |
+| `status_success_background` | `#10b98110` | `#0f2e1d` |
+| `status_success_background_locked` | `true` | `true` |
+| `status_info_color` | `#0058be` | `#5b9bff` |
+| `status_info_background` | `#0058be10` | `#1b2942` |
+| `status_info_background_locked` | `true` | `true` |
+| `status_warning_color` | `#956006` | `#fbbf24` |
+| `status_warning_background` | `#f59e0b10` | `#4a2e0f` |
+| `status_warning_background_locked` | `true` | `true` |
+| `status_neutral_color` | `#4b5563` | `#9aa3b2` |
+| `status_neutral_background` | `#e5e7eb` | `#2a3346` |
+| `status_neutral_background_locked` | `true` | `true` |
+| `logo_url`, `avatar_url`, `login_image_url`, `favicon_url` | `NULL` | `NULL` |
+| `logo_use_primary_color` | `true` | `true` |
+| `is_active` | `true` | `true` |
+
+`logo_use_primary_color = true` preserva o contrato atual do frontend; o default da coluna é `false`, e o seed o sobrescreve na criação. As Aparências são nomeadas porque `themes.name` é único e é o nome que o solicitante vê.
+
+### 25.5 `categories`
+
+Todas as categorias são ativas e apontam para o formulário `solicitacao` (`categories.form_id` = id de `forms` com `key = 'solicitacao'`). `normalized_name` é `trim().toLowerCase()` do nome.
+
+| `display_order` | `name` | `normalized_name` | `description` |
+| --- | --- | --- | --- |
+| 1 | `Automação` | `automação` | Automação de atividades manuais repetitivas |
+| 2 | `Melhoria de processo` | `melhoria de processo` | Aprimoramento de fluxos e rotinas existentes |
+| 3 | `Indicador` | `indicador` | Criação ou ajuste de indicadores e metas |
+| 4 | `Dashboard ou relatório` | `dashboard ou relatório` | Painéis, relatórios e consultas gerenciais |
+| 5 | `Análise de dados` | `análise de dados` | Estudos, cruzamentos e tratamento de dados |
+| 6 | `Padronização` | `padronização` | Padronização de procedimentos, modelos e documentos |
+| 7 | `Revisão de processo` | `revisão de processo` | Revisão e redesenho de processos existentes |
+| 8 | `Apoio técnico` | `apoio técnico` | Suporte técnico especializado às áreas |
+| 9 | `Estudo de viabilidade` | `estudo de viabilidade` | Avaliação de viabilidade técnica, operacional e de custo |
+| 10 | `Outros` | `outros` | Demandas que não se enquadram nas demais categorias |
+
+### 25.6 `statuses`
+
+Os 17 status do ciclo de referência. As chaves são do código ([ADR-0021](./adr/0021-statuses-have-a-stable-key.md)); o nome é o rótulo que o Administrador edita. `is_core` são os sete status protegidos; `is_terminal` são os dois que encerram a solicitação. `is_restricted` significa que o status exige `request:status_override`; `priorizado` continua sendo o único restrito.
+
+| Ordem | `key` | `name` | `is_core` | `is_public` | `is_terminal` | `is_restricted` | `triage_mode` | `mapping_mode` | `tone` |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | `solicitacao_enviada` | Solicitação enviada | `true` | `true` | `false` | `false` | `none` | `none` | `neutral` |
+| 2 | `aguardando_triagem` | Aguardando triagem | `false` | `true` | `false` | `false` | `none` | `none` | `info` |
+| 3 | `em_triagem` | Em triagem | `true` | `true` | `false` | `false` | `free` | `none` | `info` |
+| 4 | `pendente_de_informacoes` | Pendente de informações | `true` | `true` | `false` | `false` | `free` | `free` | `warning` |
+| 5 | `aguardando_mapeamento` | Aguardando mapeamento | `false` | `true` | `false` | `false` | `conclusion_only` | `none` | `info` |
+| 6 | `mapeamento_agendado` | Mapeamento agendado | `true` | `false` | `false` | `false` | `none` | `conclusion_only` | `info` |
+| 7 | `em_mapeamento` | Em mapeamento | `true` | `true` | `false` | `false` | `none` | `free` | `info` |
+| 8 | `em_analise_de_viabilidade` | Em análise de viabilidade | `false` | `false` | `false` | `false` | `free` | `free` | `info` |
+| 9 | `elegivel` | Elegível | `false` | `false` | `false` | `false` | `conclusion_only` | `conclusion_only` | `success` |
+| 10 | `nao_elegivel` | Não elegível | `false` | `false` | `false` | `false` | `conclusion_only` | `conclusion_only` | `error` |
+| 11 | `priorizado` | Priorizado | `false` | `false` | `false` | `true` | `none` | `none` | `warning` |
+| 12 | `backlog` | Backlog | `false` | `false` | `false` | `false` | `conclusion_only` | `conclusion_only` | `neutral` |
+| 13 | `direcionada_para_outra_area` | Direcionado para outra área | `false` | `false` | `false` | `false` | `conclusion_only` | `conclusion_only` | `neutral` |
+| 14 | `em_desenvolvimento` | Em desenvolvimento | `false` | `false` | `false` | `false` | `free` | `none` | `info` |
+| 15 | `em_homologacao` | Em homologação | `false` | `false` | `false` | `false` | `free` | `none` | `info` |
+| 16 | `concluido` | Concluído | `true` | `true` | `true` | `false` | `conclusion_only` | `conclusion_only` | `success` |
+| 17 | `cancelado` | Cancelado | `true` | `true` | `true` | `false` | `conclusion_only` | `conclusion_only` | `error` |
+
+O motor de status v4 do legado marca `nao_elegivel` com `is_terminal = false`; o seed original o marcava final. O modelo novo segue o v4 — a terminalidade de `nao_elegivel` é uma decisão de produto em aberto ([§ 21](#21-pendências)).
+
+### 25.7 `criteria`
+
+Os dez critérios do cálculo. Todos ativos, com o mesmo peso 10 — o peso é uma razão relativa, então pesos iguais não alteram o resultado. O código é a chave do contrato (`operationalImpact`, …): o modelo novo elimina a ponte português ↔ inglês que o legado mantinha em `CRITERION_KEY_TO_ID`.
+
+| `display_order` | `code` | `name` | `weight` | `is_active` |
+| --- | --- | --- | --- | --- |
+| 1 | `operationalImpact` | Impacto Operacional | 10 | `true` |
+| 2 | `operationalRisk` | Risco Operacional | 10 | `true` |
+| 3 | `urgency` | Urgência | 10 | `true` |
+| 4 | `volumetry` | Volumetria | 10 | `true` |
+| 5 | `manualEffort` | Esforço Manual | 10 | `true` |
+| 6 | `clientImpact` | Impacto no Cliente | 10 | `true` |
+| 7 | `regulatoryDeadline` | Prazo Regulatório | 10 | `true` |
+| 8 | `affectedAreas` | Áreas Impactadas | 10 | `true` |
+| 9 | `strategicAlignment` | Alinhamento Estratégico | 10 | `true` |
+| 10 | `estimatedComplexity` | Complexidade Estimada | 10 | `true` |
+
+### 25.8 `priorities`
+
+As quatro faixas de criticidade. As faixas são contíguas na precisão de um decimal: 10,0–20,0, 20,1–30,0, 30,1–40,0 e 40,1–50,0.
+
+| `level` | `min_score` | `max_score` | `default_weight` | `color_code` | `description` |
+| --- | --- | --- | --- | --- | --- |
+| `Baixa` | 10.0 | 20.0 | 0.25 | `#90EE90` | Baixa urgência, impacto reduzido |
+| `Média` | 20.1 | 30.0 | 0.50 | `#FFD700` | Média urgência, impacto moderado |
+| `Alta` | 30.1 | 40.0 | 0.75 | `#FF8C00` | Alta urgência, impacto significativo |
+| `Crítica` | 40.1 | 50.0 | 1.00 | `#FF0000` | Crítica, impacto crítico no negócio |
+
+`default_weight` é o peso de referência da faixa e **nenhum cálculo o usa** — o score sai das notas e dos pesos dos critérios ([§ 12.2](#122-priorities)).
+
+### 25.9 `forms`
+
+| Campo | Valor |
+| --- | --- |
+| `key` | `solicitacao` |
+| `name` | `Solicitação` |
+| `description` | Formulário de abertura de solicitação |
+| `is_active` | `true` |
+
+Os quatro blocos:
+
+| `display_order` | `key` | `title` |
+| --- | --- | --- |
+| 1 | `requester` | Identificação |
+| 2 | `demand` | Demanda |
+| 3 | `operational` | Operacional |
+| 4 | `complementary` | Complementar |
+
+Os **32 campos** são os do [Apêndice A](#22-apêndice-a--o-seed-do-formulário): seis em `requester`, sete em `demand`, quatorze em `operational` e cinco em `complementary`. No seed, `display_order` é a posição do campo dentro do bloco, `help_text` é nulo, `is_active` é `true`, e `options`, `max_length`, `min_value`, `max_value`, `must_be_future` e `required` seguem o Apêndice A. A categoria **não** é campo: ela é a classificação em `requests.category_id`; no wire vigente ela viaja em `demand.category`.
+
+`form_answers.value_lookup` é uma projeção derivada da resposta de e-mail, mantida na escrita e na correção; não é uma coluna semeada.
+
+**Regras de negócio**
+
+*Preservadas do legado*
+
+- Os valores de referência são os do legado: perfis, dez categorias, dezessete status, dez critérios, quatro faixas, os quatro blocos e os 32 campos.
+- A conta `Admin Root` existe apenas no seed e nunca é auto-registrada.
+
+*Acrescentadas pelo modelo novo*
+
+- O seed é create-if-absent por chave natural, e não upsert: a configuração é editável no lugar.
+- O seed não usa ids fixos; o id é UUID gerado pela aplicação.
+- `criteria.code` usa a chave do contrato (`operationalImpact`), sem a ponte português ↔ inglês do legado.
+- `profiles.is_assignable_triage` e `is_assignable_mapping` são semeados: só o Analista entra nos pools.
+- `pending_batches` e `pending_items` não são semeados; o seed de referência não cria pendência.
+- As Aparências são nomeadas e os assets podem começar nulos; o frontend aplica os defaults locais.
+- Dados de demonstração não fazem parte do seed de referência.

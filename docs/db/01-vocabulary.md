@@ -1,8 +1,8 @@
 # Modelo de Dados — Vocabulário para Schema
 
-Índice **termo → tabela**. O glossário é a fonte do vocabulário ([`../GLOSSARY.md`](../GLOSSARY.md)); este arquivo é só o mapa de onde cada termo mora no schema.
+Índice **termo → tabela**. O glossário é a fonte do vocabulário ([`../../GLOSSARY.md`](../../GLOSSARY.md)); este arquivo é só o mapa de onde cada termo mora no schema.
 
-É um índice de leitura, não parte da especificação: a definição de cada tabela está na seção do domínio, em [`03-Data-Model.md`](./03-Data-Model.md).
+É um índice de leitura, não parte da especificação: a definição de cada tabela está na seção do domínio, em [`../03-Data-Model.md`](../03-Data-Model.md). A navegação da documentação do banco está em [`README.md`](./README.md).
 
 | Termo (`GLOSSARY.md`) | Onde vive | Observação |
 | --- | --- | --- |
@@ -26,7 +26,7 @@
 | **Linha do tempo** | — | Projeção: `audit_entries` + `internal_notes` |
 | **Auditoria** | `audit.audit_entries` | O que foi criado ou alterado, com autor, momento, valor anterior e novo |
 | **Tentativa** | `audit.attempts` | O que foi recusado, gravado fora da transação |
-| **Perfil** | `users.profiles` | Cinco perfis fixos; permissões em código ([ADR-0006](./adr/0006-static-profile-authorization.md), [ADR-0025](./adr/0025-authorization-capability-scope.md)) |
+| **Perfil** | `users.profiles` | Cinco perfis fixos; permissões em código ([ADR-0006](../adr/0006-static-profile-authorization.md), [ADR-0025](../adr/0025-authorization-capability-scope.md)) |
 | **Permissão** | `core/authorization` (matriz em código) | Catálogo do Apêndice B; no alvo, tabela `permissions` |
 | **Escopo** | `core/authorization` (matriz em código) | `none`/`owner`; `own`/`all`; no alvo, `profile_permissions.scope` |
 | **Custódia** | `requests.requests.responsible_id`; `mapping.mappings.responsible_id` | Vínculo consultado pelo escopo `own`; a coluna de mapeamento só vale para as chaves `mapping:*` |

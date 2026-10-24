@@ -1,0 +1,650 @@
+// Derivado de docs/03-Data-Model.md — NÃO NORMATIVO.
+// Atualize no mesmo PR que alterar a especificação; em caso de divergência, vale a especificação.
+// Use em dbdiagram.io / dbdocs.io. As constraints de check aparecem como note; o predicado completo está na especificação.
+
+// § 6.1 — credentials
+Table credentials {
+  id uuid [pk, not null]
+  user_id uuid [not null, note: 'uk_credentials_user_id', ref: - users.id]
+  password_hash text [not null, note: 'ck_credentials_password_hash_length']
+  password_changed_at timestamp [not null, default: `now()`]
+  must_change_password boolean [not null, default: true]
+  created_at timestamp [not null, default: `now()`]
+  indexes {
+    user_id [unique, name: 'uk_credentials_user_id']
+  }
+  Note: 'Domínio: auth. Especificação: docs/03-Data-Model.md § 6.1.'
+}
+
+// § 7.1 — profiles
+Table profiles {
+  id uuid [pk, not null]
+  name varchar(50) [not null, note: 'ck_profiles_name_length; uk_profiles_name']
+  is_active boolean [not null, default: true]
+  is_assignable_triage boolean [not null, default: false]
+  is_assignable_mapping boolean [not null, default: false]
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null, default: `now()`]
+  indexes {
+    name [unique, name: 'uk_profiles_name']
+  }
+  Note: 'Domínio: users. Especificação: docs/03-Data-Model.md § 7.1.'
+}
+
+// § 7.2 — users
+Table users {
+  id uuid [pk, not null]
+  name text [not null, note: 'ck_users_name_length']
+  email varchar(254) [not null, note: 'ck_users_email_length; uk_users_email']
+  profile_id uuid [not null, ref: > profiles.id]
+  area text [note: 'ck_users_area_length']
+  department text [note: 'ck_users_department_length']
+  manager_name text [note: 'ck_users_manager_name_length']
+  additional_contact text [note: 'ck_users_additional_contact_length']
+  is_active boolean [not null, default: true]
+  avatar_url text [note: 'ck_users_avatar_url_length']
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null, default: `now()`]
+  indexes {
+    email [unique, name: 'uk_users_email']
+  }
+  Note: 'Domínio: users. Especificação: docs/03-Data-Model.md § 7.2.'
+}
+
+// § 7.3 — analyst_details
+Table analyst_details {
+  id uuid [pk, not null]
+  user_id uuid [not null, note: 'uk_analyst_details_user_id', ref: - users.id]
+  job_title text [note: 'ck_analyst_details_job_title_length']
+  specialties text
+  is_available boolean [not null, default: true]
+  capacity integer [not null, default: 5, note: 'ck_analyst_details_capacity_non_negative']
+  notes text [note: 'ck_analyst_details_notes_length']
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null, default: `now()`]
+  indexes {
+    user_id [unique, name: 'uk_analyst_details_user_id']
+  }
+  Note: 'Domínio: users. Especificação: docs/03-Data-Model.md § 7.3.'
+}
+
+// § 7.4 — analyst_detail_categories
+Table analyst_detail_categories {
+  id uuid [pk, not null]
+  user_id uuid [not null, ref: > users.id]
+  category_id uuid [not null, ref: > categories.id]
+  created_at timestamp [not null, default: `now()`]
+  indexes {
+    (user_id, category_id) [unique, name: 'uk_analyst_detail_categories_user_category']
+  }
+  Note: 'Domínio: users. Especificação: docs/03-Data-Model.md § 7.4.'
+}
+
+// § 8.1 — requests
+Table requests {
+  id uuid [pk, not null]
+  protocol varchar(20) [not null, note: 'ck_requests_protocol_length; uk_requests_protocol']
+  form_id uuid [not null, ref: > forms.id]
+  requester_user_id uuid [ref: > users.id]
+  status_id uuid [not null, ref: > statuses.id]
+  category_id uuid [not null, ref: > categories.id]
+  last_public_status_id uuid [ref: > statuses.id]
+  responsible_id uuid [ref: > users.id]
+  estimated_completion date
+  meeting_scheduled_for timestamp
+  meeting_link text [note: 'ck_requests_meeting_link_length']
+  last_technical_message text
+  last_external_update_at timestamp
+  closed_at timestamp
+  created_by text [not null, note: 'ck_requests_created_by_length']
+  created_by_user_id uuid [ref: > users.id]
+  updated_by_user_id uuid [ref: > users.id]
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null, default: `now()`]
+  indexes {
+    protocol [unique, name: 'uk_requests_protocol']
+    status_id [name: 'idx_requests_status_id']
+    category_id [name: 'idx_requests_category_id']
+    requester_user_id [name: 'idx_requests_requester_user_id']
+    responsible_id [name: 'idx_requests_responsible_id']
+    created_at [name: 'idx_requests_created_at']
+  }
+  Note: 'Domínio: requests. Especificação: docs/03-Data-Model.md § 8.1.'
+}
+
+// § 8.2 — form_answers
+Table form_answers {
+  id uuid [pk, not null]
+  request_id uuid [not null, ref: > requests.id]
+  field_id uuid [not null, ref: > form_fields.id]
+  value_text text [note: 'ck_form_answers_value_text_length']
+  value_lookup varchar(254) [note: 'ck_form_answers_value_lookup_length']
+  value_number decimal(10,2)
+  value_date date
+  value_boolean boolean
+  value_json json
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null, default: `now()`]
+  indexes {
+    (request_id, field_id) [unique, name: 'uk_form_answers_request_field']
+    (field_id, request_id) [name: 'idx_form_answers_field_request']
+    (field_id, value_lookup) [name: 'idx_form_answers_field_lookup']
+  }
+  Note: 'Domínio: requests. Especificação: docs/03-Data-Model.md § 8.2. Checks de tabela: ck_form_answers_value_shape.'
+}
+
+// § 8.3 — attachments
+Table attachments {
+  id uuid [pk, not null]
+  request_id uuid [not null, ref: > requests.id]
+  pending_item_id uuid [ref: > pending_items.id]
+  file_name text [not null, note: 'ck_attachments_file_name_length']
+  file_path text [not null, note: 'ck_attachments_file_path_length']
+  content_type text [not null, note: 'ck_attachments_content_type']
+  size_bytes integer [not null, note: 'ck_attachments_size_bytes']
+  is_restricted boolean [not null, default: false]
+  uploaded_by text [note: 'ck_attachments_uploaded_by_length']
+  uploaded_by_user_id uuid [ref: > users.id]
+  uploaded_at timestamp [not null, default: `now()`]
+  indexes {
+    request_id [name: 'idx_attachments_request_id']
+    pending_item_id [name: 'idx_attachments_pending_item_id']
+    is_restricted [name: 'idx_attachments_is_restricted']
+  }
+  Note: 'Domínio: requests. Especificação: docs/03-Data-Model.md § 8.3.'
+}
+
+// § 8.4 — request_time_preferences
+Table request_time_preferences {
+  id uuid [pk, not null]
+  request_id uuid [not null, ref: > requests.id]
+  scheduled_for timestamp [not null]
+  created_at timestamp [not null, default: `now()`]
+  indexes {
+    (request_id, scheduled_for) [unique, name: 'uk_request_time_preferences_slot']
+  }
+  Note: 'Domínio: requests. Especificação: docs/03-Data-Model.md § 8.4.'
+}
+
+// § 9.1 — triages
+Table triages {
+  id uuid [pk, not null]
+  request_id uuid [not null, ref: > requests.id]
+  is_adherent_to_scope boolean [not null]
+  adherent_justification text [not null]
+  is_category_change boolean [not null, default: false]
+  new_category_id uuid [ref: > categories.id]
+  preliminary_complexity text [not null]
+  perceived_risks text [not null]
+  suggested_responsible text [not null, note: 'ck_triages_suggested_responsible_length']
+  suggested_responsible_justification text [not null]
+  assignee_user_id uuid [ref: > users.id]
+  assignee_name text
+  assignee_email text
+  exit_status_id uuid [not null, ref: > statuses.id]
+  conclusion_justification text [not null]
+  last_technical_message text
+  author_user_id uuid [not null, ref: > users.id]
+  occurred_at timestamp [not null, default: `now()`]
+  indexes {
+    (request_id, occurred_at) [name: 'idx_triages_request_id_occurred_at']
+  }
+  Note: 'Domínio: triage. Especificação: docs/03-Data-Model.md § 9.1.'
+}
+
+// § 10.1 — mappings
+Table mappings {
+  id uuid [pk, not null]
+  request_id uuid [not null, ref: > requests.id]
+  responsible_id uuid [ref: > users.id]
+  scheduled_for timestamp
+  duration_minutes integer [note: 'ck_mappings_duration_minutes']
+  modality text [note: 'ck_mappings_modality']
+  meeting_link text [note: 'ck_mappings_meeting_link_length']
+  location text [note: 'ck_mappings_location_length']
+  notes text [note: 'ck_mappings_notes_length']
+  justification text
+  last_technical_message text
+  target_status_id uuid [ref: > statuses.id]
+  is_concluded boolean [not null, default: false]
+  concluded_at timestamp
+  created_by_user_id uuid [not null, ref: > users.id]
+  created_at timestamp [not null, default: `now()`]
+  updated_by_user_id uuid [ref: > users.id]
+  updated_at timestamp [not null, default: `now()`]
+  indexes {
+    request_id [name: 'idx_mappings_request_id']
+    request_id [name: 'idx_mappings_request_id_is_concluded']
+  }
+  Note: 'Domínio: mapping. Especificação: docs/03-Data-Model.md § 10.1.'
+}
+
+// § 10.2 — mapping_participants
+Table mapping_participants {
+  id uuid [pk, not null]
+  mapping_id uuid [not null, ref: > mappings.id]
+  user_id uuid [ref: > users.id]
+  name text [note: 'ck_mapping_participants_name_length']
+  email varchar(255) [note: 'ck_mapping_participants_email_length']
+  created_at timestamp [not null, default: `now()`]
+  indexes {
+    (mapping_id, user_id) [unique, name: 'uk_mapping_participants_user']
+    (mapping_id, email) [unique, name: 'uk_mapping_participants_email']
+  }
+  Note: 'Domínio: mapping. Especificação: docs/03-Data-Model.md § 10.2.'
+}
+
+// § 12.1 — criteria
+Table criteria {
+  id uuid [pk, not null]
+  code varchar(50) [not null, note: 'uk_criteria_code; ck_criteria_code_length']
+  name text [not null, note: 'ck_criteria_name_length']
+  weight integer [not null, note: 'ck_criteria_weight_range']
+  is_active boolean [not null, default: true]
+  display_order integer [not null]
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null, default: `now()`]
+  indexes {
+    code [unique, name: 'uk_criteria_code']
+  }
+  Note: 'Domínio: prioritization. Especificação: docs/03-Data-Model.md § 12.1.'
+}
+
+// § 12.2 — priorities
+Table priorities {
+  id uuid [pk, not null]
+  level varchar(50) [not null, note: 'ck_priorities_level; uk_priorities_level']
+  min_score decimal(4,1) [not null, note: 'ck_priorities_min_score_range']
+  max_score decimal(4,1) [not null, note: 'ck_priorities_max_score_range']
+  default_weight decimal(3,2) [not null]
+  color_code text [note: 'ck_priorities_color_code_length']
+  description text
+  is_active boolean [not null, default: true]
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null, default: `now()`]
+  indexes {
+    level [unique, name: 'uk_priorities_level']
+  }
+  Note: 'Domínio: prioritization. Especificação: docs/03-Data-Model.md § 12.2. Checks de tabela: ck_priorities_score_range.'
+}
+
+// § 12.3 — prioritization_evaluations
+Table prioritization_evaluations {
+  id uuid [pk, not null]
+  request_id uuid [not null, note: 'uk_prioritization_evaluations_request_id', ref: - requests.id]
+  notes json [not null]
+  score decimal(5,1) [not null, note: 'ck_prioritization_evaluations_score_range']
+  priority_id uuid [not null, ref: > priorities.id]
+  calculated_by_user_id uuid [not null, ref: > users.id]
+  calculated_at timestamp [not null, default: `now()`]
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null, default: `now()`]
+  indexes {
+    request_id [unique, name: 'uk_prioritization_evaluations_request_id']
+  }
+  Note: 'Domínio: prioritization. Especificação: docs/03-Data-Model.md § 12.3.'
+}
+
+// § 13.1 — pending_batches
+Table pending_batches {
+  id uuid [pk, not null]
+  request_id uuid [not null, ref: > requests.id]
+  request_attachment boolean [not null, default: false]
+  expected_attachment_type text [note: 'ck_pending_batches_expected_attachment_type_length']
+  created_by_user_id uuid [not null, ref: > users.id]
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null, default: `now()`]
+  indexes {
+    request_id [name: 'idx_pending_batches_request_id']
+  }
+  Note: 'Domínio: pending-items. Especificação: docs/03-Data-Model.md § 13.1.'
+}
+
+// § 13.2 — pending_items
+Table pending_items {
+  id uuid [pk, not null]
+  batch_id uuid [not null, ref: > pending_batches.id]
+  type text [not null, note: 'ck_pending_items_type']
+  form_field_id uuid [ref: > form_fields.id]
+  classification_key varchar(50) [note: 'ck_pending_items_classification_key']
+  comment text [not null, note: 'ck_pending_items_comment_length']
+  status varchar(20) [not null, default: 'requested', note: 'ck_pending_items_status']
+  corrected_value json
+  response_text text [note: 'ck_pending_items_response_text_length']
+  responded_at timestamp
+  validated_at timestamp
+  validated_by_user_id uuid [ref: > users.id]
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null, default: `now()`]
+  indexes {
+    batch_id [name: 'idx_pending_items_batch_id']
+    status [name: 'idx_pending_items_status']
+    form_field_id [name: 'idx_pending_items_form_field_id']
+    (batch_id, form_field_id) [unique, name: 'uk_pending_items_batch_field']
+    (batch_id, classification_key) [unique, name: 'uk_pending_items_batch_classification']
+  }
+  Note: 'Domínio: pending-items. Especificação: docs/03-Data-Model.md § 13.2. Checks de tabela: ck_pending_items_subject.'
+}
+
+// § 14.1 — internal_notes
+Table internal_notes {
+  id uuid [pk, not null]
+  request_id uuid [not null, ref: > requests.id]
+  author_user_id uuid [not null, ref: > users.id]
+  author_profile_at_creation text [not null, note: 'ck_internal_notes_author_profile']
+  content text [not null, note: 'ck_internal_notes_content_length']
+  created_at timestamp [not null, default: `now()`]
+  indexes {
+    (request_id, created_at) [name: 'idx_internal_notes_request_id_created_at']
+    (request_id, id) [unique, name: 'uk_internal_notes_request_id_id']
+  }
+  Note: 'Domínio: internal-notes. Especificação: docs/03-Data-Model.md § 14.1.'
+}
+
+// § 14.2 — internal_note_read_states
+Table internal_note_read_states {
+  request_id uuid [pk, not null, ref: > requests.id]
+  user_id uuid [pk, not null, ref: > users.id]
+  last_read_note_id uuid [not null, ref: > internal_notes.id]
+  read_at timestamp [not null, default: `now()`]
+  indexes {
+    (request_id, user_id) [pk, name: 'pk_internal_note_read_states']
+    (last_read_note_id) [name: 'idx_internal_note_read_states_last_read_note_id']
+  }
+  Note: 'Domínio: internal-notes. Especificação: docs/03-Data-Model.md § 14.2.'
+}
+
+// § 15.1 — audit_entries
+Table audit_entries {
+  id uuid [pk, not null]
+  request_id uuid [ref: > requests.id]
+  entity_type varchar(50) [not null, note: 'ck_audit_entries_entity_type']
+  entity_id uuid [not null]
+  action varchar(50) [not null, note: 'ck_audit_entries_action']
+  actor_user_id uuid [ref: > users.id]
+  actor_profile_at_creation text [note: 'ck_audit_entries_actor_profile']
+  previous_value json
+  new_value json
+  change_origin text [note: 'ck_audit_entries_change_origin_length']
+  note text
+  last_technical_message text
+  ip_address text
+  occurred_at timestamp [not null, default: `now()`]
+  indexes {
+    (request_id, occurred_at) [name: 'idx_audit_entries_request_id']
+    (entity_type, entity_id) [name: 'idx_audit_entries_entity']
+    action [name: 'idx_audit_entries_action']
+    actor_user_id [name: 'idx_audit_entries_actor_user_id']
+    occurred_at [name: 'idx_audit_entries_occurred_at']
+  }
+  Note: 'Domínio: audit. Especificação: docs/03-Data-Model.md § 15.1.'
+}
+
+// § 15.2 — attempts
+Table attempts {
+  id uuid [pk, not null]
+  correlation_id uuid [not null]
+  request_id uuid [ref: > requests.id]
+  actor_user_id uuid [ref: > users.id]
+  action text [not null, note: 'ck_attempts_action']
+  entity_type text [note: 'ck_attempts_entity_type']
+  entity_id uuid
+  reason_code text [note: 'ck_attempts_reason_code_length']
+  ip_address text
+  occurred_at timestamp [not null, default: `now()`]
+  indexes {
+    correlation_id [name: 'idx_attempts_correlation_id']
+    request_id [name: 'idx_attempts_request_id']
+    actor_user_id [name: 'idx_attempts_actor_user_id']
+    occurred_at [name: 'idx_attempts_occurred_at']
+  }
+  Note: 'Domínio: audit. Especificação: docs/03-Data-Model.md § 15.2.'
+}
+
+// § 17.1 — portal_settings
+Table portal_settings {
+  id uuid [not null]
+  solicitation_mode text [not null, default: 'PUBLIC', note: 'ck_portal_settings_solicitation_mode']
+  platform_name text [not null, default: 'MAAT', note: 'ck_portal_settings_platform_name_length']
+  protocol_mask text [not null, default: 'MAAT', note: 'ck_portal_settings_protocol_mask_format']
+  light_theme_id uuid [ref: > themes.id]
+  dark_theme_id uuid [ref: > themes.id]
+  updated_by_user_id uuid [ref: > users.id]
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null, default: `now()`]
+  indexes {
+    id [pk, name: 'pk_portal_settings']
+  }
+  Note: 'Domínio: portal-config. Especificação: docs/03-Data-Model.md § 17.1.'
+}
+
+// § 17.2 — themes
+Table themes {
+  id uuid [pk, not null]
+  name varchar(60) [not null, note: 'ck_themes_name_length; uk_themes_name']
+  is_active boolean [not null, default: true]
+  background text [note: 'ck_themes_hex']
+  surface text [note: 'ck_themes_hex']
+  border text [note: 'ck_themes_hex']
+  text_primary text [note: 'ck_themes_hex']
+  text_secondary text [note: 'ck_themes_hex']
+  heading text [note: 'ck_themes_hex']
+  rich_black text [note: 'ck_themes_hex']
+  primary text [note: 'ck_themes_hex']
+  secondary text [note: 'ck_themes_hex']
+  tint text [note: 'ck_themes_hex']
+  on_primary text [note: 'ck_themes_hex']
+  on_dark text [note: 'ck_themes_hex']
+  on_gradient text [note: 'ck_themes_hex']
+  gradient_from text [note: 'ck_themes_hex']
+  gradient_to text [note: 'ck_themes_hex']
+  gradient_angle integer [note: 'ck_themes_gradient_angle']
+  status_error_color text [note: 'ck_themes_hex']
+  status_error_background text [note: 'ck_themes_hex']
+  status_error_background_locked boolean
+  status_success_color text [note: 'ck_themes_hex']
+  status_success_background text [note: 'ck_themes_hex']
+  status_success_background_locked boolean
+  status_info_color text [note: 'ck_themes_hex']
+  status_info_background text [note: 'ck_themes_hex']
+  status_info_background_locked boolean
+  status_warning_color text [note: 'ck_themes_hex']
+  status_warning_background text [note: 'ck_themes_hex']
+  status_warning_background_locked boolean
+  status_neutral_color text [note: 'ck_themes_hex']
+  status_neutral_background text [note: 'ck_themes_hex']
+  status_neutral_background_locked boolean
+  logo_url text [note: 'ck_themes_logo_url_length']
+  avatar_url text [note: 'ck_themes_avatar_url_length']
+  login_image_url text [note: 'ck_themes_login_image_url_length']
+  favicon_url text [note: 'ck_themes_favicon_url_length']
+  logo_use_primary_color boolean [not null, default: false]
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null, default: `now()`]
+  indexes {
+    name [unique, name: 'uk_themes_name']
+    is_active [name: 'idx_themes_is_active']
+  }
+  Note: 'Domínio: portal-config. Especificação: docs/03-Data-Model.md § 17.2.'
+}
+
+// § 17.3 — categories
+Table categories {
+  id uuid [pk, not null]
+  name text [not null, note: 'ck_categories_name_length']
+  normalized_name varchar(40) [not null, note: 'ck_categories_normalized_name_length; uk_categories_normalized_name']
+  description text
+  is_active boolean [not null, default: true]
+  display_order integer [not null]
+  form_id uuid [ref: > forms.id]
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null, default: `now()`]
+  indexes {
+    normalized_name [unique, name: 'uk_categories_normalized_name']
+    is_active [name: 'idx_categories_is_active']
+    display_order [name: 'idx_categories_display_order']
+    form_id [name: 'idx_categories_form_id']
+  }
+  Note: 'Domínio: portal-config. Especificação: docs/03-Data-Model.md § 17.3.'
+}
+
+// § 17.4 — statuses
+Table statuses {
+  id uuid [pk, not null]
+  key varchar(50) [not null, note: 'ck_statuses_key_length; uk_statuses_key']
+  order_number integer [not null, note: 'uk_statuses_order_number']
+  name varchar(40) [not null, note: 'ck_statuses_name_length; uk_statuses_name']
+  description text
+  is_public boolean [not null, default: false]
+  is_active boolean [not null, default: true]
+  is_core boolean [not null, default: false]
+  is_restricted boolean [not null, default: false]
+  is_terminal boolean [not null, default: false]
+  triage_mode text [not null, default: 'none', note: 'ck_statuses_triage_mode']
+  mapping_mode text [not null, default: 'none', note: 'ck_statuses_mapping_mode']
+  tone text [not null, default: 'info', note: 'ck_statuses_tone']
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null, default: `now()`]
+  indexes {
+    key [unique, name: 'uk_statuses_key']
+    order_number [unique, name: 'uk_statuses_order_number']
+    name [unique, name: 'uk_statuses_name']
+    is_active [name: 'idx_statuses_is_active']
+  }
+  Note: 'Domínio: portal-config. Especificação: docs/03-Data-Model.md § 17.4.'
+}
+
+// § 18.1 — forms
+Table forms {
+  id uuid [pk, not null]
+  key varchar(60) [not null, note: 'ck_forms_key_length; uk_forms_key']
+  name text [not null, note: 'ck_forms_name_length']
+  description text
+  is_active boolean [not null, default: true]
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null, default: `now()`]
+  indexes {
+    key [unique, name: 'uk_forms_key']
+  }
+  Note: 'Domínio: forms. Especificação: docs/03-Data-Model.md § 18.1.'
+}
+
+// § 18.2 — form_blocks
+Table form_blocks {
+  id uuid [pk, not null]
+  form_id uuid [not null, ref: > forms.id]
+  key varchar(100) [not null, note: 'ck_form_blocks_key_length']
+  title text [not null, note: 'ck_form_blocks_title_length']
+  display_order integer [not null]
+  is_active boolean [not null, default: true]
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null, default: `now()`]
+  indexes {
+    (form_id, key) [unique, name: 'uk_form_blocks_form_key']
+  }
+  Note: 'Domínio: forms. Especificação: docs/03-Data-Model.md § 18.2.'
+}
+
+// § 18.3 — form_fields
+Table form_fields {
+  id uuid [pk, not null]
+  form_id uuid [not null, ref: > forms.id]
+  block_id uuid [not null, ref: > form_blocks.id]
+  key varchar(100) [not null, note: 'ck_form_fields_key_length']
+  label text [not null, note: 'ck_form_fields_label_length']
+  type text [not null, note: 'ck_form_fields_type']
+  required boolean [not null, default: true]
+  help_text text
+  options json
+  max_length integer
+  min_value decimal(10,2)
+  max_value decimal(10,2)
+  must_be_future boolean [not null, default: false]
+  is_active boolean [not null, default: true]
+  display_order integer [not null]
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null, default: `now()`]
+  indexes {
+    (form_id, key) [unique, name: 'uk_form_fields_form_key']
+    block_id [name: 'idx_form_fields_block_id']
+  }
+  Note: 'Domínio: forms. Especificação: docs/03-Data-Model.md § 18.3.'
+}
+
+// § 19.1 — code_counters
+Table code_counters {
+  name varchar(50) [not null, note: 'ck_code_counters_name_length']
+  value bigint [not null, default: 0]
+  updated_at timestamp [not null, default: `now()`]
+  indexes {
+    name [pk, name: 'pk_code_counters']
+  }
+  Note: 'Domínio: platform. Especificação: docs/03-Data-Model.md § 19.1.'
+}
+
+Ref: internal_note_read_states.(request_id, last_read_note_id) > internal_notes.(request_id, id)
+
+TableGroup auth {
+  credentials
+}
+
+TableGroup users {
+  profiles
+  users
+  analyst_details
+  analyst_detail_categories
+}
+
+TableGroup requests {
+  requests
+  form_answers
+  attachments
+  request_time_preferences
+}
+
+TableGroup triage {
+  triages
+}
+
+TableGroup mapping {
+  mappings
+  mapping_participants
+}
+
+TableGroup prioritization {
+  criteria
+  priorities
+  prioritization_evaluations
+}
+
+TableGroup pending_items {
+  pending_batches
+  pending_items
+}
+
+TableGroup internal_notes {
+  internal_notes
+  internal_note_read_states
+}
+
+TableGroup audit {
+  audit_entries
+  attempts
+}
+
+TableGroup portal_config {
+  portal_settings
+  themes
+  categories
+  statuses
+}
+
+TableGroup forms {
+  forms
+  form_blocks
+  form_fields
+}
+
+TableGroup platform {
+  code_counters
+}
