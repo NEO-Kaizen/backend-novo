@@ -19,3 +19,4 @@ Decidimos que a autorização é uma **matriz de permissões escrita em código*
 - A porta `AuthorizationService` é a costura: quando o RBAC configurável entrar, ele substitui a matriz por um adapter de banco e **nenhum domínio muda**.
 - Os contratos publicados no repositório de documentação precisam ser atualizados de quatro para cinco perfis.
 - O `Admin Root` precisa de uma regra própria em qualquer tela de gestão de usuários: a capacidade de gerir Administradores não pode ser dada a si mesmo.
+- A gestão de contas é uma matriz fechada de **ator × operação × perfil atual × perfil de destino** (`03-Data-Model.md` § 7.5): Administrador não alcança Administrador nem Admin Root e não promove a eles; Admin Root é seed-only e não é atribuível pela API; ninguém altera o próprio perfil/status/senha pelas rotas administrativas.

@@ -9,11 +9,11 @@ Cada domínio é dono do seu schema e escreve as tabelas à mão, em Knex, sem O
 Decidimos que **o schema segue um conjunto único de convenções**, registradas em [`docs/03-Data-Model.md`](../03-Data-Model.md) § 2 e aplicadas à revisão:
 
 - **Tabelas** em `snake_case` no plural, em inglês, com o nome do domínio como prefixo natural (`requests`, `internal_notes`).
-- **Colunas** em `snake_case`; booleanos com prefixo `is_` ou `has_`, com as exceções registradas em `03-Data-Model.md` § 2.6; campos de texto com limite de tamanho têm constraint `ck_` própria, nomeada `ck_<tabela>_<coluna>_length`.
+- **Colunas** em `snake_case`; booleanos com prefixo `is_` ou `has_`, com as exceções registradas em `03-Data-Model.md` § 2.6; campos de texto com limite de tamanho têm constraint `ck_` própria, nomeada `ck_<tabela>_<coluna>_length`. O tipo é `varchar(n)` quando a coluna é única ou indexada — o MySQL não indexa `TEXT` sem prefixo — e `text` quando não é; o `ck_` cobre o SQLite, que ignora o `n`.
 - **Chave primária** `id`, UUID v4 gerado pela aplicação, com duas exceções de chave natural ou composta (`code_counters`, `internal_note_read_states`); chave estrangeira `<entidade_no_singular>_id`, apontando para a entidade e nunca para a sua extensão 1:1 — a identidade de uma pessoa é `users.id`, não `analyst_details.id`.
 - **Timestamps**: `created_at` e `updated_at` em linhas mutáveis; `occurred_at` em linhas de evento (`triages`, `audit_entries`, `attempts`); um único tipo de timestamp em toda a base.
 - **Exclusão**: `ON DELETE RESTRICT` em todas as chaves estrangeiras. Nenhum `CASCADE`, nenhum `SET NULL`.
-- **Conjuntos fechados de valores**: se o código enumera os valores, `text` com constraint `ck_` espelhando o catálogo do código; se o negócio administra os valores, tabela de referência.
+- **Conjuntos fechados de valores**: se o código enumera os valores, coluna com constraint `ck_` espelhando o catálogo do código; se o negócio administra os valores, tabela de referência.
 - **Normalização**: e-mail é armazenado em minúsculas e único sobre o valor armazenado; unicidade sem distinção de caixa que não possa ser feita por `LOWER()` usa coluna normalizada mantida pela aplicação.
 
 O critério por trás da política de exclusão é que **nada é apagado**: solicitações, usuários e linhas de configuração são desativados, nunca excluídos. Por isso `RESTRICT` é universal e a ausência de `CASCADE`/`SET NULL` é uma afirmação sobre o domínio, não uma omissão.
@@ -29,5 +29,7 @@ O critério por trás da política de exclusão é que **nada é apagado**: soli
 
 - O catálogo de constraints de uma tabela é previsível: `ck_<tabela>_<assunto>`, `uk_<tabela>_<colunas>`, `idx_<tabela>_<colunas>`, `fk_<tabela>_<coluna>`.
 - Constraints são declaradas com o construtor do knex (`table.check(predicate, undefined, "ck_nome")`), nunca com `ALTER TABLE` escrito à mão — `db.raw()` fora da porta `Dialect` é proibido por [ADR-0003](./0003-knex-dialect-portability.md).
+- **Predicado que depende de função de engine vem do `Dialect`.** `table.check` recebe SQL cru e não traduz função: `INSTR` existe no SQLite e no MySQL, mas não no Postgres. Regex de cor, por exemplo, sai de `dialect.hexColorCheck(column)`, e a migration precisa ser testada nas três engines com valor válido, inválido e nulo.
+- **Texto longo não é indexado pelo valor inteiro.** No Postgres a entrada de B-tree tem limite de tamanho, e no MySQL o índice em `TEXT` exigiria prefixo; a busca usa uma projeção curta e normalizada, como `form_answers.value_lookup`.
 - Uma constraint de check não enxerga outras linhas: invariantes que dependem de mais de uma linha (faixas de prioridade que não podem se sobrepor, por exemplo) são regras de aplicação e aparecem listadas como invariantes na documentação do modelo.
 - Mudar de convenção depois custa uma migration por tabela; por isso a convenção é decidida uma vez, aqui.

@@ -18,7 +18,7 @@ Decidimos que o solicitante se identifica pelo header `X-Requester-Email`, e que
 
 ## Consequências
 
-- Não há tabela nem coluna nova: a conferência é um índice sobre as respostas do bloco `requester`.
+- Não há tabela nova: a conferência usa `form_answers.value_lookup`, a projeção normalizada e indexada da resposta `email`; `value_text` continua sendo o valor autoritativo. O índice fica curto o bastante para não esbarrar no limite de B-tree nem no prefixo exigido pelo MySQL para `TEXT`.
 - A defesa contra enumeração é operacional, não criptográfica: rate limit, conhecimento do e-mail e `404` no lugar de `403`. Os 40 bits do protocolo continuam varregáveis ([ADR-0008](./0008-protocol-without-collision-risk.md)).
 - O solicitante autenticado não usa o header: o `requester_user_id` da solicitação é a referência.
 - O e-mail declarado nunca entra em log nem em mensagem de erro.

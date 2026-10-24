@@ -21,7 +21,7 @@
 | **Análise de viabilidade** | — | Etapa do mapeamento; registrada em `mappings` e na auditoria, sem tabela própria |
 | **Priorização** | `prioritization.prioritization_evaluations` | Cálculo da prioridade a partir de critérios ponderados |
 | **Critério** | `prioritization.criteria` | Quesito ponderado, com peso ajustável |
-| **Pendência** | `pending-items.pending_items` | O que impede o avanço da solicitação |
+| **Pendência** | `pending-items.pending_batches` + `pending-items.pending_items` | O lote agrupa os itens; cada item tem estado, comentário e resposta próprios |
 | **Nota interna** | `internal-notes.internal_notes` | Registro imutável, integrado à linha do tempo |
 | **Linha do tempo** | — | Projeção: `audit_entries` + `internal_notes` |
 | **Auditoria** | `audit.audit_entries` | O que foi criado ou alterado, com autor, momento, valor anterior e novo |
