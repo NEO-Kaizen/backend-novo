@@ -1337,7 +1337,7 @@ As etapas do ciclo de vida — a configuração mais carregada do portal.
 - **Os status de núcleo são imutáveis.** São os sete com `is_core = true`: a `key` é reservada, e nem o nome, nem `is_public`, `is_terminal`, `is_restricted`, `triage_mode` ou `mapping_mode` podem mudar — nem a linha pode ser desativada.
 - A visibilidade tem **dois** predicados independentes: `is_public` (visível ao solicitante) e `is_restricted` (exige `request:status_override` para um perfil assumir). Não há coluna de visibilidade — a combinação dos dois é o que o glossário chama de "pública, interna ou restrita".
 - **Um status restrito tem `triage_mode` e `mapping_mode` `none`** — ele não é alvo de triagem nem de mapeamento. `request:status_override` libera a entrada por `PATCH /status`; não transforma o status em alvo de conclusão de triagem ou mapeamento.
-- `is_terminal` marca o status que encerra a solicitação; é o que dispara `requests.closed_at`.
+- `is_terminal` marca o status que encerra a solicitação; é o que dispara `requests.closed_at`. Só `concluido` e `cancelado` são terminais no seed v4; `nao_elegivel` e `direcionada_para_outra_area` são desfechos não terminais e a solicitação continua no fluxo até um status terminal.
 - `triage_mode` e `mapping_mode` dizem o que é permitido fazer no status: nada, livremente, ou só a conclusão da etapa. A regra de transição mora aqui, e não numa tabela de transições.
 - **Quem tem custódia da solicitação só alcança um status ativo, não restrito, com `triage_mode` ou `mapping_mode` `free`.** `request:status_override` libera status restrito e os modos; o Administrador e o Admin Root têm a chave. Um status terminal não é saída.
 - **Ao menos um status deve estar ativo, e ao menos um status terminal.** Toda solicitação precisa poder chegar a um encerramento.
@@ -1558,8 +1558,6 @@ Para colunas, tipos, constraints e índices por tabela, use o dicionário de con
 | Projeção da fila | Nome do solicitante, processo e prazo desejado saem das respostas, e a fila os junta por chave de campo. Uma tabela de projeção é a alternativa se a junção pesar | Volume da fila |
 | Identidade do solicitante | O bloco `requester` é resposta; a busca por e-mail usa a projeção `form_answers.value_lookup`. O e-mail declarado é chave de busca, não autenticação, e a recusa é `404` ([ADR-0023](./adr/0023-requester-email-is-a-lookup-key.md)) | Volume de solicitações |
 | Anexo restrito | A coluna `attachments.is_restricted` existe, mas nenhuma regra a implementa e nada a lê. Decidir se o conceito é implementado — quem enxerga o arquivo, e o que o solicitante vê — ou se a coluna sai | Decisão de produto sobre conteúdo restrito (LGPD) |
-| Identidade do Admin Root | O seed precisa de e-mail e senha inicial da conta `Admin Root`, e nenhum dos dois está definido. A senha nunca é versionada; o seed deve receber um segredo do ambiente e gravar o hash | Operação definir a origem do e-mail e do segredo, antes do primeiro ambiente |
-| Terminalidade de `nao_elegivel` | O motor v4 marca `nao_elegivel` com `is_terminal = false`, mas o seed original do legado o marcava final. O valor decide se a solicitação encerra (`closed_at`) ou pode voltar ao fluxo | Produto confirmar a regra de encerramento da triagem |
 
 ---
 
@@ -1904,13 +1902,18 @@ Os nomes são exatamente os do catálogo de permissões em código ([ADR-0006](.
 | Campo | Valor |
 | --- | --- |
 | `users.name` | `Admin Root` |
-| `users.email` | **decisão pendente** — ver [§ 21](#21-pendências) |
+| `users.email` | `ADMIN_ROOT_EMAIL` — normalizado (`trim().toLowerCase()`) e validado |
 | `users.profile_id` | `profiles.name = 'Admin Root'` |
 | `users.is_active` | `true` |
-| `credentials.password_hash` | hash da senha inicial recebida pelo seed; **nunca em texto** |
+| `credentials.password_hash` | hash de `ADMIN_ROOT_PASSWORD`; **nunca em texto** |
 | `credentials.must_change_password` | `true` |
 
-A senha inicial não é documentada nem versionada: o seed recebe o segredo do ambiente e grava apenas o hash. O `must_change_password = true` força a troca no primeiro acesso.
+| Variável | Regra |
+| --- | --- |
+| `ADMIN_ROOT_EMAIL` | Obrigatória; e-mail válido, ≤ 254, único. Se já pertence a outro perfil, o seed falha em vez de promover. |
+| `ADMIN_ROOT_PASSWORD` | Obrigatória na criação; ≥ 14 caracteres; usada só quando a conta não existe; nunca logada nem impressa. |
+
+O seed lê as duas variáveis do ambiente e falha antes de escrever se faltar alguma. A conta e a credencial nascem na mesma transação; se o `Admin Root` já existe, a senha **não** é reescrita (rotação é a rota de troca, não o seed). As variáveis são **seed-only**: não entram no `EnvironmentSchema` do boot ([02-Architecture § 16](./02-Architecture.md#16-configuração)). `must_change_password = true` força a troca no primeiro acesso.
 
 ### 25.4 `portal_settings` e `themes`
 
@@ -2007,7 +2010,7 @@ Os 17 status do ciclo de referência. As chaves são do código ([ADR-0021](./ad
 | 16 | `concluido` | Concluído | `true` | `true` | `true` | `false` | `conclusion_only` | `conclusion_only` | `success` |
 | 17 | `cancelado` | Cancelado | `true` | `true` | `true` | `false` | `conclusion_only` | `conclusion_only` | `error` |
 
-O motor de status v4 do legado marca `nao_elegivel` com `is_terminal = false`; o seed original o marcava final. O modelo novo segue o v4 — a terminalidade de `nao_elegivel` é uma decisão de produto em aberto ([§ 21](#21-pendências)).
+A decisão do motor v4 é explícita: **só `concluido` e `cancelado` são terminais**. `nao_elegivel` e `direcionada_para_outra_area` são desfechos não terminais; a solicitação continua no fluxo e só encerra (`closed_at`) quando chega a um status terminal. O seed original do legado marcava `nao_elegivel` como final; o v4 o substituiu.
 
 ### 25.7 `criteria`
 
