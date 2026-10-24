@@ -288,16 +288,16 @@ Duas consequências operacionais:
 
 **Desmontagem.** Renomear ou excluir uma tabela referenciada exige antes remover a FK que a aponta — e essa migration é do domínio que referencia. É o único ponto em que a autonomia de um domínio toca a de outro, e ele é explícito.
 
-**Exceções ao padrão.** Quatro colunas não têm FK:
+**Exceções ao padrão.** Estas colunas não têm FK:
 
-| Relação | Por quê |
+| Coluna | Por quê |
 | --- | --- |
 | `audit_entries.entity_id` → qualquer entidade | Referência polimórfica por natureza |
 | `attempts.entity_id` → qualquer entidade | Referência polimórfica por natureza |
 | `audit_entries.entity_type` / `action` | Vocabulário do código, espelhado em `ck_` |
 | `attempts.entity_type` / `action` | Vocabulário do código, espelhado em `ck_` |
-
-Além dessas, `attempts.correlation_id` é a correlação HTTP e não uma referência; `pending_items.classification_key` é vocabulário de classificação, também sem FK.
+| `attempts.correlation_id` | Correlação HTTP, não referência |
+| `pending_items.classification_key` | Vocabulário da classificação, sem FK |
 
 ---
 
@@ -714,13 +714,13 @@ Conjunto append-only de triagens. Cada triagem é uma linha nova; a triagem atua
 | `id` | uuid | não | — | PK, UUID v4 |
 | `request_id` | uuid | não | — | FK → `requests.id` (RESTRICT) |
 | `is_adherent_to_scope` | boolean | não | — | A aderência ao escopo é sempre avaliada |
-| `adherent_justification` | text | não | `` | Justificativa da aderência — vazia quando a solicitação é aderente |
+| `adherent_justification` | text | não | `''` | Justificativa da aderência — vazia quando a solicitação é aderente |
 | `is_category_change` | boolean | não | `false` | A triagem reclassifica a solicitação |
 | `new_category_id` | uuid | sim | — | FK → `portal-config.categories.id` (RESTRICT) — a categoria proposta, resolvida pelo nome |
-| `preliminary_complexity` | text | não | `` | |
-| `perceived_risks` | text | não | `` | |
-| `suggested_responsible` | text | não | `` | ≤ 150 — **texto livre**, é sugestão, não vínculo |
-| `suggested_responsible_justification` | text | não | `` | |
+| `preliminary_complexity` | text | não | `''` | |
+| `perceived_risks` | text | não | `''` | |
+| `suggested_responsible` | text | não | `''` | ≤ 150 — **texto livre**, é sugestão, não vínculo |
+| `suggested_responsible_justification` | text | não | `''` | |
 | `assignee_user_id` | uuid | sim | — | FK → `users.id` (RESTRICT) — o Responsável designado |
 | `assignee_name` | text | sim | — | Rótulo do responsável no momento da triagem |
 | `assignee_email` | text | sim | — | E-mail do responsável no momento da triagem |
@@ -1879,7 +1879,7 @@ O **seed de referência** é o conjunto mínimo para o portal funcionar: os perf
 | 5 | Blocos | `form_blocks` | (`form_id`, `key`) |
 | 6 | Campos | `form_fields` | (`form_id`, `key`) |
 | 7 | Aparências | `themes` | `name` |
-| 8 | Configuração do portal | `portal_settings` | singleton (`id`) |
+| 8 | Configuração do portal | `portal_settings` | singleton (uma linha; insert-if-absent) |
 | 9 | Categorias | `categories` | `normalized_name` |
 | 10 | Status | `statuses` | `key` |
 | 11 | Critérios | `criteria` | `code` |
