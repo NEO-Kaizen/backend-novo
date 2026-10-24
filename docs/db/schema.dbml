@@ -1,6 +1,7 @@
 // Derivado de docs/03-Data-Model.md — NÃO NORMATIVO.
 // Atualize no mesmo PR que alterar a especificação; em caso de divergência, vale a especificação.
 // Use em dbdiagram.io / dbdocs.io. As constraints de check aparecem como note; o predicado completo está na especificação.
+// Nomes de FK e ON DELETE RESTRICT ficam na especificação e em docs/db/02-reference.md; o DBML não os representa.
 
 // § 6.1 — credentials
 Table credentials {
@@ -13,7 +14,6 @@ Table credentials {
   indexes {
     user_id [unique, name: 'uk_credentials_user_id']
   }
-  Note: 'Domínio: auth. Especificação: docs/03-Data-Model.md § 6.1.'
 }
 
 // § 7.1 — profiles
@@ -28,7 +28,6 @@ Table profiles {
   indexes {
     name [unique, name: 'uk_profiles_name']
   }
-  Note: 'Domínio: users. Especificação: docs/03-Data-Model.md § 7.1.'
 }
 
 // § 7.2 — users
@@ -48,7 +47,6 @@ Table users {
   indexes {
     email [unique, name: 'uk_users_email']
   }
-  Note: 'Domínio: users. Especificação: docs/03-Data-Model.md § 7.2.'
 }
 
 // § 7.3 — analyst_details
@@ -65,7 +63,6 @@ Table analyst_details {
   indexes {
     user_id [unique, name: 'uk_analyst_details_user_id']
   }
-  Note: 'Domínio: users. Especificação: docs/03-Data-Model.md § 7.3.'
 }
 
 // § 7.4 — analyst_detail_categories
@@ -77,7 +74,6 @@ Table analyst_detail_categories {
   indexes {
     (user_id, category_id) [unique, name: 'uk_analyst_detail_categories_user_category']
   }
-  Note: 'Domínio: users. Especificação: docs/03-Data-Model.md § 7.4.'
 }
 
 // § 8.1 — requests
@@ -109,7 +105,6 @@ Table requests {
     responsible_id [name: 'idx_requests_responsible_id']
     created_at [name: 'idx_requests_created_at']
   }
-  Note: 'Domínio: requests. Especificação: docs/03-Data-Model.md § 8.1.'
 }
 
 // § 8.2 — form_answers
@@ -151,7 +146,6 @@ Table attachments {
     pending_item_id [name: 'idx_attachments_pending_item_id']
     is_restricted [name: 'idx_attachments_is_restricted']
   }
-  Note: 'Domínio: requests. Especificação: docs/03-Data-Model.md § 8.3.'
 }
 
 // § 8.4 — request_time_preferences
@@ -163,7 +157,6 @@ Table request_time_preferences {
   indexes {
     (request_id, scheduled_for) [unique, name: 'uk_request_time_preferences_slot']
   }
-  Note: 'Domínio: requests. Especificação: docs/03-Data-Model.md § 8.4.'
 }
 
 // § 9.1 — triages
@@ -171,13 +164,13 @@ Table triages {
   id uuid [pk, not null]
   request_id uuid [not null, ref: > requests.id]
   is_adherent_to_scope boolean [not null]
-  adherent_justification text [not null]
+  adherent_justification text [not null, default: '']
   is_category_change boolean [not null, default: false]
   new_category_id uuid [ref: > categories.id]
-  preliminary_complexity text [not null]
-  perceived_risks text [not null]
-  suggested_responsible text [not null, note: 'ck_triages_suggested_responsible_length']
-  suggested_responsible_justification text [not null]
+  preliminary_complexity text [not null, default: '']
+  perceived_risks text [not null, default: '']
+  suggested_responsible text [not null, default: '', note: 'ck_triages_suggested_responsible_length']
+  suggested_responsible_justification text [not null, default: '']
   assignee_user_id uuid [ref: > users.id]
   assignee_name text
   assignee_email text
@@ -189,7 +182,6 @@ Table triages {
   indexes {
     (request_id, occurred_at) [name: 'idx_triages_request_id_occurred_at']
   }
-  Note: 'Domínio: triage. Especificação: docs/03-Data-Model.md § 9.1.'
 }
 
 // § 10.1 — mappings
@@ -214,9 +206,8 @@ Table mappings {
   updated_at timestamp [not null, default: `now()`]
   indexes {
     request_id [name: 'idx_mappings_request_id']
-    request_id [name: 'idx_mappings_request_id_is_concluded']
+    (request_id, is_concluded) [name: 'idx_mappings_request_id_is_concluded']
   }
-  Note: 'Domínio: mapping. Especificação: docs/03-Data-Model.md § 10.1.'
 }
 
 // § 10.2 — mapping_participants
@@ -231,7 +222,6 @@ Table mapping_participants {
     (mapping_id, user_id) [unique, name: 'uk_mapping_participants_user']
     (mapping_id, email) [unique, name: 'uk_mapping_participants_email']
   }
-  Note: 'Domínio: mapping. Especificação: docs/03-Data-Model.md § 10.2.'
 }
 
 // § 12.1 — criteria
@@ -247,7 +237,6 @@ Table criteria {
   indexes {
     code [unique, name: 'uk_criteria_code']
   }
-  Note: 'Domínio: prioritization. Especificação: docs/03-Data-Model.md § 12.1.'
 }
 
 // § 12.2 — priorities
@@ -282,7 +271,6 @@ Table prioritization_evaluations {
   indexes {
     request_id [unique, name: 'uk_prioritization_evaluations_request_id']
   }
-  Note: 'Domínio: prioritization. Especificação: docs/03-Data-Model.md § 12.3.'
 }
 
 // § 13.1 — pending_batches
@@ -297,7 +285,6 @@ Table pending_batches {
   indexes {
     request_id [name: 'idx_pending_batches_request_id']
   }
-  Note: 'Domínio: pending-items. Especificação: docs/03-Data-Model.md § 13.1.'
 }
 
 // § 13.2 — pending_items
@@ -338,20 +325,18 @@ Table internal_notes {
     (request_id, created_at) [name: 'idx_internal_notes_request_id_created_at']
     (request_id, id) [unique, name: 'uk_internal_notes_request_id_id']
   }
-  Note: 'Domínio: internal-notes. Especificação: docs/03-Data-Model.md § 14.1.'
 }
 
 // § 14.2 — internal_note_read_states
 Table internal_note_read_states {
-  request_id uuid [pk, not null, ref: > requests.id]
-  user_id uuid [pk, not null, ref: > users.id]
+  request_id uuid [not null, ref: > requests.id]
+  user_id uuid [not null, ref: > users.id]
   last_read_note_id uuid [not null, ref: > internal_notes.id]
   read_at timestamp [not null, default: `now()`]
   indexes {
     (request_id, user_id) [pk, name: 'pk_internal_note_read_states']
-    (last_read_note_id) [name: 'idx_internal_note_read_states_last_read_note_id']
+    last_read_note_id [name: 'idx_internal_note_read_states_last_read_note_id']
   }
-  Note: 'Domínio: internal-notes. Especificação: docs/03-Data-Model.md § 14.2.'
 }
 
 // § 15.1 — audit_entries
@@ -377,7 +362,6 @@ Table audit_entries {
     actor_user_id [name: 'idx_audit_entries_actor_user_id']
     occurred_at [name: 'idx_audit_entries_occurred_at']
   }
-  Note: 'Domínio: audit. Especificação: docs/03-Data-Model.md § 15.1.'
 }
 
 // § 15.2 — attempts
@@ -398,7 +382,6 @@ Table attempts {
     actor_user_id [name: 'idx_attempts_actor_user_id']
     occurred_at [name: 'idx_attempts_occurred_at']
   }
-  Note: 'Domínio: audit. Especificação: docs/03-Data-Model.md § 15.2.'
 }
 
 // § 17.1 — portal_settings
@@ -415,7 +398,6 @@ Table portal_settings {
   indexes {
     id [pk, name: 'pk_portal_settings']
   }
-  Note: 'Domínio: portal-config. Especificação: docs/03-Data-Model.md § 17.1.'
 }
 
 // § 17.2 — themes
@@ -465,7 +447,6 @@ Table themes {
     name [unique, name: 'uk_themes_name']
     is_active [name: 'idx_themes_is_active']
   }
-  Note: 'Domínio: portal-config. Especificação: docs/03-Data-Model.md § 17.2.'
 }
 
 // § 17.3 — categories
@@ -485,7 +466,6 @@ Table categories {
     display_order [name: 'idx_categories_display_order']
     form_id [name: 'idx_categories_form_id']
   }
-  Note: 'Domínio: portal-config. Especificação: docs/03-Data-Model.md § 17.3.'
 }
 
 // § 17.4 — statuses
@@ -511,7 +491,6 @@ Table statuses {
     name [unique, name: 'uk_statuses_name']
     is_active [name: 'idx_statuses_is_active']
   }
-  Note: 'Domínio: portal-config. Especificação: docs/03-Data-Model.md § 17.4.'
 }
 
 // § 18.1 — forms
@@ -526,7 +505,6 @@ Table forms {
   indexes {
     key [unique, name: 'uk_forms_key']
   }
-  Note: 'Domínio: forms. Especificação: docs/03-Data-Model.md § 18.1.'
 }
 
 // § 18.2 — form_blocks
@@ -542,7 +520,6 @@ Table form_blocks {
   indexes {
     (form_id, key) [unique, name: 'uk_form_blocks_form_key']
   }
-  Note: 'Domínio: forms. Especificação: docs/03-Data-Model.md § 18.2.'
 }
 
 // § 18.3 — form_fields
@@ -568,7 +545,6 @@ Table form_fields {
     (form_id, key) [unique, name: 'uk_form_fields_form_key']
     block_id [name: 'idx_form_fields_block_id']
   }
-  Note: 'Domínio: forms. Especificação: docs/03-Data-Model.md § 18.3.'
 }
 
 // § 19.1 — code_counters
@@ -579,7 +555,6 @@ Table code_counters {
   indexes {
     name [pk, name: 'pk_code_counters']
   }
-  Note: 'Domínio: platform. Especificação: docs/03-Data-Model.md § 19.1.'
 }
 
 Ref: internal_note_read_states.(request_id, last_read_note_id) > internal_notes.(request_id, id)

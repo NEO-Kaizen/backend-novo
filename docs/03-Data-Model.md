@@ -297,6 +297,8 @@ Duas consequências operacionais:
 | `audit_entries.entity_type` / `action` | Vocabulário do código, espelhado em `ck_` |
 | `attempts.entity_type` / `action` | Vocabulário do código, espelhado em `ck_` |
 
+Além dessas, `attempts.correlation_id` é a correlação HTTP e não uma referência; `pending_items.classification_key` é vocabulário de classificação, também sem FK.
+
 ---
 
 ## 5. Visão Geral das Entidades
@@ -791,7 +793,7 @@ Responsabilidade: sessão de mapeamento, participantes, agenda. Publica a porta 
 
 **Relações** — `request_id` → `requests.id`; `responsible_id`, `created_by_user_id` e `updated_by_user_id` → `users.id`; `target_status_id` → `portal-config.statuses.id`.
 
-**Índices** — `idx_mappings_request_id`; `idx_mappings_request_id_is_concluded`.
+**Índices** — `idx_mappings_request_id`; `idx_mappings_request_id_is_concluded` (`request_id`, `is_concluded`).
 
 **Invariantes**
 
@@ -1547,9 +1549,9 @@ Para colunas, tipos, constraints e índices por tabela, use o dicionário de con
 
 | Pendência | Impacto | Gatilho |
 | --- | --- | --- |
-| Formulário configurável | Hoje o formulário é fixo e semeado. A customização pede uma tela de administração e um contrato de renderização dinâmica no frontend. **O primeiro passo é vincular um formulário a uma categoria** — `categories.form_id` já existe, e é por ele que a categoria passa a escolher o formulário. Nesse passo a categoria sai de `demand.category` e passa a `category` no topo, porque o bloco `demand` deixa de ser garantido | Demanda do produto por formulário configurável |
+| Formulário configurável | Hoje o formulário é fixo e semeado. A customização pede uma tela de administração e um contrato de renderização dinâmica no frontend. O vínculo já existe — `categories.form_id` é obrigatório para categoria ativa, e as categorias semeadas apontam para `solicitacao`; falta a tela/contrato para cada categoria escolher o seu. Nesse passo a categoria sai de `demand.category` e passa a `category` no topo, porque o bloco `demand` deixa de ser garantido | Demanda do produto por formulário configurável |
 | SLA por etapa e prioridade | O legado calcula atraso sobre `operational.desiredDeadline`, que é o prazo **desejado** do solicitante, não um compromisso. O SLA por etapa/prioridade, em horas úteis, com pausa em `Pendente de informações`, é regra de produto ainda não aprovada; até lá `overdue` não é publicado ([ADR-0024](./adr/0024-requested-deadline-is-not-sla.md)) | Aprovação da proposta de SLA pelo P.O./cliente |
-| Previsão de conclusão | `requests.estimated_completion` existe e o portal publica, mas o legado não tem rota que o escreva. Definir se a triagem/mapeamento o atualiza e se ele é uma previsão publicada — não é SLA | Definição de quem publica a previsão |
+| Previsão de conclusão | `requests.estimated_completion` é a previsão publicada e não é SLA, mas o legado não tem rota que a escreva. Definir quem a atualiza — triagem, mapeamento ou ambos | Definição de quem publica a previsão |
 | Aparências nomeadas | O contrato devolve `{ light, dark }`. A lista de aparências, com escolha do solicitante, é a etapa seguinte do contrato de aparência | Evolução do frontend para o contrato de aparência |
 | RBAC configurável | As permissões são matriz em código. O alvo — `permissions`, `profile_permissions` com escopo, perfis customizados, configuração do portal separada e claim — está no Apêndice C ([ADR-0025](./adr/0025-authorization-capability-scope.md)) | Frontend consumir `permissions` |
 | Preferência de aparência por solicitante | A escolha entre as aparências fica no cliente; o servidor não guarda preferência | A preferência precisar ser do servidor |

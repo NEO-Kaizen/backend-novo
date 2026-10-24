@@ -10,7 +10,7 @@
 erDiagram
     PROFILES ||--o{ USERS : "profile_id"
     USERS ||--o| ANALYST_DETAILS : "user_id"
-    USERS ||--|| CREDENTIALS : "user_id"
+    USERS |o--|| CREDENTIALS : "user_id"
     USERS ||--o{ ANALYST_DETAIL_CATEGORIES : "user_id"
     CATEGORIES ||--o{ ANALYST_DETAIL_CATEGORIES : "category_id"
     FORMS ||--o{ FORM_BLOCKS : "form_id"
@@ -64,7 +64,8 @@ erDiagram
     THEMES |o--o| PORTAL_SETTINGS : "dark_theme_id"
     USERS |o--o| PORTAL_SETTINGS : "updated_by_user_id"
   CRITERIA {
-    varchar code PK
+    uuid id PK
+    varchar code UK
   }
   CODE_COUNTERS {
     varchar name PK
@@ -85,7 +86,7 @@ erDiagram
     boolean must_change_password
     timestamp created_at
   }
-    USERS ||--|| CREDENTIALS : "user_id"
+    USERS |o--|| CREDENTIALS : "user_id"
 ```
 
 ## `users` — perfis, contas e extensão do analista
@@ -134,7 +135,7 @@ erDiagram
   }
     PROFILES ||--o{ USERS : "profile_id"
     USERS ||--o| ANALYST_DETAILS : "user_id"
-    USERS ||--|| CREDENTIALS : "user_id"
+    USERS |o--|| CREDENTIALS : "user_id"
     USERS ||--o{ ANALYST_DETAIL_CATEGORIES : "user_id"
     CATEGORIES ||--o{ ANALYST_DETAIL_CATEGORIES : "category_id"
     USERS |o--o{ REQUESTS : "requester_user_id"

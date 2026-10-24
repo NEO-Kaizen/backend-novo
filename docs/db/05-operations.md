@@ -55,7 +55,7 @@ knexfile.ts                     # lista os diretórios por domínio
 
 ### Ordem dos seeds
 
-O Knex ordena os seeds pelo caminho completo por padrão, e isso agrupa por diretório — não pela ordem de dependência. Para respeitar a ordem do [`04-seeds.md`](./04-seeds.md), o `knexfile.ts` deve listar `seeds.directory` na ordem das dependências e usar `sortDirsSeparately: true`, **ou** um seed orquestrador deve chamar os seeds de domínio na ordem. Sem uma dessas duas coisas, `forms` pode rodar antes de `profiles`, e a FK de `users.profile_id` falha.
+O Knex ordena os seeds pelo caminho completo por padrão, e isso agrupa por diretório — não pela ordem de dependência. Para respeitar a ordem do [`04-seeds.md`](./04-seeds.md), o `knexfile.ts` deve listar `seeds.directory` na ordem das dependências e usar `sortDirsSeparately: true`, **ou** um seed orquestrador deve chamar os seeds de domínio na ordem. Sem uma dessas duas coisas, `users` pode rodar antes de `profiles`, e a FK de `users.profile_id` falha; `categories`/`form_blocks` podem rodar antes de `forms`.
 
 ### Semântica de atraso
 
