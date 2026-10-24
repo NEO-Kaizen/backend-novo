@@ -10,7 +10,7 @@
 erDiagram
     PROFILES ||--o{ USERS : "profile_id"
     USERS ||--o| ANALYST_DETAILS : "user_id"
-    USERS |o--|| CREDENTIALS : "user_id"
+    USERS ||--|| CREDENTIALS : "user_id"
     USERS ||--o{ ANALYST_DETAIL_CATEGORIES : "user_id"
     CATEGORIES ||--o{ ANALYST_DETAIL_CATEGORIES : "category_id"
     FORMS ||--o{ FORM_BLOCKS : "form_id"
@@ -86,7 +86,7 @@ erDiagram
     boolean must_change_password
     timestamp created_at
   }
-    USERS |o--|| CREDENTIALS : "user_id"
+    USERS ||--|| CREDENTIALS : "user_id"
 ```
 
 ## `users` — perfis, contas e extensão do analista
@@ -135,7 +135,7 @@ erDiagram
   }
     PROFILES ||--o{ USERS : "profile_id"
     USERS ||--o| ANALYST_DETAILS : "user_id"
-    USERS |o--|| CREDENTIALS : "user_id"
+    USERS ||--|| CREDENTIALS : "user_id"
     USERS ||--o{ ANALYST_DETAIL_CATEGORIES : "user_id"
     CATEGORIES ||--o{ ANALYST_DETAIL_CATEGORIES : "category_id"
     USERS |o--o{ REQUESTS : "requester_user_id"
@@ -628,3 +628,4 @@ erDiagram
 - `internal_note_read_states` tem PK composta (`request_id`, `user_id`) e FK composta (`request_id`, `last_read_note_id`) → `internal_notes` (`request_id`, `id`).
 
 - `audit_entries` e `attempts` apontam para qualquer entidade por `entity_type` + `entity_id`; a referência é polimórfica, sem FK. `attempts.correlation_id` é a requisição HTTP, não a solicitação.
+- `USERS ||--|| CREDENTIALS` codifica a invariante “todo usuário tem credencial”; a FK só garante que cada credencial aponta para um usuário.

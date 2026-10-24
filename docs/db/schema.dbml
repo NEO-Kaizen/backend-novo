@@ -1,7 +1,7 @@
 // Derivado de docs/03-Data-Model.md — NÃO NORMATIVO.
 // Atualize no mesmo PR que alterar a especificação; em caso de divergência, vale a especificação.
 // Use em dbdiagram.io / dbdocs.io. As constraints de check aparecem como note; o predicado completo está na especificação.
-// Nomes de FK e ON DELETE RESTRICT ficam na especificação e em docs/db/02-reference.md; o DBML não os representa.
+// Nomes de FK e ON DELETE RESTRICT ficam na especificação (docs/03-Data-Model.md § 2.4 e § 4); o DBML não os representa.
 
 // § 6.1 — credentials
 Table credentials {
