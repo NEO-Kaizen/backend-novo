@@ -264,6 +264,7 @@ describe("POST /api/v1/users", () => {
 - [ ] Testes cobrem comportamento e caminhos de erro; determinísticos e isolados.
 - [ ] Sem N+1, query sem limite ou payload sem paginação.
 - [ ] Comentários explicam o porquê; sem código morto.
+- [ ] Schema alterado? `docs/03-Data-Model.md` e os derivados `docs/db/02-reference.md`, `docs/db/03-erd.md` e `docs/db/schema.dbml` foram atualizados no mesmo PR.
 - [ ] Exceções a este documento registradas no PR.
 
 ## Referências

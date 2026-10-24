@@ -8,7 +8,7 @@ Como os skills de engenharia devem consumir a documentação de domínio deste r
 - **`GLOSSARY-MAP.md`** na raiz, se existir: ele aponta para um `GLOSSARY.md` por contexto. Leia cada um que seja relevante ao tópico.
 - **`docs/adr/`**: leia os ADRs que tocam a área em que você está prestes a trabalhar. Em repositórios multi-context, verifique também `src/<context>/docs/adr/` para decisões específicas do contexto.
 - **`docs/03-Data-Model.md`**, se existir: o modelo de dados é a especificação do schema — tabelas, colunas, relações e invariantes. Antes de tocar em repositório, migration ou seed, leia **§ 2 (Convenções) e § 4 (Ordem de criação)**, e depois **a seção do domínio**. § 2 e § 4 valem para todas as tabelas; uma seção de domínio que as contradiga está errada.
-- **`docs/03-Data-Model-Vocabulary.md`** e **`docs/03-Data-Model-Diagrams.md`**, se existirem: índices de leitura — onde cada termo do glossário mora no schema, e os diagramas de entidade. Úteis para orientação; não são a especificação.
+- **`docs/db/README.md`**, se existir: a porta de entrada da documentação derivada do banco. Os arquivos `docs/db/01-vocabulary.md`, `docs/db/02-reference.md` e `docs/db/03-erd.md` são índices de leitura — onde cada termo do glossário mora no schema, o dicionário de consulta e os diagramas de entidade. Úteis para orientação; não são a especificação.
 
 Se algum desses arquivos não existir, **prossiga silenciosamente**. Não sinalize a ausência; não sugira criá-los de antemão. O skill `/domain-modeling` (acessado via `/grill-with-docs` e `/improve-codebase-architecture`) os cria sob demanda quando termos ou decisões forem realmente resolvidos.
 
