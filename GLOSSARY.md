@@ -106,8 +106,24 @@ _Evitar_: erro, negação, log.
 
 ## Acesso
 
+**Permissão**:
+Capability nomeada `recurso:ação` — o que um perfil pode fazer, como `triage:write` ou `audit:read`. A permissão é contrato; o perfil é a composição de permissões. Uma permissão nova exige código, não configuração.
+_Evitar_: direito, autorização (autorização é o processo), regra.
+
+**Escopo**:
+Limite de uma permissão sobre as linhas. Uma permissão é `none` (global) ou `owner`; quando é `owner`, o vínculo escolhe `own` (só a solicitação sob custódia) ou `all` (qualquer uma). Escopo não é uma permissão separada.
+_Evitar_: abrangência, alcance, visibilidade.
+
+**Custódia**:
+Vínculo entre um usuário e uma solicitação que o autoriza a agir sobre ela. A regra geral é o *Responsável* corrente (`requests.responsible_id`); para as permissões de mapeamento, o responsável do mapeamento corrente também conta. Os snapshots de triagem e de mapeamento não concedem acesso.
+_Evitar_: posse (posse é do solicitante), dono, ownership.
+
+**Atribuibilidade (atribuível)**:
+Propriedade do perfil cujos usuários podem ser escolhidos como *Responsável* e conseguem trabalhar na solicitação. O predicado é derivado das permissões de leitura e escrita da etapa; a participação no pool é uma flag explícita. Não se confunde com a permissão de atribuir.
+_Evitar_: elegível, selecionável, disponível.
+
 **Perfil**:
-Conjunto fixo de permissões atribuído a um usuário. São cinco: *Solicitante*, *Analista*, *Gestor*, *Administrador* e *Admin Root*. O *Solicitante* descreve um ator externo e não ocupa a hierarquia interna.
+Conjunto de permissões atribuído a um usuário. Hoje são cinco perfis fixos: *Solicitante*, *Analista*, *Gestor*, *Administrador* e *Admin Root*. O *Solicitante* descreve um ator externo e não ocupa a hierarquia interna. O RBAC configurável permitirá perfis customizados, compostos das mesmas permissões.
 _Evitar_: papel, cargo, função, role.
 
 **Admin Root**:
@@ -115,7 +131,7 @@ Perfil raiz do sistema, com todas as permissões e capacidade de gerir os demais
 _Evitar_: super-admin, root, administrador mestre.
 
 **Responsável**:
-Pessoa designada para conduzir a triagem ou o mapeamento de uma solicitação.
+Pessoa designada para conduzir a triagem ou o mapeamento de uma solicitação. O vínculo com a solicitação é a *Custódia*; a propriedade do perfil de poder receber essa designação é a *Atribuibilidade*.
 _Evitar_: analista (é o perfil, não o vínculo), dono, responsável técnico.
 
 **Modo de acesso**:

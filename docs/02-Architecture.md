@@ -1277,7 +1277,7 @@ Solicitante  (ator externo, fora da hierarquia)
 | Perfil | Pode | Não pode |
 | --- | --- | --- |
 | **Solicitante** | Abrir e acompanhar solicitações | Ver as áreas internas |
-| **Analista** | Triar, mapear, priorizar; é o **Responsável** quando designado | Gerenciar usuários ou configuração |
+| **Analista** | Triar, mapear, priorizar e ler as solicitações sob sua custódia; é o **Responsável** quando designado | Ler solicitações fora da custódia; gerenciar usuários ou configuração |
 | **Gestor** | Ler as áreas internas; escrever nota interna | Alterar a solicitação, o status, o responsável e a configuração |
 | **Administrador** | Gerenciar Solicitante, Analista e Gestor; conteúdo e configuração | Gerenciar Administrador ou Admin Root; promover a eles |
 | **Admin Root** | Todas as permissões; gerencia Administradores | Atribuir Admin Root; alterar o próprio perfil, status ou senha pelas rotas administrativas |
@@ -1288,44 +1288,63 @@ Solicitante  (ator externo, fora da hierarquia)
 
 ### 14.4 Autorização
 
-A autorização é uma **matriz de permissões escrita em código**, atrás de uma interface — a costura que vai receber o RBAC configurável no futuro.
+A autorização é uma **matriz de capabilities escrita em código**, atrás de uma interface. O catálogo tem **26 chaves `recurso:ação`**, em oito verbos, e está em [`03-Data-Model.md` Apêndice B](./03-Data-Model.md#23-apêndice-b--catálogo-de-permissões). A matriz de perfil → chave fica em `core/authorization/profile-permissions.ts`.
+
+Três coisas são diferentes e não se derivam uma da outra:
+
+- **Capability** — a chave, como `triage:write`.
+- **Escopo** — `none` ou `owner`; quando `owner`, `own` ou `all`.
+- **Atribuibilidade** — o perfil pode receber solicitações; é uma flag explícita, validada pelas chaves de trabalho.
+
+`request:assign` não deriva de `triage:write`: um perfil pode triar sem transferir, ou distribuir sem triar. A atribuibilidade é derivada das chaves de leitura e escrita, mas a participação no pool é uma decisão explícita (`profiles.is_assignable_*`).
 
 ```ts
-// src/core/authorization/permissions.ts
-export const PERMISSIONS = {
-  REQUEST_READ: "request:read",
-  REQUEST_WRITE: "request:write",
-  REQUEST_ASSIGN: "request:assign",
-  REQUEST_STATUS_CHANGE: "request:status_change",
-  TRIAGE_WRITE: "triage:write",
-  MAPPING_WRITE: "mapping:write",
-  PRIORITIZATION_WRITE: "prioritization:write",
-  PENDING_ITEM_REVIEW: "pending_item:review",
-  INTERNAL_NOTE_WRITE: "internal_note:write",
-  AUDIT_READ: "audit:read",
-  USER_MANAGE: "user:manage",
-  PORTAL_CONFIG_MANAGE: "portal_config:manage",
-} as const;
-
-export type Permission = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
-
-// src/core/authorization/authorization-service.ts
 export interface AuthorizationService {
   can(actor: Actor, permission: Permission): boolean;
   assert(actor: Actor, permission: Permission): void;
+  scopeOf(actor: Actor, permission: Permission): "own" | "all";
 }
 ```
 
-A matriz (permissão → perfis) fica em `core/authorization/profile-permissions.ts`. *Admin Root* recebe todas as permissões.
-
-O catálogo completo das chaves — 25 chaves `recurso:ação` — está em [`03-Data-Model.md` Apêndice B](./03-Data-Model.md#23-apêndice-b--catálogo-de-permissões). É o mesmo catálogo que vai semear `permissions` e `profile_permissions` quando o RBAC configurável entrar, sem que nenhum domínio mude — ver [ADR-0014](./adr/0014-permission-key-is-the-contract.md).
+`Admin Root` recebe todas as permissões. Para chaves `none`, `scopeOf` devolve `all` e o serviço não aplica custódia. `request:status_override` substitui a regra hardcoded “status restrito é do Administrador”; `assignee_directory:read` é a lista de atribuíveis, distinta de `user:read`. A decisão está na [ADR-0025](./adr/0025-authorization-capability-scope.md).
 
 | Nível | O que verifica | Onde |
 | --- | --- | --- |
 | Rota | Gate grosso por perfil | Middleware |
-| Serviço | Regra fina sobre o recurso — o solicitante só vê a própria solicitação, e só quando o e-mail declarado confere com a resposta gravada; o Responsável atua sobre a que lhe foi designada | Service, em um lugar só por domínio |
+| Serviço | Capability e escopo — o solicitante só vê a própria solicitação, e só quando o e-mail declarado confere com a resposta gravada; o Responsável atua sobre a que lhe foi designada | Service, em um lugar só por domínio |
 
-Ver [ADR-0006](./adr/0006-static-profile-authorization.md).
+**O frontend continua por perfil.** `GET /auth/me` passa a devolver `role` e, como campo aditivo, `permissions: [{ key, scope }]`. O frontend ignora a lista até ter o consumidor de RBAC. A troca é coordenada; nenhuma tela muda por causa desta seção.
+
+### 14.5 Compatibilidade com o frontend atual
+
+Enquanto o frontend não consome chaves, esta tabela é o contrato manual entre `access.service.ts` e a matriz:
+
+| Guarda / ação | Hoje | Alvo |
+| --- | --- | --- |
+| `internalArea` (fila e detalhe) | `requireRole` por união de perfis | `queue:read` + `request:read`; `own` no Analista, `all` no Gestor/Admin/Root |
+| `canEditSolicitation` | Admin ou Responsável | `request:write`; `own`/`all` |
+| `canViewTriage` | Admin/Gestor ou Responsável | `triage:read`; `own`/`all` |
+| `canCalculatePriority` | Admin ou Responsável | `prioritization:write`; `own`/`all` |
+| `canChangeStatusRole` | Admin bypass ou custódia | `request:status_change` `own`/`all` + `request:status_override` `none` |
+| `canAssignAnalyst` + modal | Admin; `/users/analysts` aberto a qualquer interno | `request:assign` `own`/`all` + `assignee_directory:read` `none` |
+| `managementOnly` | Gestor/Admin | `reports:read` `none` + `queue:export` `owner`/`all` |
+| `adminOnly` | Admin | `user:manage`, `portal_config:manage`, `form:manage`; `none` |
+| Notas internas | Analista/Gestor/Admin | `internal_note:read`/`write`; `own`/`all` |
+| Auditoria | Admin/Gestor; Analista custodial | `audit:read`; `own`/`all` |
+
+**Drifts conhecidos, para a release coordenada:**
+
+- O Analista ainda vê mais solicitações do que a custódia permite. O alvo é `request:read`/`queue:read` em `own`; o frontend precisa filtrar a fila antes de o backend apertar.
+- `Admin Root` não existe na união de perfis do frontend. Até a união incluí-lo, ele não deve ser atribuído como perfil de um usuário de UI.
+- O Gestor perde `GET /prioritization/criteria`; continua vendo a prioridade pela solicitação e pela fila.
+
+**Regra de mudança:** toda alteração de chave, escopo, atribuibilidade ou matriz de perfil atualiza o Apêndice B e esta tabela na mesma mudança.
+
+### 14.6 Preparação para o RBAC configurável
+
+O modelo alvo completo está no [`03-Data-Model.md` Apêndice C](./03-Data-Model.md#24-apêndice-c--modelo-alvo-de-rbac-configurável): escopo por atribuição, gestão de perfis, separação da configuração do portal, claim e contrato do frontend. Ele não é o contrato vigente.
+
+A transição começa quando o frontend consome `permissions`; a gestão de perfis faz parte do Apêndice C, não é pré-requisito. Até lá, o Apêndice B e esta seção são a fonte da verdade. A [ADR-0025](./adr/0025-authorization-capability-scope.md) registra a decisão.
 
 ---
 
@@ -1548,6 +1567,7 @@ As pendências de **schema** estão no [`03-Data-Model.md` § 21](./03-Data-Mode
 | Suíte de testes automatizados | Rede de segurança ausente para a reescrita | Ferramentas de teste decididas |
 | Credencial de runtime e de migração | O append-only por privilégio exige duas credenciais no Postgres/MySQL; hoje o schema de ambiente tem uma | Implementação do deploy |
 | Contrato da API de auditoria | A rota é montada; o formato de resposta não está acordado | Formalização do domínio de auditoria |
+| RBAC configurável | Desenho no Apêndice C; o Apêndice B continua sendo o contrato | Frontend consumir `permissions` |
 
 ### 22.1 Contratos afetados pelo schema
 

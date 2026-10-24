@@ -26,9 +26,13 @@
 | **Linha do tempo** | — | Projeção: `audit_entries` + `internal_notes` |
 | **Auditoria** | `audit.audit_entries` | O que foi criado ou alterado, com autor, momento, valor anterior e novo |
 | **Tentativa** | `audit.attempts` | O que foi recusado, gravado fora da transação |
-| **Perfil** | `users.profiles` | Cinco perfis; permissões em código ([ADR-0006](./adr/0006-static-profile-authorization.md)) |
-| **Admin Root** | `users.profiles` | Existe apenas no seed; nunca há auto-registro |
-| **Responsável** | `requests.requests.responsible_id`, `triage.triages.assignee_user_id`, `mapping.mappings.responsible_id` | A pessoa designada. São três colunas independentes: a da solicitação é o responsável **corrente** — é o que a custódia (o escopo das permissões, Apêndice B § 23.1) considera; a da triagem e a do mapeamento congelam quem conduziu aquela etapa |
+| **Perfil** | `users.profiles` | Cinco perfis fixos; permissões em código ([ADR-0006](./adr/0006-static-profile-authorization.md), [ADR-0025](./adr/0025-authorization-capability-scope.md)) |
+| **Permissão** | `core/authorization` (matriz em código) | Catálogo do Apêndice B; no alvo, tabela `permissions` |
+| **Escopo** | `core/authorization` (matriz em código) | `none`/`owner`; `own`/`all`; no alvo, `profile_permissions.scope` |
+| **Custódia** | `requests.requests.responsible_id`; `mapping.mappings.responsible_id` | Vínculo consultado pelo escopo `own`; a coluna de mapeamento só vale para as chaves `mapping:*` |
+| **Atribuibilidade (atribuível)** | `users.profiles.is_assignable_triage`, `users.profiles.is_assignable_mapping` | Flag explícita validada pelas permissões de trabalho |
+| **Admin Root** | `users.profiles` | Existe apenas no seed; nunca há auto-registro nem promoção pela API |
+| **Responsável** | `requests.requests.responsible_id`, `triage.triages.assignee_user_id`, `mapping.mappings.responsible_id` | A pessoa designada. São três colunas independentes: a da solicitação é o responsável **corrente** — é o que a custódia geral (Apêndice B § 23.1) considera; a do mapeamento é o condutor do mapeamento corrente e, depois da conclusão, o snapshot de quem conduziu — `request:assign` não a altera; a da triagem é snapshot |
 | **Modo de acesso** | `portal-config.portal_settings.solicitation_mode` | `PUBLIC` ou `AUTHENTICATED` |
 | **Aparência** | `portal-config.themes` | Uma Aparência do portal; as vigentes são as apontadas por `portal_settings` |
 | **Formulário** | `forms.forms` | O que uma solicitação pede, definido por blocos e campos |

@@ -322,6 +322,8 @@ Os cinco perfis do produto. `name` é a chave estável: é o mesmo valor usado e
 | `id` | uuid | não | — | PK, UUID v4 |
 | `name` | varchar(50) | não | — | UNIQUE `uk_profiles_name`, `ck_profiles_name_length` ≤ 50. Valores: `Solicitante`, `Analista`, `Gestor`, `Administrador`, `Admin Root` |
 | `is_active` | boolean | não | `true` | Perfil desativado impede o acesso de todos os usuários daquele perfil |
+| `is_assignable_triage` | boolean | não | `false` | Usuários do perfil podem ser escolhidos como Responsável da triagem; validado contra as chaves de trabalho |
+| `is_assignable_mapping` | boolean | não | `false` | Usuários do perfil podem ser escolhidos como Responsável do mapeamento; validado contra as chaves de trabalho |
 | `created_at` | timestamp | não | `now` | |
 | `updated_at` | timestamp | não | `now` | |
 
@@ -333,6 +335,8 @@ Os cinco perfis do produto. `name` é a chave estável: é o mesmo valor usado e
 
 - As linhas semeadas são exatamente os nomes de perfil do catálogo de permissões em código. Divergência entre o seed e a matriz é um bug de autorização silencioso.
 - `Admin Root` existe apenas no seed. Não há auto-registro.
+- **Atribuibilidade é explícita e validada.** O predicado é derivado das chaves de trabalho (§ 7.6); a flag é a decisão de participar do pool. A flag não concede trabalho.
+- **O Administrador tem todas as chaves, mas não é atribuível por acidente.** `Administrador`, `Admin Root`, `Gestor` e `Solicitante` nascem com as duas flags em `false`; `Analista` nasce com `is_assignable_triage` e `is_assignable_mapping` em `true`. Até o RBAC configurável, as flags são seed-only.
 
 ### 7.2 `users`
 
@@ -433,6 +437,24 @@ A regra é uma matriz fechada de **ator × operação × perfil atual do alvo ×
 - **O último Admin Root ativo não pode ser desativado nem trocado de perfil** — regra de aplicação, para não trancar o sistema.
 - Toda operação da matriz é auditada em `user`, com o perfil anterior e o novo.
 
+### 7.6 Atribuibilidade
+
+Atribuível é o perfil cujos usuários podem ser escolhidos como **Responsável**. Não é uma permissão e não se confunde com `request:assign`:
+
+- `request:assign` é a capability de **mudar** o Responsável;
+- `is_assignable_*` é a propriedade de **receber** a solicitação e conseguir trabalhar nela.
+
+O predicado é derivado das chaves, mas a participação no pool é explícita:
+
+```text
+is_assignable_triage  →  request:read + triage:read + triage:write (own ou all)
+is_assignable_mapping →  request:read + mapping:read + mapping:write (own ou all)
+```
+
+O serviço de atribuição valida o alvo: se o perfil perdeu a chave de escrita depois da configuração, a atribuição é recusada com `400`, não cria um Responsável que não consegue agir. A regra é de aplicação, como a § 7.5, porque depende do perfil e da matriz de permissões, e nenhuma constraint enxerga os dois.
+
+**Sem claim nesta fase.** Uma solicitação órfã não é triada por um Analista custodial, porque `responsible_id` é nulo e não há correspondência de custódia. Quem tem `request:assign` em `all` — o Administrador — atribui primeiro. A chave `request:claim` e a regra de auto-atribuição estão desenhadas no Apêndice C § 24.6, sem entrega nesta fase.
+
 ---
 
 ## 8. Domínio `requests`
@@ -481,6 +503,7 @@ O **conteúdo** da solicitação não mora nesta tabela: o solicitante preenche 
 - **A categoria é resolvida na escrita.** O frontend manda `demand.category` com o **nome** escolhido; o backend resolve o nome contra as categorias ativas, grava o `id` em `requests.category_id` e **acha o formulário pela categoria** (`categories.form_id`). Nome inválido é 400. A promoção para o topo acompanha o formulário configurável (§21).
 - **O formulário respondido é o da categoria escolhida.** O payload não carrega o formulário: ele é derivado da categoria, e a borda valida o payload contra a definição **daquele** formulário.
 - **Quem reescreve a classificação:** o solicitante, quando responde a uma pendência que pede a correção da categoria; a equipe, quando a triagem reclassifica. A pendência escreve `requests.category_id` — resolvendo o nome contra as categorias ativas — e **não** uma resposta: a classificação não tem resposta. A reclassificação chega ao `requests` por **evento de domínio** publicado pelo domínio `triage`: quem escreve `requests.category_id` é o domínio dono da coluna, e a reclassificação é aplicada na mesma transação que registra a triagem.
+- **Toda mudança de status iniciada por usuário exige justificativa.** `justification` é obrigatória (1..4000, `trim`) em `PATCH /requests/:protocol/status`, inclusive no bypass do Administrador. Quando o status de destino é público (`statuses.is_public = true`), `last_technical_message` também é obrigatória (1..4000, `trim`). A justificativa é interna e vai para `audit_entries.note`; o retorno público vai para esta coluna e para o snapshot de auditoria, nunca concatenado. Transições automáticas — a atribuição que avança o status, a abertura e o fechamento de pendência — registram o motivo do sistema, não uma justificativa humana.
 - **A Prioridade não mora aqui.** A faixa é atributo do domínio `prioritization` e é lida por join ou pela porta `PrioritizationReader` ([ADR-0016](./adr/0016-priority-has-one-home.md)).
 
 **Regras de negócio**
@@ -656,6 +679,8 @@ Conjunto append-only de triagens. Cada triagem é uma linha nova; a triagem atua
 - **Os campos condicionais seguem a aderência, e a exigência acompanha.** `adherent_justification` é obrigatória quando `is_adherent_to_scope` é falsa, e `preliminary_complexity` e `perceived_risks` são obrigatórias quando ela é verdadeira — o campo que não se aplica fica vazio. `new_category_id` só é gravado quando `is_category_change` é verdadeiro.
 - **Solicitação em status terminal não aceita triagem.** Concluir uma solicitação encerra o fluxo, e o status terminal não volta.
 - **A conclusão da triagem libera o responsável da solicitação.**
+- **A linha da triagem é snapshot.** `author_user_id` e `assignee_user_id` registram quem conduziu; não concedem leitura depois que a solicitação deixa a custódia.
+- **A conclusão exige `conclusion_justification` (1..4000, `trim`).** É a justificativa da transição; a explicação de aderência e a sugestão de responsável têm justificativas próprias, condicionais.
 - **`last_technical_message` é obrigatório quando o Status de saída é público.** Se o solicitante vê o desfecho, há algo a dizer a ele.
 
 **Regras de negócio**
@@ -709,7 +734,9 @@ Responsabilidade: sessão de mapeamento, participantes, agenda. Publica a porta 
 - A duração, quando informada, está entre 15 e 480 minutos.
 - **A modalidade obriga o dado do encontro:** `REMOTE` exige `meeting_link`, `IN_PERSON` exige `location`.
 - **O destino do mapeamento é um status ativo, não restrito, com `mapping_mode` `conclusion_only`.**
+- **A conclusão exige `justification` (1..4000, `trim`) quando o destino não é o de agendamento.** O agendamento usa os campos de agenda; a conclusão em outro status é uma transição e exige justificativa. Destino público exige também `last_technical_message` (1..4000, `trim`).
 - **Solicitação em status terminal não aceita mapeamento.** Concluir o mapeamento libera o designado do mapeamento.
+- **`mappings.responsible_id` é o condutor do mapeamento corrente.** Enquanto o mapeamento está aberto, ele é a custódia de `mapping:read`/`mapping:write`; concluído, a linha permanece como snapshot e não concede mais acesso. `request:assign` altera `requests.responsible_id`, não o responsável do mapeamento; este é definido no próprio mapeamento.
 - **`requests.meeting_scheduled_for` e `requests.meeting_link` são a projeção da reunião agendada:** valem quando o destino é o status de mapeamento agendado, e são zerados quando o mapeamento conclui em outro destino. `mappings.scheduled_for` é a agenda do mapeamento.
 
 ### 10.2 `mapping_participants`
@@ -1029,6 +1056,7 @@ O que foi de fato criado ou alterado. Gravada na mesma transação da alteraçã
 - `occurred_at` é tempo de negócio: a ordem de commit não é a ordem de ocorrência, e a linha do tempo ordena por `occurred_at`.
 - **O catálogo de entidades e de ações é o do código; as constraints `ck_` são o espelho.** `entity_type` e `action` são colunas separadas: a entidade nomeia *o que* foi escrito, a ação nomeia *o que aconteceu*. O par (entidade, ação) é validado pelo catálogo em código — `entity_type` tem a lista de entidades, `action` tem a união das ações de todas elas. Nenhuma ação é `read` nem `write`: a trilha registra criação e alteração, não leitura.
 - **Toda entidade que pode ser escrita tem `entity_type`** — ver [§ 2.7](#27-conjuntos-fechados).
+- **A justificativa da mudança de status vai em `note`; o retorno ao solicitante vai em `last_technical_message`.** O segundo só é gravado quando o destino é público, e os dois nunca são concatenados. A ação é `status_change`; o bypass é `status_override`, com `entity_type = request`.
 - `request_id` é preenchido quando a entidade auditada pertence a uma solicitação, e é o que torna a **Linha do tempo** uma consulta indexada.
 - Erro de validação (400) não é auditado. Falha de autenticação (401) pertence ao log de segurança do domínio `auth`.
 
@@ -1200,7 +1228,7 @@ As etapas do ciclo de vida — a configuração mais carregada do portal.
 | `is_public` | boolean | não | `false` | Status visível ao solicitante |
 | `is_active` | boolean | não | `true` | Status desativado sai do ciclo |
 | `is_core` | boolean | não | `false` | Status central do fluxo |
-| `is_restricted` | boolean | não | `false` | Status que não pode ser assumido por qualquer perfil |
+| `is_restricted` | boolean | não | `false` | Status que exige `request:status_override` para ser alvo de `PATCH /status` |
 | `is_terminal` | boolean | não | `false` | Status que encerra a solicitação |
 | `triage_mode` | text | não | `none` | `ck_statuses_triage_mode` ∈ `none`, `free`, `conclusion_only` |
 | `mapping_mode` | text | não | `none` | `ck_statuses_mapping_mode` ∈ `none`, `free`, `conclusion_only` |
@@ -1215,14 +1243,15 @@ As etapas do ciclo de vida — a configuração mais carregada do portal.
 - **A `key` é a identidade do status, e ela é do código.** O código referencia status por `key` — nunca por `id`, nunca por `name`. O `name` é o rótulo que o Administrador edita; a `key` é o endereço.
 - **A `key` do seed do ciclo de referência:** `solicitacao_enviada`, `aguardando_triagem`, `em_triagem`, `pendente_de_informacoes`, `aguardando_mapeamento`, `mapeamento_agendado`, `em_mapeamento`, `em_analise_de_viabilidade`, `elegivel`, `nao_elegivel`, `priorizado`, `backlog`, `direcionada_para_outra_area`, `em_desenvolvimento`, `em_homologacao`, `concluido`, `cancelado`.
 - **Os status de núcleo são imutáveis.** São os sete com `is_core = true`: a `key` é reservada, e nem o nome, nem `is_public`, `is_terminal`, `is_restricted`, `triage_mode` ou `mapping_mode` podem mudar — nem a linha pode ser desativada.
-- A visibilidade tem **dois** predicados independentes: `is_public` (visível ao solicitante) e `is_restricted` (que nenhum perfil pode assumir). Não há coluna de visibilidade — a combinação dos dois é o que o glossário chama de "pública, interna ou restrita".
-- **Um status restrito tem `triage_mode` e `mapping_mode` `none`** — ele não é alvo de triagem nem de mapeamento.
+- A visibilidade tem **dois** predicados independentes: `is_public` (visível ao solicitante) e `is_restricted` (exige `request:status_override` para um perfil assumir). Não há coluna de visibilidade — a combinação dos dois é o que o glossário chama de "pública, interna ou restrita".
+- **Um status restrito tem `triage_mode` e `mapping_mode` `none`** — ele não é alvo de triagem nem de mapeamento. `request:status_override` libera a entrada por `PATCH /status`; não transforma o status em alvo de conclusão de triagem ou mapeamento.
 - `is_terminal` marca o status que encerra a solicitação; é o que dispara `requests.closed_at`.
 - `triage_mode` e `mapping_mode` dizem o que é permitido fazer no status: nada, livremente, ou só a conclusão da etapa. A regra de transição mora aqui, e não numa tabela de transições.
-- **Quem tem custódia da solicitação só alcança um status ativo, não restrito, com `triage_mode` ou `mapping_mode` `free`**; o Administrador alcança qualquer status ativo. Um status terminal não é saída.
+- **Quem tem custódia da solicitação só alcança um status ativo, não restrito, com `triage_mode` ou `mapping_mode` `free`.** `request:status_override` libera status restrito e os modos; o Administrador e o Admin Root têm a chave. Um status terminal não é saída.
 - **Ao menos um status deve estar ativo, e ao menos um status terminal.** Toda solicitação precisa poder chegar a um encerramento.
 - **O Status de saída de uma triagem é um status com `triage_mode = conclusion_only`.** É o que define o conjunto de desfechos possíveis, e o que faz do Veredito uma etapa do ciclo e não um vocabulário paralelo.
-- **A mudança de status para um status com `is_restricted` é do Administrador.** Nenhum outro perfil o assume.
+- **A mudança para um status com `is_restricted` exige `request:status_override`.** O flag diz quais status são protegidos; a chave diz quem pode entrar neles. Administrador e Admin Root têm a chave; um perfil sem ela não assume o status, mesmo com `triage_mode` ou `mapping_mode` `free`.
+- **Status inativo não é alvo de ninguém.** `is_active = false` sai do ciclo; nenhuma chave o reabilita.
 
 **Regras de negócio**
 
@@ -1418,7 +1447,7 @@ Schema sem dono de domínio ([ADR-0011](./adr/0011-infrastructure-schema-without
 | SLA por etapa e prioridade | O legado calcula atraso sobre `operational.desiredDeadline`, que é o prazo **desejado** do solicitante, não um compromisso. O SLA por etapa/prioridade, em horas úteis, com pausa em `Pendente de informações`, é regra de produto ainda não aprovada; até lá `overdue` não é publicado ([ADR-0024](./adr/0024-requested-deadline-is-not-sla.md)) | Aprovação da proposta de SLA pelo P.O./cliente |
 | Previsão de conclusão | `requests.estimated_completion` existe e o portal publica, mas o legado não tem rota que o escreva. Definir se a triagem/mapeamento o atualiza e se ele é uma previsão publicada — não é SLA | Definição de quem publica a previsão |
 | Aparências nomeadas | O contrato devolve `{ light, dark }`. A lista de aparências, com escolha do solicitante, é a etapa seguinte do contrato de aparência | Evolução do frontend para o contrato de aparência |
-| RBAC configurável | As permissões são matriz em código. `permissions` e `profile_permissions` são o passo seguinte, semeadas pelo catálogo de Apêndice B | Demanda do produto por perfis configuráveis |
+| RBAC configurável | As permissões são matriz em código. O alvo — `permissions`, `profile_permissions` com escopo, perfis customizados, configuração do portal separada e claim — está no Apêndice C ([ADR-0025](./adr/0025-authorization-capability-scope.md)) | Frontend consumir `permissions` |
 | Preferência de aparência por solicitante | A escolha entre as aparências fica no cliente; o servidor não guarda preferência | A preferência precisar ser do servidor |
 | Projeção da fila | Nome do solicitante, processo e prazo desejado saem das respostas, e a fila os junta por chave de campo. Uma tabela de projeção é a alternativa se a junção pesar | Volume da fila |
 | Identidade do solicitante | O bloco `requester` é resposta; a busca por e-mail usa a projeção `form_answers.value_lookup`. O e-mail declarado é chave de busca, não autenticação, e a recusa é `404` ([ADR-0023](./adr/0023-requester-email-is-a-lookup-key.md)) | Volume de solicitações |
@@ -1504,7 +1533,7 @@ O seed é andaime: a definição semeada é editável in-place e descreve o form
 
 ## 23. Apêndice B — Catálogo de Permissões
 
-A chave de permissão é `recurso:ação` e é **contrato**: o frontend decide o que mostrar a partir dela, e o RBAC configurável vai semear exatamente estas chaves. O recurso da chave é o **nome do domínio em inglês**, com `_` como separador interno; a ação é um dos sete verbos do catálogo. A matriz continua em código ([ADR-0006](./adr/0006-static-profile-authorization.md)); o catálogo abaixo é a lista única que a matriz usa e que a futura tabela `permissions` recebe.
+A chave de permissão é `recurso:ação` e é **contrato**: o frontend decide o que mostrar a partir dela, e o RBAC configurável vai semear exatamente estas chaves. O recurso da chave é o **nome do domínio em inglês**, com `_` como separador interno, ou um read model declarado (`assignee_directory`); a ação é um dos oito verbos do catálogo. A matriz continua em código ([ADR-0006](./adr/0006-static-profile-authorization.md)); o catálogo abaixo é a lista única que a matriz usa e que a futura tabela `permissions` recebe.
 
 | Chave | Recurso | Ação | O que permite | Equivalente no legado |
 | --- | --- | --- | --- | --- |
@@ -1512,6 +1541,7 @@ A chave de permissão é `recurso:ação` e é **contrato**: o frontend decide o
 | `request:write` | request | write | Editar o conteúdo interno da solicitação | `PATCH /requests/:protocol/internal` + `canEditSolicitation` |
 | `request:assign` | request | assign | Atribuir e reatribuir o Responsável | `PATCH .../assignee` + `canAssignRequest` |
 | `request:status_change` | request | status_change | Mudar o status da solicitação | `PATCH .../status` — o Gestor nunca muda status |
+| `request:status_override` | request | status_override | Mudar status para alvo restrito ou fora do modo da etapa via `PATCH .../status`; não torna o status alvo de triagem/mapeamento | bypass do Administrador em `PATCH .../status` |
 | `queue:read` | queue | read | Ler a fila e suas métricas | `requireRole(...)` em `/queue` |
 | `queue:export` | queue | export | Exportar a fila em CSV | `GET /reports/requests.csv` |
 | `reports:read` | reports | read | Ler o dashboard e as métricas | `GET /reports/dashboard` |
@@ -1519,14 +1549,14 @@ A chave de permissão é `recurso:ação` e é **contrato**: o frontend decide o
 | `triage:write` | triage | write | Registrar uma triagem | `POST .../triage` + `isAdminOrAssignee` |
 | `mapping:read` | mapping | read | Ler o mapeamento | `GET /queue/requests/:protocol/mapping` |
 | `mapping:write` | mapping | write | Registrar e concluir o mapeamento | `PUT .../mapping` |
-| `prioritization:read` | prioritization | read | Ler os critérios e as avaliações | `GET /prioritization/criteria` |
-| `prioritization:write` | prioritization | write | Registrar avaliação de priorização | `PUT /prioritization/:protocol/score` |
+| `prioritization:write` | prioritization | write | Registrar avaliação e ler os critérios necessários ao cálculo | `PUT /prioritization/:protocol/score` + `GET /prioritization/criteria` |
 | `pending_item:read` | pending_item | read | Ler as pendências | rotas de pendência |
 | `pending_item:write` | pending_item | write | Abrir lote de pendências, no escopo de custódia | `POST .../pending-items` + `assertCanCreateOrReview` |
 | `pending_item:review` | pending_item | review | Revisar e validar os itens de um lote, no escopo de custódia | `PATCH .../pending-items/review` + `assertCanCreateOrReview` |
 | `internal_note:read` | internal_note | read | Ler as notas internas e a linha do tempo | `GET .../internal-notes` |
 | `internal_note:write` | internal_note | write | Escrever notas internas | `POST .../internal-notes` |
 | `audit:read` | audit | read | Ler a trilha de auditoria | `GET /audit-history` + leitura escopada |
+| `assignee_directory:read` | assignee_directory | read | Ler a lista de usuários ativos que podem receber solicitações | `GET /users/analysts` |
 | `user:read` | user | read | Ler usuários | `GET /users/...` |
 | `user:manage` | user | manage | Criar, editar, ativar e resetar senha de usuários | `requireRole(Administrador)` em `/users` + `assertRoleIsManageable` |
 | `portal_config:read` | portal_config | read | Ler a configuração do portal | `GET /portal-config` |
@@ -1534,23 +1564,25 @@ A chave de permissão é `recurso:ação` e é **contrato**: o frontend decide o
 | `form:read` | form | read | Ler a definição do formulário | — (novo) |
 | `form:manage` | form | manage | Alterar a definição do formulário | — (novo) |
 
-São 25 chaves, em sete verbos: `read`, `write`, `assign`, `status_change`, `export`, `review` e `manage`.
+São 26 chaves, em oito verbos: `read`, `write`, `assign`, `status_change`, `status_override`, `export`, `review` e `manage`.
 
-Onze já constavam da matriz do [ADR-0006](./adr/0006-static-profile-authorization.md) — `request:read`, `request:write`, `request:assign`, `triage:write`, `mapping:write`, `prioritization:write`, `pending_item:review`, `internal_note:write`, `audit:read`, `user:manage` e `portal_config:manage` — e as outras catorze cobrem o que o legado e o frontend já gateavam sem uma chave ([ADR-0014](./adr/0014-permission-key-is-the-contract.md)).
+Onze já constavam da matriz do [ADR-0006](./adr/0006-static-profile-authorization.md) — `request:read`, `request:write`, `request:assign`, `triage:write`, `mapping:write`, `prioritization:write`, `pending_item:review`, `internal_note:write`, `audit:read`, `user:manage` e `portal_config:manage` — e as outras quinze cobrem o que o legado e o frontend já gateavam sem uma chave ([ADR-0014](./adr/0014-permission-key-is-the-contract.md), [ADR-0025](./adr/0025-authorization-capability-scope.md)).
 
-O catálogo é a **lista de chaves** que a tabela `permissions` recebe. O mapeamento perfil → chave é a matriz em código (Apêndice B § 23.1) e não é derivável do catálogo: ela acrescenta o escopo de custódia, que é regra de serviço e não de permissão.
+**Escopo.** A chave é `none` (global) ou `owner` (vale apenas sobre a solicitação sob custódia do ator). São `owner`: `request:read`, `request:write`, `request:assign`, `request:status_change`, `queue:read`, `queue:export`, `triage:read`, `triage:write`, `mapping:read`, `mapping:write`, `prioritization:write`, `pending_item:read`, `pending_item:write`, `pending_item:review`, `internal_note:read`, `internal_note:write` e `audit:read`. As demais são `none`. A matriz da § 23.1 marca com `*` a chave `owner` atribuída em `own`; as chaves `owner` em `all` aparecem sem `*`. `prioritization:write` é `owner` para a avaliação; a leitura dos critérios que ela inclui é global. `request:status_override` é `none` porque libera o alvo protegido; o escopo de qual solicitação continua em `request:status_change`.
+
+O catálogo é a **lista de chaves** que a tabela `permissions` recebe. O mapeamento perfil → chave é a matriz em código (Apêndice B § 23.1) e não é derivável do catálogo: ela acrescenta o escopo de custódia, que é regra de serviço e não de permissão. O modelo alvo — escopo por atribuição, perfis customizados e configuração do portal separada — está no Apêndice C (§ 24).
 
 ### 23.1 A matriz por perfil
 
 | Perfil | Chaves |
 | --- | --- |
 | **Solicitante** | Nenhuma. O que ele faz é abrir e acompanhar a própria solicitação — escopo de posse, não permissão |
-| **Analista** | `queue:read`, `request:read`, `request:write`\*, `request:assign`\*, `request:status_change`\*, `triage:read`, `triage:write`\*, `mapping:read`, `mapping:write`\*, `prioritization:read`, `prioritization:write`\*, `pending_item:read`, `pending_item:write`\*, `pending_item:review`\*, `internal_note:read`, `internal_note:write`, `audit:read`\* |
-| **Gestor** | `queue:read`, `queue:export`, `request:read`, `reports:read`, `triage:read`, `mapping:read`, `prioritization:read`, `pending_item:read`, `internal_note:read`, `internal_note:write`, `audit:read` |
+| **Analista** | `queue:read`\*, `request:read`\*, `request:write`\*, `request:assign`\*, `request:status_change`\*, `triage:read`\*, `triage:write`\*, `mapping:read`\*, `mapping:write`\*, `prioritization:write`\*, `pending_item:read`\*, `pending_item:write`\*, `pending_item:review`\*, `internal_note:read`\*, `internal_note:write`\*, `audit:read`\*, `assignee_directory:read` |
+| **Gestor** | `queue:read`, `queue:export`, `request:read`, `reports:read`, `triage:read`, `mapping:read`, `pending_item:read`, `internal_note:read`, `internal_note:write`, `audit:read`, `assignee_directory:read` |
 | **Administrador** | Todas, com o escopo de gestão de contas de § 7.5: `user:manage` não alcança Administrador nem Admin Root, e não promove a eles. É regra de serviço, não uma chave diferente |
 | **Admin Root** | Todas, com o escopo de § 7.5: gerencia Administradores, não atribui Admin Root e não altera o próprio perfil, status ou senha pelas rotas administrativas |
 
-\* A chave vale **apenas** sobre as solicitações onde o usuário é o responsável — a custódia. Escopo é regra de serviço, não de permissão, e é o que a ADR-0006 já decide.
+\* A chave é `owner` e está atribuída em `own`: vale **apenas** sobre a solicitação sob custódia do usuário. A custódia é `requests.responsible_id`; para `mapping:read` e `mapping:write`, o `mappings.responsible_id` do mapeamento corrente também conta. Cada leitura tem a sua porta: `request:read` é a solicitação; `triage:read`, `mapping:read`, `pending_item:read`, `internal_note:read` e `audit:read` são as dos seus domínios, todas no mesmo escopo. `queue:read` e `queue:export` são a própria worklist e as métricas sobre ela. O Gestor, o Administrador e o Admin Root leem em `all`. `assignee_directory:read` é global: é o diretório de quem pode receber solicitações, não a leitura de usuários.
 
 **Responder é posse, não permissão:** só a própria solicitação e item `requested`; `pending_item:write` e `pending_item:review` são custódia.
 
@@ -1558,9 +1590,164 @@ O catálogo é a **lista de chaves** que a tabela `permissions` recebe. O mapeam
 
 ### 23.2 O que o RBAC configurável vai semear
 
+O alvo são as tabelas `permissions` e `profile_permissions` descritas no Apêndice C § 24.3: a chave é a chave natural/contratual do domínio, e `profile_permissions` guarda o `scope` (`own`/`all`) quando a chave é `owner`. A porta atual já expõe `scopeOf`, implementado pela matriz em código. Quando o RBAC configurável chegar, a matriz vira um adapter de banco e `profile_permissions` passa a ser a fonte; a interface não muda. `GET /auth/me` já devolve `role` e, como campo aditivo, `permissions`; o frontend passa a consumi-lo na release coordenada. O Apêndice B continua sendo o contrato até essa release.
+
+---
+
+## 24. Apêndice C — Modelo alvo de RBAC configurável
+
+> **Não é o contrato vigente.** O Apêndice B continua sendo a fonte da verdade até o frontend consumir chaves. Este apêndice é a preparação do RBAC configurável: descreve o alvo, não uma entrega.
+
+### 24.1 Os três eixos
+
+- **Capability:** a chave `recurso:ação` do Apêndice B. Uma chave nova exige código; o cliente não inventa capabilities.
+- **Escopo:** `none` (global) ou `owner` (a linha precisa estar sob custódia). Quando é `owner`, a atribuição escolhe `own` ou `all`.
+- **Atribuibilidade:** a propriedade do perfil cujos usuários podem ser escolhidos como Responsável. É explícita e validada pelas chaves de trabalho.
+
+`request:assign` é capability, não atribuibilidade. `triage:write` não implica `request:assign`; um perfil pode triar sem transferir, ou distribuir sem triar.
+
+### 24.2 Escopo
+
+```text
+permissions.scope_kind   none | owner
+profile_permissions.scope  null | own | all
+```
+
+Restrições:
+
+- `scope_kind = none` → `scope IS NULL`;
+- `scope_kind = owner` → `scope IN ('own', 'all')`.
+
+São `owner` exatamente as chaves listadas como tal na § 23: as de solicitação que agem sobre uma linha, fila, triagem, mapeamento, priorização, pendência, nota interna e auditoria. São `none` as demais, incluindo `request:status_override`, `assignee_directory:read`, `reports:read`, configuração, usuário, perfil e formulário.
+
+O escopo `own` é resolvido contra `requests.responsible_id`; para as chaves de mapeamento, o `mappings.responsible_id` do mapeamento corrente também conta. Para `queue:read` e `queue:export`, a worklist é `requests.responsible_id = actor.id`; o responsável do mapeamento não a amplia. `request:read` é a porta da solicitação; triagem, mapeamento, pendências, notas e auditoria têm portas próprias, no mesmo escopo.
+
+### 24.3 Tabelas alvo
+
 | Tabela | Colunas |
 | --- | --- |
-| `permissions` | `id` (PK, uuid), `key` (UNIQUE, varchar(100), `ck_permissions_key_length` ≤ 100), `resource` (text), `action` (text), `description` (text) |
-| `profile_permissions` | `profile_id` (FK → `profiles.id`), `permission_id` (FK → `permissions.id`) — PK composta |
+| `permissions` | `id` (PK), `key` (UNIQUE), `resource`, `action`, `description`, `scope_kind` |
+| `profiles` | `id`, `name`, `is_active`, `is_system`, `is_assignable_triage`, `is_assignable_mapping`, timestamps |
+| `profile_permissions` | `profile_id`, `permission_id`, `scope` — PK composta |
 
-A chave é a chave primária do domínio — é o contrato, e é o que o frontend vai receber — e por isso tem uma coluna própria, `key`, com unicidade. A PK da tabela é um `id` sintético, como o de qualquer outra, e `profile_permissions` tem PK composta. Quando isso chegar, a matriz em código vira um adapter de banco atrás da mesma `AuthorizationService` — nenhum domínio muda (ADR-0006) — e `GET /auth/me` passa a devolver as chaves do usuário, **além** do perfil.
+`is_system = true` nos cinco perfis semeados: eles não são excluídos pela API. Perfis customizados são `false`.
+
+`audit_entries.actor_profile_at_creation` deixa de ser `ck_` fechado nos cinco nomes: com perfil customizado, a trilha guarda o nome do perfil (ou um `profile_id` snapshot) e a constraint aceita o perfil vigente. Sem isso, um perfil novo quebra a auditoria.
+
+### 24.4 Porta de autorização
+
+```ts
+interface AuthorizationService {
+  can(actor: Actor, permission: Permission): boolean;
+  assert(actor: Actor, permission: Permission): void;
+  scopeOf(actor: Actor, permission: Permission): "own" | "all";
+}
+```
+
+O serviço resolve a capability e o escopo separadamente. `scopeOf` só é chamado depois de `can`/`assert`; a chave ausente não tem escopo. Para chaves `none`, `scopeOf` devolve `all` e não há custódia:
+
+```ts
+authorization.assert(actor, "triage:write");
+if (authorization.scopeOf(actor, "triage:write") === "own") {
+  assertCustody(request.responsibleId, actor.userId);
+}
+```
+
+A matriz em código é substituída por um adapter de banco. A diferença em relação à ADR-0006 é que o adapter agora também responde ao escopo; a costura é a mesma.
+
+### 24.5 Atribuibilidade
+
+O predicado é o da § 7.6. No alvo, o editor de perfis valida o predicado no servidor e mostra a flag de pool, que continua explícita.
+
+- `Administrador` e `Admin Root`: flags em `false`; o Administrador tem as chaves, mas não entra no pool por acidente.
+- `Analista`: `is_assignable_triage = true` e `is_assignable_mapping = true`.
+- O serviço de atribuição recusa alvo que não satisfaça o predicado, mesmo que a flag esteja ligada.
+- Ao editar um perfil que perdeu a chave de escrita, a edição é bloqueada ou exige desligar a flag e realocar as solicitações. Não se cria Responsável que não pode agir.
+
+### 24.6 Claim (futuro)
+
+`request:claim` é uma capability `none`: o Analista toma uma solicitação **sem responsável** e vira o `responsible_id`. A regra é `responsible_id IS NULL`; não serve para tomar solicitação de outro.
+
+A lista de órfãs não é a `queue:read` custodial do Analista. Ela exige uma leitura própria (`unassigned_queue:read`, `none`), que lista solicitações ativas sem responsável. Sem claim, a solicitação órfã é atribuída por quem tem `request:assign` em `all`.
+
+### 24.7 Configuração do portal separada
+
+O contrato vigente tem uma chave para toda a configuração. O alvo separa o que o cliente quer delegar:
+
+| Vigente | Alvo |
+| --- | --- |
+| `portal_config:read` | `theme:read`, `status:read`, `category:read`, `portal_setting:read`, `prioritization_config:read` |
+| `portal_config:manage` | `theme:manage`, `status:manage`, `category:manage`, `portal_setting:manage`, `prioritization_config:manage` |
+
+Endpoints:
+
+| Rota | Chave |
+| --- | --- |
+| `PATCH /portal-config/theme`, `/assets` | `theme:manage` |
+| `PATCH /portal-config/statuses` | `status:manage` |
+| `PATCH /portal-config/categories` | `category:manage` |
+| `PATCH /portal-config/access`, `/identity` | `portal_setting:manage` |
+| `PATCH /portal-config/prioritization-weights` | `prioritization_config:manage` |
+
+A leitura administrativa passa a ser por seção: a resposta devolve apenas as seções que o ator pode ler, ou cada seção tem a sua rota. O RBAC configurável substitui `portal_config:*` por essas chaves; não mantém as duas formas.
+
+Um perfil **Designer de Tema** fica com `theme:read` e `theme:manage`. Não vê status, categoria, formulário, usuário ou solicitação.
+
+### 24.8 Gestão de perfis
+
+| Chave | O que permite |
+| --- | --- |
+| `profile:read` | Ler perfis e as chaves de cada um |
+| `profile:manage` | Criar, editar e desativar perfis e atribuir chaves |
+
+Guardas:
+
+- só o Admin Root recebe `profile:manage` no seed;
+- um perfil não concede uma chave que não possui;
+- perfis `is_system` não são excluídos;
+- perfil com usuários não é excluído sem realocação;
+- o último Admin Root ativo não é desativado nem trocado;
+- toda alteração de perfil é auditada em `profile`, com o antes e o depois;
+- dependências de chave são validadas no servidor: `*:manage` exige `*:read`; `request:status_override` exige `request:status_change`; atribuibilidade exige as chaves de trabalho.
+
+### 24.9 Frontend consumidor
+
+`GET /auth/me` devolve o perfil e a lista efetiva:
+
+```json
+{
+  "role": "Designer de Tema",
+  "permissions": [
+    { "key": "theme:read", "scope": "all" },
+    { "key": "theme:manage", "scope": "all" }
+  ]
+}
+```
+
+No JSON, chaves `none` saem com `scope: "all"`; no banco, `scope` é nulo. A API normaliza.
+
+O frontend deixa de ramificar por nome de perfil: abas, botões e guardas de rota usam `has(key)` e o escopo. O `role` permanece para exibição e compatibilidade. A troca é uma release coordenada, com a tabela da § 14.5.
+
+### 24.10 Migração do Apêndice B para o Apêndice C
+
+1. O frontend passa a aceitar e usar `permissions` de `/auth/me`.
+2. A matriz em código é semeada em `permissions`/`profile_permissions`.
+3. O adapter de banco substitui a matriz estática atrás da mesma porta.
+4. A configuração do portal é separada e `portal_config:*` é retirada.
+5. `profile:read`/`profile:manage` e o editor de perfis entram.
+6. O claim entra, se o produto decidir que o Analista pode tomar órfãs.
+
+Até o passo 3, o Apêndice B é o contrato. O Apêndice C não autoriza uma implementação parcial.
+
+### 24.11 Exemplos
+
+| Perfil | Chaves | Observação |
+| --- | --- | --- |
+| **Designer de Tema** | `theme:read`, `theme:manage` | Global; não vê o resto da configuração |
+| **Coordenador** | `queue:read` all, `request:read` all, `triage:read`/`write` all, `request:status_change` all, `request:status_override`, `request:assign` all, `assignee_directory:read` | Pode triar e redistribuir qualquer solicitação; `is_assignable_triage` pode ser `true` |
+| **Despachante** | `queue:read` all, `request:read` all, `request:assign` all, `assignee_directory:read` | Distribui, não tria; não é atribuível |
+| **Auditor** | `queue:read` all, `request:read` all, `audit:read` all, `reports:read` | Lê tudo, não escreve |
+
+### 24.12 Invariantes que não viram chave
+
+Continuam no código as invariantes da ADR-0025 e das § 7.5 e § 8.1: status inativo, solicitação terminal, último Admin Root, autoedição administrativa, escalação de perfil, matriz de contas e justificativa de status. Nenhuma delas vira chave.

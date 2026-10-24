@@ -62,7 +62,7 @@ A reescrita não é uma reimplementação linha a linha. O legado é a **fonte d
 **Dentro do escopo:**
 
 - API HTTP do portal MAAT, versionada em `/api/v1`;
-- autenticação por sessão e autorização por perfil;
+- autenticação por sessão e autorização por capability, escopo e atribuibilidade, com os cinco perfis atuais;
 - ciclo de vida da solicitação, do protocolo e dos anexos;
 - triagem, mapeamento, priorização, pendências e notas internas;
 - trilha de auditoria imutável — do que foi alterado e do que foi recusado;
@@ -73,7 +73,7 @@ A reescrita não é uma reimplementação linha a linha. O legado é a **fonte d
 
 - regras de interface do usuário (pertencem ao frontend);
 - integração com calendário ou ITSM — o mapeamento é registro manual;
-- RBAC configurável pelo administrador — ver [ADR-0006](./adr/0006-static-profile-authorization.md);
+- RBAC configurável e perfis customizados — o desenho está no [Apêndice C do modelo de dados](./03-Data-Model.md#24-apêndice-c--modelo-alvo-de-rbac-configurável) e a decisão na [ADR-0025](./adr/0025-authorization-capability-scope.md);
 - qualquer decisão de infraestrutura de deploy — fora do escopo deste documento.
 
 ---
@@ -88,7 +88,7 @@ A reescrita não é uma reimplementação linha a linha. O legado é a **fonte d
 | HTTP | Express 5 | `CODING_STANDARDS.md` |
 | Persistência | Knex como query builder, sem ORM | [ADR-0003](./adr/0003-knex-dialect-portability.md) |
 | Validação | Zod na borda | [02-Architecture § 13](./02-Architecture.md#13-validação-e-a-borda) |
-| Autorização | Matriz de permissões em código | [ADR-0006](./adr/0006-static-profile-authorization.md) |
+| Autorização | Matriz de capabilities em código, com escopo e atribuibilidade | [ADR-0025](./adr/0025-authorization-capability-scope.md) |
 | Auditoria | Alteração orientada a evento; tentativa gravada na borda | [ADR-0007](./adr/0007-event-driven-audit.md) |
 
 > Ferramentas de apoio (gerenciador de pacotes, linter, formatter, runner de testes) ainda não foram decididas e não são tratadas aqui.
@@ -127,7 +127,7 @@ Decisões já tomadas e follow-up que dependem de outro time:
 
 | Item | Estado | Onde |
 | --- | --- | --- |
-| RBAC configurável | Decidido: matriz em código, cinco perfis; RBAC configurável é trabalho futuro | [ADR-0006](./adr/0006-static-profile-authorization.md) |
+| RBAC configurável | Decidido: matriz em código com 26 chaves, escopo `none`/`owner` (`own`/`all`) e atribuibilidade explícita; perfis customizados são trabalho futuro, desenhados no Apêndice C | [ADR-0025](./adr/0025-authorization-capability-scope.md) |
 | Envelope de erro | Decidido: manter o legado por ora; migração exige mudança coordenada no frontend | [ADR-0005](./adr/0005-legacy-error-envelope-temporary.md) |
 | Perfis: cinco ou quatro | Decidido: cinco no backend; os contratos publicados ainda listam quatro | [ADR-0006](./adr/0006-static-profile-authorization.md) |
 | Remodelagem do banco | Decidido: cada domínio é dono do seu schema; as migrações do legado são referência de dados, não de estrutura | [ADR-0004](./adr/0004-domain-owned-schema-and-migrations.md) |
