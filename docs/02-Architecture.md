@@ -287,9 +287,9 @@ export abstract class BaseService {
     return this.transactions.run(work);
   }
 
-  /** Snapshot para o bloco inteiro; não é um modo read-only do banco. */
-  protected async readOnly<T>(work: () => Promise<T>): Promise<T> {
-    return this.transactions.runReadOnly(work);
+  /** Todas as leituras do bloco enxergam o mesmo snapshot; não impede escrita. */
+  protected async readSnapshot<T>(work: () => Promise<T>): Promise<T> {
+    return this.transactions.runSnapshot(work);
   }
 
   protected assert(condition: boolean, error: AppError): asserts condition {
@@ -310,7 +310,7 @@ A distinção é o **nome do método**:
 | --- | --- | --- |
 | Escrita | `executeChangeStatus()`, `executeCreateRequest()` | Sim, aberta pela classe base |
 | Leitura simples | `findByProtocol()` — uma tabela, um statement | Não |
-| Leitura agregada | `listTimeline()` — agrega várias tabelas | Transação de leitura com snapshot (`readOnly`) |
+| Leitura agregada | `listTimeline()` — agrega várias tabelas | Transação de leitura com snapshot (`readSnapshot`) |
 
 ### 7.3 BaseRepository
 
@@ -812,7 +812,7 @@ export interface TransactionManager {
   /** Transação de escrita. */
   run<T>(work: () => Promise<T>): Promise<T>;
   /** Transação de leitura com snapshot: isolamento `repeatable read` onde a engine suportar. */
-  runReadOnly<T>(work: () => Promise<T>): Promise<T>;
+  runSnapshot<T>(work: () => Promise<T>): Promise<T>;
 }
 ```
 
@@ -1029,7 +1029,7 @@ export class KnexDatabase implements Database, TransactionManager {
     return this.nested(async (trx) => this.scope.run(trx, work));
   }
 
-  async runReadOnly<T>(work: () => Promise<T>): Promise<T> {
+  async runSnapshot<T>(work: () => Promise<T>): Promise<T> {
     return this.nested(async (trx) => this.scope.run(trx, work), "repeatable read");
   }
 
@@ -1054,7 +1054,7 @@ Efeito: dentro de `execute`, qualquer repositório chamado — inclusive de outr
 | --- | --- |
 | **Aninhamento** | O `execute` de um service chamado dentro de outro vira **savepoint**. Só a transação externa faz commit; um savepoint pode ser desfeito sozinho, mas nunca confirma por conta própria. |
 | **Lote** | Processamento em lote faz `execute` por chunk, não um por item — cada chunk é uma transação, e um chunk que falha não desfaz os anteriores. |
-| **Leitura agregada** | Leitura que junta várias tabelas dentro de um domínio (a linha do tempo) usa `this.readOnly(...)`, para que todos os statements vejam o mesmo snapshot. O `KnexDatabase` abre a transação raiz com `isolationLevel: "repeatable read"` no Postgres e no MySQL; no SQLite o nível é ignorado, porque o driver serializa escritores. Não é um modo *read only* imposto pelo banco — a transação é de leitura por decisão do caso de uso. Sem isso, o resultado pode ser uma leitura rasgada — o que a linha do tempo mostra pode não ter coexistido. |
+| **Leitura agregada** | Leitura que junta várias tabelas dentro de um domínio (a linha do tempo) usa `this.readSnapshot(...)`, para que todos os statements vejam o mesmo snapshot. O `KnexDatabase` abre a transação raiz com `isolationLevel: "repeatable read"` no Postgres e no MySQL; no SQLite o nível é ignorado, porque o driver serializa escritores. Não é um modo *read only* imposto pelo banco — a transação é de leitura por decisão do caso de uso — e o nome diz o que ela entrega: snapshot, não permissão. Sem isso, o resultado pode ser uma leitura rasgada — o que a linha do tempo mostra pode não ter coexistido. |
 | **Leitura simples** | Uma tabela, um statement: sem transação, sem snapshot retido. |
 | **Leitura entre domínios** | Projeção (`reports`) que agrega portas de vários domínios não tem snapshot único: cada porta responde na sua própria leitura. Consistência entre domínios é eventual — é o custo de a projeção receber apenas `*Reader` ([§ 7.4](#74-inheritance-rule)). |
 
@@ -1482,7 +1482,7 @@ Cada linha aponta a seção que define a regra. Um PR que muda mais de uma camad
 | [ ] | Sem `any`; `unknown` na borda; sem assertion sem validação | `CODING_STANDARDS.md` | Type-check estrito passa |
 | [ ] | Erros tipados, com `cause`; causa logada uma vez, na borda | [§ 12](#12-errors) | Nenhum `log-and-rethrow` |
 | [ ] | Toda escrita é um `execute*`; nenhuma fora de transação | [§ 11](#11-transactions) | `assertInTransaction()` no repositório |
-| [ ] | Leitura agregada usa `this.readOnly()` | [§ 11.2](#112-implicit-transactions) | Linha do tempo |
+| [ ] | Leitura agregada usa `this.readSnapshot()` | [§ 11.2](#112-implicit-transactions) | Linha do tempo |
 | [ ] | Mudança relevante publica evento; trilha da alteração na mesma transação | [§ 9.3](#93-change-audit-via-domain-events) | Assinatura no `domains/audit` |
 | [ ] | Recusa auditável carrega contexto e é gravada na borda | [§ 9.4](#94-audit-and-log-what-each-one-guarantees) | `DomainError` com `context` |
 | [ ] | SQL portátil: sem `db.raw` fora do `Dialect` | [§ 10.3](#103-portability-rules) | `rg "db\.raw\(" src/domains` |
