@@ -14,6 +14,10 @@ _Evitar_: pedido, demanda, requisição, ticket, chamado.
 Identificador público e curto que permite acompanhar uma solicitação sem expor a identidade interna; é opaco e não é credencial.
 _Evitar_: código, referência, número do pedido, id público.
 
+**Máscara**:
+Prefixo fixo do protocolo, configurado por portal. Compõe apenas o formato exibido: não acrescenta entropia e não reescreve protocolos já emitidos.
+_Evitar_: máscara de formatação, template.
+
 **Solicitante**:
 Pessoa que registra uma solicitação e acompanha seu andamento. Pode atuar de forma anônima ou autenticada.
 _Evitar_: cliente, usuário externo, requisitante.
@@ -79,11 +83,11 @@ Sequência unificada dos acontecimentos de uma solicitação: notas internas, au
 _Evitar_: histórico, feed, atividade.
 
 **Auditoria**:
-Registro imutável do que foi efetivamente alterado no sistema, com autor, momento e valor anterior e novo.
+Registro imutável do que foi efetivamente alterado no sistema, com autor, momento e valor anterior e novo. O conjunto dos registros de uma solicitação é a *trilha de alteração*.
 _Evitar_: log, histórico, trilha de mudanças.
 
 **Tentativa**:
-Registro imutável de uma ação que foi recusada — por falta de permissão ou por regra de negócio. Preservado mesmo quando a ação não aconteceu. A *recusa* é o ato; a *tentativa* é o registro dele.
+Registro imutável de uma ação que foi recusada — por falta de permissão ou por regra de negócio. Preservado mesmo quando a ação não aconteceu. A *recusa* é o ato; a *tentativa* é o registro dele. O conjunto é a *trilha de tentativas*.
 _Evitar_: erro, negação, log.
 
 ## Acesso
