@@ -298,9 +298,9 @@ export abstract class BaseService {
     return this.transactions.run(work);
   }
 
-  /** Snapshot para o bloco inteiro; não é um modo read-only do banco. */
-  protected async readOnly<T>(work: () => Promise<T>): Promise<T> {
-    return this.transactions.runReadOnly(work);
+  /** Todas as leituras do bloco enxergam o mesmo snapshot; não impede escrita. */
+  protected async readSnapshot<T>(work: () => Promise<T>): Promise<T> {
+    return this.transactions.runSnapshot(work);
   }
 
   protected assert(condition: boolean, error: AppError): asserts condition {
@@ -321,7 +321,7 @@ A distinção é o **nome do método**:
 | --- | --- | --- |
 | Escrita | `executeChangeStatus()`, `executeCreateRequest()` | Sim, aberta pela classe base |
 | Leitura simples | `findByProtocol()` — uma tabela, um statement | Não |
-| Leitura agregada | `listTimeline()` — agrega várias tabelas | Transação de leitura com snapshot (`readOnly`) |
+| Leitura agregada | `listTimeline()` — agrega várias tabelas | Transação de leitura com snapshot (`readSnapshot`) |
 
 ### 7.3 BaseRepository
 
@@ -839,7 +839,7 @@ export interface TransactionManager {
   /** Transação de escrita. */
   run<T>(work: () => Promise<T>): Promise<T>;
   /** Transação de leitura com snapshot: isolamento `repeatable read` onde a engine suportar. */
-  runReadOnly<T>(work: () => Promise<T>): Promise<T>;
+  runSnapshot<T>(work: () => Promise<T>): Promise<T>;
 }
 ```
 
@@ -888,7 +888,7 @@ Estas regras são o que torna a troca de banco uma realidade e não uma intenç�
 
 | Regra | Por quê |
 | --- | --- |
-| **`db.raw()` proibido fora do `Dialect`** | SQL literal quebra em outra engine |
+| **`raw()` proibido fora do `Dialect`** (via `db` ou `client`) | SQL literal quebra em outra engine |
 | Repositório usa **apenas o query builder** do Knex | Preserva a diferença entre as engines |
 | **IDs gerados pela aplicação** (`crypto.randomUUID()`) | Elimina `nextval()`, `::uuid`, sequences e colunas `serial` |
 | **Sem tipo `ENUM`** | Use coluna com constraint de check ou tabela de lookup ([`03-Data-Model.md` § 2.9](./03-Data-Model.md#29-texto-números-e-json)) |
@@ -955,7 +955,7 @@ export class FeistelProtocolGenerator implements ProtocolGenerator {
 Propriedades:
 
 - **sem colisão por construção** — a Feistel é uma bijeção sobre `[0, 2⁴⁰)`; dois contadores diferentes nunca geram o mesmo protocolo. Ver [ADR-0008](./adr/0008-protocol-without-collision-risk.md);
-- **opaco, não secreto** — sem o segredo não se deriva o próximo protocolo, mas o espaço de 40 bits é varregável. A defesa contra enumeração é o rate limit do endpoint público, a conferência de e-mail ([§ 14.2](#142-atores)) e a resposta `404` no lugar de `403`;
+- **opaco, não secreto** — sem o segredo não se deriva o próximo protocolo, mas o espaço de 40 bits pode ser varrido por completo. A defesa contra enumeração é de borda, não criptográfica: rate limit do endpoint público, conferência do e-mail do solicitante ([§ 14.2](#142-atores)) e resposta `404` no lugar de `403` — a formulação canônica está no [ADR-0008](./adr/0008-protocol-without-collision-risk.md);
 - **independente da engine** — o contador vem de uma tabela, não de uma sequence do banco;
 - **prefixo configurável** — o `MAAT` é apenas o valor padrão da máscara configurada no portal (`protocol_mask`, até 10 caracteres). Trocar a máscara muda só os protocolos emitidos depois; os existentes nunca são reescritos, e a unicidade continua sendo a do protocolo inteiro. A máscara **não acrescenta entropia**: ela é pública;
 - **formato estável** — `<protocol_mask>-XXXX-XXXX`; o frontend aceita prefixo de 1 a 10 caracteres.
@@ -979,7 +979,7 @@ export class KnexCounter implements Counter {
 }
 ```
 
-> O `increment` e o `select` rodam na mesma transação: o Postgres e o MySQL mantêm o lock da linha do `UPDATE` até o commit, e o SQLite serializa escritores. **Sem `db.raw()`, sem `RETURNING` e sem `FOR UPDATE`** — o construtor de query do Knex é idêntico nas três engines. Se um dia o contador migrar para um Redis, `KnexCounter` vira outro adapter da mesma porta, sem tocar no gerador.
+> O `increment` e o `select` rodam na mesma transação: o Postgres e o MySQL mantêm o lock da linha do `UPDATE` até o commit, e o SQLite serializa escritores. **Sem `raw()`, sem `RETURNING` e sem `FOR UPDATE`** — o construtor de query do Knex é idêntico nas três engines. Se um dia o contador migrar para um Redis, `KnexCounter` vira outro adapter da mesma porta, sem tocar no gerador.
 
 A máscara vem de `portal-config`, pela porta de leitura que ele publica ([§ 8.4](#84-dependências-entre-domínios)):
 
@@ -1062,7 +1062,7 @@ export class KnexDatabase implements Database, TransactionManager {
     return this.nested(async (trx) => this.scope.run(trx, work));
   }
 
-  async runReadOnly<T>(work: () => Promise<T>): Promise<T> {
+  async runSnapshot<T>(work: () => Promise<T>): Promise<T> {
     return this.nested(async (trx) => this.scope.run(trx, work), "repeatable read");
   }
 
@@ -1087,7 +1087,7 @@ Efeito: dentro de `execute`, qualquer repositório chamado — inclusive de outr
 | --- | --- |
 | **Aninhamento** | O `execute` de um service chamado dentro de outro vira **savepoint**. Só a transação externa faz commit; um savepoint pode ser desfeito sozinho, mas nunca confirma por conta própria. |
 | **Lote** | Processamento em lote faz `execute` por chunk, não um por item — cada chunk é uma transação, e um chunk que falha não desfaz os anteriores. |
-| **Leitura agregada** | Leitura que junta várias tabelas dentro de um domínio (a linha do tempo) usa `this.readOnly(...)`, para que todos os statements vejam o mesmo snapshot. O `KnexDatabase` abre a transação raiz com `isolationLevel: "repeatable read"` no Postgres e no MySQL; no SQLite o nível é ignorado, porque o driver serializa escritores. Não é um modo *read only* imposto pelo banco — a transação é de leitura por decisão do caso de uso. Sem isso, o resultado pode ser uma leitura rasgada — o que a linha do tempo mostra pode não ter coexistido. |
+| **Leitura agregada** | Leitura que junta várias tabelas dentro de um domínio (a linha do tempo) usa `this.readSnapshot(...)`, para que todos os statements vejam o mesmo snapshot. O `KnexDatabase` abre a transação raiz com `isolationLevel: "repeatable read"` no Postgres e no MySQL; no SQLite o nível é ignorado, porque o driver serializa escritores. Não é um modo *read only* imposto pelo banco — a transação é de leitura por decisão do caso de uso — e o nome diz o que ela entrega: snapshot, não permissão. Sem isso, o resultado pode ser uma leitura rasgada — o que a linha do tempo mostra pode não ter coexistido. |
 | **Leitura simples** | Uma tabela, um statement: sem transação, sem snapshot retido. |
 | **Leitura entre domínios** | Projeção (`reports`) que agrega portas de vários domínios não tem snapshot único: cada porta responde na sua própria leitura. Consistência entre domínios é eventual — é o custo de a projeção receber apenas `*Reader` ([§ 7.4](#74-regra-de-herança)). |
 
@@ -1512,7 +1512,7 @@ Os padrões abaixo são os que o backend legado usa e que esta arquitetura exist
 | Service **e** repository abrindo transação | Escopo de transação indefinido | Só o service abre |
 | Escrita fora de transação | Commit parcial silencioso | `execute()` no service; `assertInTransaction()` no repositório |
 | `trx` como parâmetro em todo método de repositório | Ruído em todas as assinaturas | Transação implícita por `TransactionManager` |
-| `db.raw()` espalhado em repositório | SQL não portável | `Dialect` ou query builder |
+| `raw()` espalhado em repositório | SQL não portável | `Dialect` ou query builder |
 | `.first()` em busca por protocolo | Retorna a linha errada em silêncio quando há duplicata | Sondagem com `LIMIT 2` |
 | `catch { return [] }` | Erro de banco virando "não tem resultado" | Deixar o erro subir; tratar no service |
 | `switch` gigante mapeando coluna por campo | Regressão ao adicionar campo | Mapeamento por repositório, colunas por constante |
@@ -1540,10 +1540,10 @@ Cada linha aponta a seção que define a regra. Um PR que muda mais de uma camad
 | [ ] | Sem `any`; `unknown` na borda; sem assertion sem validação | `CODING_STANDARDS.md` | Type-check estrito passa |
 | [ ] | Erros tipados, com `cause`; causa logada uma vez, na borda | [§ 12](#12-erros) | Nenhum `log-and-rethrow` |
 | [ ] | Toda escrita é um `execute*`; nenhuma fora de transação — exceto a trilha de tentativas | [§ 11](#11-transações) | `assertInTransaction()` no repositório, com a exceção de `insertAttempt` |
-| [ ] | Leitura agregada usa `this.readOnly()` | [§ 11.2](#112-transações-implícitas) | Linha do tempo |
+| [ ] | Leitura agregada usa `this.readSnapshot()` | [§ 11.2](#112-transações-implícitas) | Linha do tempo |
 | [ ] | Mudança relevante publica evento; trilha da alteração na mesma transação | [§ 9.3](#93-auditoria-de-alteração-por-eventos) | Assinatura no `domains/audit` |
 | [ ] | Recusa auditável carrega contexto e é gravada na borda | [§ 9.4](#94-auditoria-e-log-o-que-cada-um-garante) | `DomainError` com `context` |
-| [ ] | SQL portátil: sem `db.raw` fora do `Dialect` | [§ 10.3](#103-regras-de-portabilidade) | `rg "db\.raw\(" src/domains` |
+| [ ] | SQL portátil: sem `raw()` fora do `Dialect` (em `db` ou `client`) | [§ 10.3](#103-regras-de-portabilidade) | `rg "\.raw\(" src/domains` |
 | [ ] | ID gerado pela aplicação; protocolo com `UNIQUE` e sondagem `LIMIT 2` | [§ 10.5](#105-protocolo) | Leitura por protocolo |
 | [ ] | O service não monta SQL: o contador vem da porta `Counter` | [§ 10.5](#105-protocolo) | `rg "code_counters" src/domains` |
 | [ ] | Schema segue as convenções de nomenclatura e constraints | [`03-Data-Model.md` § 2](./03-Data-Model.md#2-convenções-de-nomenclatura) | `ck_`, `uk_`, `idx_`, `fk_` + tabela |
