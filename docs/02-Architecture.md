@@ -922,7 +922,7 @@ export class FeistelProtocolGenerator implements ProtocolGenerator {
 Propriedades:
 
 - **sem colisão por construção** — a Feistel é uma bijeção sobre `[0, 2⁴⁰)`; dois contadores diferentes nunca geram o mesmo protocolo. Ver [ADR-0008](./adr/0008-protocol-without-collision-risk.md);
-- **opaco, não secreto** — sem o segredo não se deriva o próximo protocolo, mas o espaço de 40 bits é varregável. A defesa contra enumeração é o rate limit do endpoint público, a conferência de e-mail ([§ 14.2](#142-actors)) e a resposta `404` no lugar de `403`;
+- **opaco, não secreto** — sem o segredo não se deriva o próximo protocolo, mas o espaço de 40 bits pode ser varrido por completo. A defesa contra enumeração é de borda, não criptográfica: rate limit do endpoint público, conferência do e-mail do solicitante ([§ 14.2](#142-actors)) e resposta `404` no lugar de `403` — a formulação canônica está no [ADR-0008](./adr/0008-protocol-without-collision-risk.md);
 - **independente da engine** — o contador vem de uma tabela, não de uma sequence do banco;
 - **prefixo configurável** — o `MAAT` é apenas o valor padrão da máscara configurada no portal (`protocol_mask`, até 10 caracteres). Trocar a máscara muda só os protocolos emitidos depois; os existentes nunca são reescritos, e a unicidade continua sendo a do protocolo inteiro. A máscara **não acrescenta entropia**: ela é pública;
 - **formato estável** — `<protocol_mask>-XXXX-XXXX`; o frontend aceita prefixo de 1 a 10 caracteres.
