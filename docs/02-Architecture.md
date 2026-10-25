@@ -857,7 +857,7 @@ Estas regras são o que torna a troca de banco uma realidade e não uma intenç�
 
 | Regra | Por quê |
 | --- | --- |
-| **`db.raw()` proibido fora do `Dialect`** | SQL literal quebra em outra engine |
+| **`raw()` proibido fora do `Dialect`** (via `db` ou `client`) | SQL literal quebra em outra engine |
 | Repositório usa **apenas o query builder** do Knex | Preserva a diferença entre as engines |
 | **IDs gerados pela aplicação** (`crypto.randomUUID()`) | Elimina `nextval()`, `::uuid`, sequences e colunas `serial` |
 | **Sem tipo `ENUM`** | Use `text` com constraint de check ou tabela de lookup |
@@ -946,7 +946,7 @@ export class KnexCounter implements Counter {
 }
 ```
 
-> O `increment` e o `select` rodam na mesma transação: o Postgres e o MySQL mantêm o lock da linha do `UPDATE` até o commit, e o SQLite serializa escritores. **Sem `db.raw()`, sem `RETURNING` e sem `FOR UPDATE`** — o construtor de query do Knex é idêntico nas três engines. Se um dia o contador migrar para um Redis, `KnexCounter` vira outro adapter da mesma porta, sem tocar no gerador.
+> O `increment` e o `select` rodam na mesma transação: o Postgres e o MySQL mantêm o lock da linha do `UPDATE` até o commit, e o SQLite serializa escritores. **Sem `raw()`, sem `RETURNING` e sem `FOR UPDATE`** — o construtor de query do Knex é idêntico nas três engines. Se um dia o contador migrar para um Redis, `KnexCounter` vira outro adapter da mesma porta, sem tocar no gerador.
 
 A máscara vem de `portal-config`, pela porta de leitura que ele publica ([§ 8.4](#84-cross-domain-dependencies)):
 
@@ -1454,7 +1454,7 @@ Os padrões abaixo são os que o backend legado usa e que esta arquitetura exist
 | Service **e** repository abrindo transação | Escopo de transação indefinido | Só o service abre |
 | Escrita fora de transação | Commit parcial silencioso | `execute()` no service; `assertInTransaction()` no repositório |
 | `trx` como parâmetro em todo método de repositório | Ruído em todas as assinaturas | Transação implícita por `TransactionManager` |
-| `db.raw()` espalhado em repositório | SQL não portável | `Dialect` ou query builder |
+| `raw()` espalhado em repositório | SQL não portável | `Dialect` ou query builder |
 | `.first()` em busca por protocolo | Retorna a linha errada em silêncio quando há duplicata | Sondagem com `LIMIT 2` |
 | `catch { return [] }` | Erro de banco virando "não tem resultado" | Deixar o erro subir; tratar no service |
 | `switch` gigante mapeando coluna por campo | Regressão ao adicionar campo | Mapeamento por repositório, colunas por constante |
@@ -1485,7 +1485,7 @@ Cada linha aponta a seção que define a regra. Um PR que muda mais de uma camad
 | [ ] | Leitura agregada usa `this.readSnapshot()` | [§ 11.2](#112-implicit-transactions) | Linha do tempo |
 | [ ] | Mudança relevante publica evento; trilha da alteração na mesma transação | [§ 9.3](#93-change-audit-via-domain-events) | Assinatura no `domains/audit` |
 | [ ] | Recusa auditável carrega contexto e é gravada na borda | [§ 9.4](#94-audit-and-log-what-each-one-guarantees) | `DomainError` com `context` |
-| [ ] | SQL portátil: sem `db.raw` fora do `Dialect` | [§ 10.3](#103-portability-rules) | `rg "db\.raw\(" src/domains` |
+| [ ] | SQL portátil: sem `raw()` fora do `Dialect` (em `db` ou `client`) | [§ 10.3](#103-portability-rules) | `rg "\.raw\(" src/domains` |
 | [ ] | ID gerado pela aplicação; protocolo com `UNIQUE` e sondagem `LIMIT 2` | [§ 10.5](#105-protocol) | Leitura por protocolo |
 | [ ] | O service não monta SQL: o contador vem da porta `Counter` | [§ 10.5](#105-protocol) | `rg "code_counters" src/domains` |
 | [ ] | Autorização verificada no servidor, em um lugar só por domínio | [§ 14.4](#144-authorization) | `AuthorizationService.assert` |
