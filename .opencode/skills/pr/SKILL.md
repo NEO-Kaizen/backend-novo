@@ -46,19 +46,19 @@ type(scope): description
 - `scope` is required and names the affected area: `auth`, `orders`, `pr`, `docs`.
 - Squash merge uses the PR title. Keep it up to date until the merge.
 
-| Type       | Use                                                      |
-| ---------- | -------------------------------------------------------- |
-| `feat`     | New functionality                                        |
-| `fix`      | Behavior fix                                             |
-| `docs`     | Documentation                                            |
-| `refactor` | Reorganization without an intentional behavior change    |
-| `perf`     | Performance improvement                                  |
-| `test`     | Tests                                                    |
-| `style`    | Formatting or style, with no behavior change             |
-| `build`    | Build or dependencies                                    |
-| `ci`       | CI configuration                                         |
-| `chore`    | Maintenance                                              |
-| `revert`   | Reversal of a previous change                            |
+| Type       | Use                                                   |
+| ---------- | ----------------------------------------------------- |
+| `feat`     | New functionality                                     |
+| `fix`      | Behavior fix                                          |
+| `docs`     | Documentation                                         |
+| `refactor` | Reorganization without an intentional behavior change |
+| `perf`     | Performance improvement                               |
+| `test`     | Tests                                                 |
+| `style`    | Formatting or style, with no behavior change          |
+| `build`    | Build or dependencies                                 |
+| `ci`       | CI configuration                                      |
+| `chore`    | Maintenance                                           |
+| `revert`   | Reversal of a previous change                         |
 
 Examples:
 
@@ -462,13 +462,13 @@ The author does not approve their own PR. A PR may have more than one reviewer. 
 
 Review comments are written in Portuguese and use tags:
 
-| Tag            | Use                                                |
-| -------------- | -------------------------------------------------- |
-| `[BLOCKER]`    | Must be fixed before the merge.                    |
-| `[SUGGESTION]` | Recommended improvement.                           |
-| `[QUESTION]`   | Question needed to understand the decision.        |
-| `[NIT]`        | Small naming or readability adjustment.            |
-| `[PRAISE]`     | Recognition of a good decision.                    |
+| Tag            | Use                                         |
+| -------------- | ------------------------------------------- |
+| `[BLOCKER]`    | Must be fixed before the merge.             |
+| `[SUGGESTION]` | Recommended improvement.                    |
+| `[QUESTION]`   | Question needed to understand the decision. |
+| `[NIT]`        | Small naming or readability adjustment.     |
+| `[PRAISE]`     | Recognition of a good decision.             |
 
 Comment on the change, not the person.
 

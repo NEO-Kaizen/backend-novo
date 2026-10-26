@@ -10,30 +10,30 @@ divergência exige emenda aqui e emenda ao ADR correspondente.
 
 ## 0. Tabela de convenções (congelada)
 
-| # | Convenção | Status | Decisão (resumo) | Citação | Dono |
-|---|---|---|---|---|---|
-| 1 | Base path e versionamento | decidido | `/api/v1` para todos os endpoints; sem prefixo em v2 por ora | `02-Architecture.md` §15; `01-Overview.md` §3 | Backend |
-| 2 | Envelope de erro (legado) | decidido (transitório) | `{ status, statusCode, message }` + `code` (e `requestId`) aditivos | ADR-0005; `02-Architecture.md` §12.5 | Backend + FE |
-| 3 | Envelope de erro (alvo) | decidido | `{ error: { code, message, requestId } }` | `CODING_STANDARDS.md` §5; ADR-0005 | Backend + FE |
-| 4 | Catálogo de códigos | decidido | snake_case, 400/401/403/404/409/413/415/429/500; regra de `expose` | `02-Architecture.md` §12.2/§12.4/§12.6 | Backend |
-| 5 | Validação (400) | decidido | 400 + `validation_error` + mensagem pt-BR + `fields` aditivo | C2; `CODING_STANDARDS.md` §6 | Backend + FE |
-| 6 | Paginação | decidido (exceções registradas) | `{ data, page, pageSize, total, totalPages }`; default 20, máx 100, clamp; `totalPages: 0` quando vazio | `02-Architecture.md` §10.6; C3/C4/C5 | Backend |
-| 7 | Sessão/cookie | decidido (lacuna no env) | `session_id`, HttpOnly, SameSite=Lax, Secure em prod, TTL 1d; env `COOKIE_NAME`/`JWT_EXPIRES_IN` | `02-Architecture.md` §14.1; C6 | Backend + Infra |
-| 8 | Autorização | decidido | 26 keys, escopo `none`/`owner` (`own`/`all`), atribuibilidade, 5 perfis; FE por perfil | ADR-0025; `02-Architecture.md` §14.4–§14.6 | Backend + FE |
-| 9 | `/auth/me` DTO | decidido | `id, name?, email, role, permissions?, mustChangePassword, avatarUrl?` | C7; `02-Architecture.md` §14.4 | Backend + FE |
-| 10 | Concorrência | decidido | `expectedStatusKey` → 409; tabela de operações idempotentes | C8; `02-Architecture.md` §11.1 | Backend + FE |
-| 11 | Idempotência | decidido | Sem `Idempotency-Key` no v1; endpoints idempotentes documentados | C9 | Backend |
-| 12 | Content types | decidido | JSON × multipart; limites; 400/413/415 | C2; `02-Architecture.md` §13 | Backend |
-| 13 | Datas e horas | decidido | ISO-8601 UTC para timestamps; `yyyy-mm-dd` para datas puras | `03-Data-Model.md` §2.9 | Backend + FE |
-| 14 | Idioma | decidido (exceção eliminada) | Chaves EN camelCase; valores pt-BR; auditoria camelCase | C14; `GLOSSARY.md` | Backend + FE |
-| 15 | Request-id | decidido | `x-request-id` UUID, echo e log; `correlationId` (HTTP) × `requestId` (solicitação) | C11; `02-Architecture.md` §9.4/§17 | Backend |
-| 16 | Rate limiting | decidido (parcial→completo) | rotas, janela, chave, 429, storage compartilhado, headers | C12 | Backend + Infra |
-| 17 | CORS | decidido (parcial→completo) | origens explícitas, credentials, `exposedHeaders`, sem wildcard | C13 | Backend + Infra |
-| 18 | Ids e `key` de status | decidido | UUID v4 gerado pela app; status referenciado por `key` estável | ADR-0003; `02-Architecture.md` §10.4/§22.1 | Backend + FE |
-| 19 | Envelope de auditoria | decidido (exceção eliminada) | `{ data, page, pageSize, total, totalPages }` camelCase | C5/C14 | Backend + FE |
-| 20 | Header do solicitante | decidido (janela) | aceitar `X-Requester-Email` e `X-Requester-Identity` por uma release; depois só Email | C10; ADR-0023 | Backend + FE |
-| 21 | DTO de sessão | decidido | `role`, `permissions` aditivo, `mustChangePassword`, `avatarUrl` | C7; `02-Architecture.md` §14.4 | Backend + FE |
-| 22 | Códigos de sucesso | decidido | 200 (leitura/atualização), 201 (criação), 204 (sem corpo) | `02-Architecture.md` §15 | Backend |
+| #   | Convenção                 | Status                          | Decisão (resumo)                                                                                        | Citação                                       | Dono            |
+| --- | ------------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------- | --------------------------------------------- | --------------- |
+| 1   | Base path e versionamento | decidido                        | `/api/v1` para todos os endpoints; sem prefixo em v2 por ora                                            | `02-Architecture.md` §15; `01-Overview.md` §3 | Backend         |
+| 2   | Envelope de erro (legado) | decidido (transitório)          | `{ status, statusCode, message }` + `code` (e `requestId`) aditivos                                     | ADR-0005; `02-Architecture.md` §12.5          | Backend + FE    |
+| 3   | Envelope de erro (alvo)   | decidido                        | `{ error: { code, message, requestId } }`                                                               | `CODING_STANDARDS.md` §5; ADR-0005            | Backend + FE    |
+| 4   | Catálogo de códigos       | decidido                        | snake_case, 400/401/403/404/409/413/415/429/500; regra de `expose`                                      | `02-Architecture.md` §12.2/§12.4/§12.6        | Backend         |
+| 5   | Validação (400)           | decidido                        | 400 + `validation_error` + mensagem pt-BR + `fields` aditivo                                            | C2; `CODING_STANDARDS.md` §6                  | Backend + FE    |
+| 6   | Paginação                 | decidido (exceções registradas) | `{ data, page, pageSize, total, totalPages }`; default 20, máx 100, clamp; `totalPages: 0` quando vazio | `02-Architecture.md` §10.6; C3/C4/C5          | Backend         |
+| 7   | Sessão/cookie             | decidido (lacuna no env)        | `session_id`, HttpOnly, SameSite=Lax, Secure em prod, TTL 1d; env `COOKIE_NAME`/`JWT_EXPIRES_IN`        | `02-Architecture.md` §14.1; C6                | Backend + Infra |
+| 8   | Autorização               | decidido                        | 26 keys, escopo `none`/`owner` (`own`/`all`), atribuibilidade, 5 perfis; FE por perfil                  | ADR-0025; `02-Architecture.md` §14.4–§14.6    | Backend + FE    |
+| 9   | `/auth/me` DTO            | decidido                        | `id, name?, email, role, permissions?, mustChangePassword, avatarUrl?`                                  | C7; `02-Architecture.md` §14.4                | Backend + FE    |
+| 10  | Concorrência              | decidido                        | `expectedStatusKey` → 409; tabela de operações idempotentes                                             | C8; `02-Architecture.md` §11.1                | Backend + FE    |
+| 11  | Idempotência              | decidido                        | Sem `Idempotency-Key` no v1; endpoints idempotentes documentados                                        | C9                                            | Backend         |
+| 12  | Content types             | decidido                        | JSON × multipart; limites; 400/413/415                                                                  | C2; `02-Architecture.md` §13                  | Backend         |
+| 13  | Datas e horas             | decidido                        | ISO-8601 UTC para timestamps; `yyyy-mm-dd` para datas puras                                             | `03-Data-Model.md` §2.9                       | Backend + FE    |
+| 14  | Idioma                    | decidido (exceção eliminada)    | Chaves EN camelCase; valores pt-BR; auditoria camelCase                                                 | C14; `GLOSSARY.md`                            | Backend + FE    |
+| 15  | Request-id                | decidido                        | `x-request-id` UUID, echo e log; `correlationId` (HTTP) × `requestId` (solicitação)                     | C11; `02-Architecture.md` §9.4/§17            | Backend         |
+| 16  | Rate limiting             | decidido (parcial→completo)     | rotas, janela, chave, 429, storage compartilhado, headers                                               | C12                                           | Backend + Infra |
+| 17  | CORS                      | decidido (parcial→completo)     | origens explícitas, credentials, `exposedHeaders`, sem wildcard                                         | C13                                           | Backend + Infra |
+| 18  | Ids e `key` de status     | decidido                        | UUID v4 gerado pela app; status referenciado por `key` estável                                          | ADR-0003; `02-Architecture.md` §10.4/§22.1    | Backend + FE    |
+| 19  | Envelope de auditoria     | decidido (exceção eliminada)    | `{ data, page, pageSize, total, totalPages }` camelCase                                                 | C5/C14                                        | Backend + FE    |
+| 20  | Header do solicitante     | decidido (janela)               | aceitar `X-Requester-Email` e `X-Requester-Identity` por uma release; depois só Email                   | C10; ADR-0023                                 | Backend + FE    |
+| 21  | DTO de sessão             | decidido                        | `role`, `permissions` aditivo, `mustChangePassword`, `avatarUrl`                                        | C7; `02-Architecture.md` §14.4                | Backend + FE    |
+| 22  | Códigos de sucesso        | decidido                        | 200 (leitura/atualização), 201 (criação), 204 (sem corpo)                                               | `02-Architecture.md` §15                      | Backend         |
 
 ## 1. Base path e versionamento
 
@@ -62,7 +62,13 @@ divergência exige emenda aqui e emenda ao ADR correspondente.
 ### 2.2 Alvo (pós-migração)
 
 ```json
-{ "error": { "code": "not_found", "message": "Solicitação não encontrada.", "requestId": "b3f1…-uuid" } }
+{
+  "error": {
+    "code": "not_found",
+    "message": "Solicitação não encontrada.",
+    "requestId": "b3f1…-uuid"
+  }
+}
 ```
 
 - Migração coordenada (ver ADR-0005 §Gatilho da migração).
@@ -70,18 +76,18 @@ divergência exige emenda aqui e emenda ao ADR correspondente.
 
 ### 2.3 Catálogo de códigos
 
-| Código | Status HTTP | Exposto? | Uso |
-|---|---|---|---|
-| `validation_error` | 400 | sim | entrada inválida na borda |
-| `unauthorized` | 401 | sim | sem sessão / sessão inválida |
-| `forbidden` | 403 | sim | capability ausente |
-| `not_found` | 404 | sim | recurso inexistente (também para protocolo não encontrado, sem 403) |
-| `conflict` | 409 | sim | concorrência / estado incompatível |
-| `rate_limited` | 429 | sim | limite de taxa excedido |
-| `invalid_content_type` | 415 | sim | `Content-Type` inesperado |
-| `payload_too_large` | 413 | sim | corpo acima do limite |
-| `internal_error` | 500 | não (genérico) | falha inesperada |
-| (domínio) `not_the_assignee`, `invalid_status_transition`, … | conforme mapeamento | conforme `expose` | regras de negócio |
+| Código                                                       | Status HTTP         | Exposto?          | Uso                                                                 |
+| ------------------------------------------------------------ | ------------------- | ----------------- | ------------------------------------------------------------------- |
+| `validation_error`                                           | 400                 | sim               | entrada inválida na borda                                           |
+| `unauthorized`                                               | 401                 | sim               | sem sessão / sessão inválida                                        |
+| `forbidden`                                                  | 403                 | sim               | capability ausente                                                  |
+| `not_found`                                                  | 404                 | sim               | recurso inexistente (também para protocolo não encontrado, sem 403) |
+| `conflict`                                                   | 409                 | sim               | concorrência / estado incompatível                                  |
+| `rate_limited`                                               | 429                 | sim               | limite de taxa excedido                                             |
+| `invalid_content_type`                                       | 415                 | sim               | `Content-Type` inesperado                                           |
+| `payload_too_large`                                          | 413                 | sim               | corpo acima do limite                                               |
+| `internal_error`                                             | 500                 | não (genérico)    | falha inesperada                                                    |
+| (domínio) `not_the_assignee`, `invalid_status_transition`, … | conforme mapeamento | conforme `expose` | regras de negócio                                                   |
 
 - Códigos estáveis em `snake_case`, registrados em `core/errors/error-codes.ts` (expostos) e `core/errors/internal-codes.ts` (internos, nunca expostos).
 - Regra de `expose`: `expose: true` envia a mensagem; `expose: false` (padrão) envia `internal_error` com mensagem genérica. Stack, SQL, nome de tabela, path e versão interna **nunca** saem do servidor.
@@ -265,19 +271,19 @@ Uma spec de domínio só vira `frozen` se todas as caixas abaixo estiverem marca
 
 ## Apêndice A — Decisões C1–C14 (rastreio)
 
-| ID | Questão | Decisão aplicada | Status |
-|---|---|---|---|
-| C1 | `requestId` aditivo no envelope legado? | Sim, aditivo (HTTP correlation) | decidido |
-| C2 | Validação `400` × `422`; `fields` × `details` | `400` + mensagem pt-BR + `fields` aditivo | decidido |
-| C3 | `pageSize` default/máximo por rota | default 20, máx global 100, exceções registradas | decidido |
-| C4 | Página > `totalPages` | Clamp (como a fila) | decidido |
-| C5 | Exceções de paginação (auditoria, timeline) | Registradas com dono e prazo | decidido |
-| C6 | Cookie: nome/TTL/atributos e env vars | `session_id`/1d/Lax; acrescentar `COOKIE_NAME`/`JWT_EXPIRES_IN` | decidido |
-| C7 | `avatarUrl` no `SessionUser` | Manter (FE e legado usam) | decidido |
-| C8 | `expectedStatusId` no wire | Sim, com `statusKey` (`expectedStatusKey`) | decidido |
-| C9 | `Idempotency-Key` no v1 | Não; documentar endpoints idempotentes | decidido |
-| C10 | Header do solicitante | Aceitar os dois por uma release; depois `X-Requester-Email` | decidido |
-| C11 | `requestId` = id HTTP ou da solicitação | `correlationId` para HTTP; `requestId` para solicitação | decidido |
-| C12 | 429: código e headers | `rate_limited`, `Retry-After`, storage compartilhado | decidido |
-| C13 | CORS `exposedHeaders` | `Content-Disposition` obrigatório (+ `x-request-id`) | decidido |
-| C14 | Chaves de auditoria | camelCase, salvo decisão contrária (eliminada a exceção) | decidido |
+| ID  | Questão                                       | Decisão aplicada                                                | Status   |
+| --- | --------------------------------------------- | --------------------------------------------------------------- | -------- |
+| C1  | `requestId` aditivo no envelope legado?       | Sim, aditivo (HTTP correlation)                                 | decidido |
+| C2  | Validação `400` × `422`; `fields` × `details` | `400` + mensagem pt-BR + `fields` aditivo                       | decidido |
+| C3  | `pageSize` default/máximo por rota            | default 20, máx global 100, exceções registradas                | decidido |
+| C4  | Página > `totalPages`                         | Clamp (como a fila)                                             | decidido |
+| C5  | Exceções de paginação (auditoria, timeline)   | Registradas com dono e prazo                                    | decidido |
+| C6  | Cookie: nome/TTL/atributos e env vars         | `session_id`/1d/Lax; acrescentar `COOKIE_NAME`/`JWT_EXPIRES_IN` | decidido |
+| C7  | `avatarUrl` no `SessionUser`                  | Manter (FE e legado usam)                                       | decidido |
+| C8  | `expectedStatusId` no wire                    | Sim, com `statusKey` (`expectedStatusKey`)                      | decidido |
+| C9  | `Idempotency-Key` no v1                       | Não; documentar endpoints idempotentes                          | decidido |
+| C10 | Header do solicitante                         | Aceitar os dois por uma release; depois `X-Requester-Email`     | decidido |
+| C11 | `requestId` = id HTTP ou da solicitação       | `correlationId` para HTTP; `requestId` para solicitação         | decidido |
+| C12 | 429: código e headers                         | `rate_limited`, `Retry-After`, storage compartilhado            | decidido |
+| C13 | CORS `exposedHeaders`                         | `Content-Disposition` obrigatório (+ `x-request-id`)            | decidido |
+| C14 | Chaves de auditoria                           | camelCase, salvo decisão contrária (eliminada a exceção)        | decidido |

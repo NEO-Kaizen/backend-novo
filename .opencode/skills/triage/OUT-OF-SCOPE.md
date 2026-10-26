@@ -22,7 +22,7 @@ One file per **concept**, not per issue. Multiple issues requesting the same thi
 
 The file should be written in a relaxed, readable style, more like a short design document than a database entry. Use paragraphs, code samples, and examples to make the reasoning clear and useful to someone encountering it for the first time.
 
-```markdown
+````markdown
 # Modo escuro
 
 Este projeto não oferece suporte a modo escuro nem a temas configuráveis pelo usuário.
@@ -47,12 +47,14 @@ interface ThemeConfig {
   fonts: FontStack;
 }
 ```
+````
 
 ## Solicitações anteriores
 
 - #42: "Adicionar suporte a modo escuro"
 - #87: "Tema noturno para acessibilidade"
 - #134: "Opção de tema escuro"
+
 ```
 
 ### Naming the file
@@ -105,3 +107,4 @@ If the maintainer changes their mind about a previously rejected concept:
 - Delete the `.out-of-scope/` file
 - The skill does not need to reopen old issues; they're historical records
 - The new issue that triggered the reconsideration proceeds through normal triage
+```
