@@ -4,6 +4,8 @@
 
 Colunas, tipos, nulabilidade, default, constraints, índices e FKs. O índice abaixo aponta para a seção da especificação de cada tabela; as invariantes e as regras de negócio ficam lá. O mapa visual está em [`03-erd.md`](./03-erd.md) e a versão para ferramenta em [`schema.dbml`](./schema.dbml).
 
+Toda FK é `ON DELETE RESTRICT` ([§ 4](../03-Data-Model.md#4-integridade-referencial-e-ordem-de-criação)); as seções **Relações** abaixo omitem a ação. As referências polimórficas `audit_entries.entity_id` e `attempts.entity_id` não são FK.
+
 ## Índice
 
 | Tabela | Domínio | PK | FKs de saída | Definição |
@@ -70,7 +72,7 @@ Colunas, tipos, nulabilidade, default, constraints, índices e FKs. O índice ab
 | `created_at` | timestamp | não | `now` | — |
 | `updated_at` | timestamp | não | `now` | — |
 
-**Relações** — `users.profile_id` → `profiles.id` (RESTRICT).
+**Relações** — `users.profile_id` → `profiles.id`.
 
 **Índices** — `uk_profiles_name`.
 
@@ -474,7 +476,7 @@ Colunas, tipos, nulabilidade, default, constraints, índices e FKs. O índice ab
 | `ip_address` | text | sim | — | — |
 | `occurred_at` | timestamp | não | `now` | — |
 
-**Relações** — `request_id` → `requests.id`; `actor_user_id` → `users.id` (RESTRICT).
+**Relações** — `request_id` → `requests.id`; `actor_user_id` → `users.id`.
 
 **Índices** — `idx_attempts_correlation_id`; `idx_attempts_request_id`; `idx_attempts_actor_user_id`; `idx_attempts_occurred_at`.
 
