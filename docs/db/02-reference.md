@@ -72,7 +72,7 @@ Toda FK é `ON DELETE RESTRICT` ([§ 4](../03-Data-Model.md#4-integridade-refere
 | `created_at` | timestamp | não | `now` | — |
 | `updated_at` | timestamp | não | `now` | — |
 
-**Relações** — `users.profile_id` → `profiles.id`.
+**Relações** — inbound: `users.profile_id` → `profiles.id`.
 
 **Índices** — `uk_profiles_name`.
 
