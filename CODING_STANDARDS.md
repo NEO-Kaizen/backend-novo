@@ -137,6 +137,9 @@ export class AppError extends Error {
 - Ordenação, colunas e filtros dinâmicos passam por allowlist.
 - Transações para operações multi-tabela; timeout de query; paginação com limite máximo; nada de query sem limite.
 - Evite N+1: carregue em lote ou use join/estratégia equivalente.
+- Toda rota documentada no OpenAPI tem schema de request e de response explícito, com exemplos.
+- Timestamps usam `z.iso.datetime()` (UTC) e datas puras usam `z.iso.date()`; serialize sempre em ISO.
+- Exemplos no spec são obrigatórios e não podem conter PII.
 
 ```ts
 const CreateUser = z.strictObject({
@@ -168,6 +171,7 @@ if (!parsed.success) {
 - `req.params` e `req.query` são strings; converta e valide.
 - Ordem mínima: contexto/logging antes das rotas; 404 antes do error handler.
 - Use `res.status(...).json(...)`; não responda duas vezes.
+- Metadados de rota (OpenAPI) ficam co-localizados em `*.openapi.ts` no domínio; o handler não define contrato.
 
 ```ts
 const getUser: RequestHandler<{ id: string }, UserDto, never, never, AppLocals> = async (
@@ -233,6 +237,7 @@ const errorHandler: ErrorRequestHandler = (err, req, res, next) => {
 - Teste HTTP contra a instância da aplicação, sem `listen` fixo.
 - Cubra caminhos de erro e regras de negócio; não persiga cobertura.
 - Fixtures com builders e defaults seguros; sem PII ou dado real.
+- Testes de contrato validam respostas representativas contra `openapi/openapi.json`.
 
 ```ts
 describe("POST /api/v1/users", () => {
@@ -268,6 +273,8 @@ describe("POST /api/v1/users", () => {
 - [ ] Sem N+1, query sem limite ou payload sem paginação.
 - [ ] Comentários explicam o porquê; sem código morto.
 - [ ] Schema alterado? `docs/03-Data-Model.md` e os derivados `docs/db/02-reference.md`, `docs/db/03-erd.md` e `docs/db/schema.dbml` foram atualizados no mesmo PR.
+- [ ] Rota alterada? `*.openapi.ts` e `openapi/openapi.json` (via `docs:generate`) atualizados; `docs:check` verde.
+- [ ] Exemplos no spec sem PII.
 - [ ] Exceções a este documento registradas no PR.
 
 ## Referências
