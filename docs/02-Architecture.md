@@ -154,7 +154,7 @@ Schema e migrations pertencem ao domínio — a definição da tabela vive em `s
 | `mapping` | Sessão de mapeamento, participantes, agenda | `mappings`, `mapping_participants` | `MappingReader` |
 | `queue` | Fila centralizada e métricas | — (lê de `requests`) | — (projeção: consome, não publica) |
 | `prioritization` | Critérios, pesos e a Prioridade resultante | `criteria`, `priorities`, `prioritization_evaluations` | `PrioritizationReader` |
-| `pending-items` | Pendências de campo e de observação | `pending_items`, `pending_item_fields` | `PendingItemReader` |
+| `pending-items` | Pendências de campo e de observação | `pending_batches`, `pending_items` | `PendingItemReader` |
 | `internal-notes` | Notas internas, marcas de leitura, linha do tempo | `internal_notes`, `internal_note_read_states` | `InternalNoteReader` |
 | `audit` | Trilha de auditoria imutável | `audit_entries`, `attempts` | `AuditReader` · `AttemptRecorder` |
 | `reports` | Dashboard, métricas, exportações | — (lê de vários domínios) | — |
@@ -298,9 +298,9 @@ export abstract class BaseService {
     return this.transactions.run(work);
   }
 
-  /** Snapshot para o bloco inteiro; não é um modo read-only do banco. */
-  protected async readOnly<T>(work: () => Promise<T>): Promise<T> {
-    return this.transactions.runReadOnly(work);
+  /** Todas as leituras do bloco enxergam o mesmo snapshot; não impede escrita. */
+  protected async readSnapshot<T>(work: () => Promise<T>): Promise<T> {
+    return this.transactions.runSnapshot(work);
   }
 
   protected assert(condition: boolean, error: AppError): asserts condition {
@@ -339,7 +339,7 @@ A distinção é o **nome do método**:
 | --- | --- | --- |
 | Escrita | `executeChangeStatus()`, `executeCreateRequest()` | Sim, aberta pela classe base |
 | Leitura simples | `findByProtocol()` — uma tabela, um statement | Não |
-| Leitura agregada | `listTimeline()` — agrega várias tabelas | Transação de leitura com snapshot (`readOnly`) |
+| Leitura agregada | `listTimeline()` — agrega várias tabelas | Transação de leitura com snapshot (`readSnapshot`) |
 
 ### 7.3 BaseRepository
 
@@ -749,6 +749,8 @@ export interface RefusalContext {
   readonly action: string;
   readonly resource: string;
   readonly resourceId: string;
+  /** A solicitação de negócio, quando a recusa ocorre no contexto de uma. */
+  readonly requestId?: string;
 }
 ```
 
@@ -757,7 +759,14 @@ export interface RefusalContext {
 throw new DomainError(
   "not_the_assignee",
   "Você não é o responsável por esta solicitação.",
-  { context: { action: "request.status_changed", resource: "request", resourceId: request.id } },
+  {
+    context: {
+      action: "request.status_changed",
+      resource: "request",
+      resourceId: request.id,
+      requestId: request.id,
+    },
+  },
 );
 ```
 
@@ -768,7 +777,8 @@ O *error handler* reconhece o erro auditável e delega à porta de escrita:
 export interface AttemptRecord extends RefusalContext {
   readonly actor: Actor;
   readonly reason: string;
-  readonly requestId: string;
+  /** Id da requisição HTTP; sempre presente, e não é a solicitação de negócio. */
+  readonly correlationId: string;
   readonly occurredAt: Date;
 }
 
@@ -791,7 +801,7 @@ export function createErrorHandler(dependencies: {
           ...error.context,
           actor: res.locals.actor,
           reason: error.code,
-          requestId: req.id,
+          correlationId: req.id,
           occurredAt: dependencies.clock.now(),
         });
       } catch (recordError) {
@@ -806,6 +816,8 @@ export function createErrorHandler(dependencies: {
 ```
 
 `AttemptRecorder` é a **única porta de escrita publicada por um domínio**. A porta mora em `core/audit/`; o adapter mora em `domains/audit/`, que é o dono da tabela `attempts`. O *error handler* recebe a porta pelo container — ele nunca importa o domínio.
+
+`requestId` não é o id HTTP: ele vem do contexto da recusa e é nulo fora de uma solicitação; o `correlationId` é sempre o `req.id`.
 
 #### O que Conta como Tentativa Auditável
 
@@ -822,6 +834,8 @@ O critério é **explícito no erro** (`DomainError.context`), não inferido de 
 
 - **Auditoria** é o fato: está no banco, dentro ou fora de transação conforme a trilha, e é append-only.
 - **Registro de tentativa** é o **rastro da recusa**: sai quando a requisição foi atendida, na borda, e pode existir para uma operação que foi desfeita. Uma transação que faz *rollback* pode deixar um registro dizendo que o status mudou, sem auditoria correspondente.
+
+Append-only **não é só ausência de rota**: a guarda é de banco, com trigger e privilégio ([ADR-0020](./adr/0020-audit-trail-shape.md)).
 
 Regra: **o registro de tentativa nunca é evidência.** Para saber o que aconteceu, olhe a auditoria. E o registro de sucesso sai **depois** do commit — ver [§ 17](#17-log).
 
@@ -853,7 +867,7 @@ export interface TransactionManager {
   /** Transação de escrita. */
   run<T>(work: () => Promise<T>): Promise<T>;
   /** Transação de leitura com snapshot: isolamento `repeatable read` onde a engine suportar. */
-  runReadOnly<T>(work: () => Promise<T>): Promise<T>;
+  runSnapshot<T>(work: () => Promise<T>): Promise<T>;
 }
 ```
 
@@ -887,6 +901,10 @@ export interface Dialect {
   supportsReturning(): boolean;
   supportsRowLocks(): boolean;
   supportsUpsertMerge(): boolean;
+  /** Predicado de cor hexadecimal válida, na sintaxe da engine. */
+  hexColorCheck(column: string): string;
+  /** DDL da guarda append-only da auditoria, na sintaxe da engine. */
+  auditAppendOnlyGuard(): readonly string[];
 }
 ```
 
@@ -898,10 +916,10 @@ Estas regras são o que torna a troca de banco uma realidade e não uma intenç�
 
 | Regra | Por quê |
 | --- | --- |
-| **`db.raw()` proibido fora do `Dialect`** | SQL literal quebra em outra engine |
+| **`raw()` proibido fora do `Dialect`** (via `db` ou `client`) | SQL literal quebra em outra engine |
 | Repositório usa **apenas o query builder** do Knex | Preserva a diferença entre as engines |
 | **IDs gerados pela aplicação** (`crypto.randomUUID()`) | Elimina `nextval()`, `::uuid`, sequences e colunas `serial` |
-| **Sem tipo `ENUM`** | Use `text` com constraint de check ou tabela de lookup |
+| **Sem tipo `ENUM`** | Use coluna com constraint de check ou tabela de lookup ([`03-Data-Model.md` § 2.9](./03-Data-Model.md#29-texto-números-e-json)) |
 | **Sem coluna `ARRAY`** | Use tabela filha (`mapping_participants`, `analyst_detail_categories`) |
 | **Sem `tsvector` / full-text search do Postgres** | Use `like`/`ilike` ou índice dedicado |
 | **Sem `COUNT(*) FILTER (WHERE …)`** | Reescreva com agregação condicional via query builder |
@@ -909,6 +927,8 @@ Estas regras são o que torna a troca de banco uma realidade e não uma intenç�
 | **JSON** via `dialect.jsonType()` | Postgres `jsonb`, MySQL `json`, SQLite `text` |
 | **Timestamp** via `dialect.timestampType()` | `timestamptz` vs `datetime` |
 | **Row lock** (`forUpdate`) só onde `dialect.supportsRowLocks()` | SQLite não bloqueia linha |
+| **Predicado com função de engine vem do `Dialect`** | `table.check` recebe SQL cru e não traduz; `INSTR` não existe no Postgres |
+| **Texto indexado é `varchar(n)`; texto longo não é indexado** | MySQL não indexa `TEXT` sem prefixo; Postgres limita a entrada de B-tree |
 | **Toda consulta tem limite** | `paginate` exige `pageSize` máximo; nunca há query sem `limit` |
 
 ### 10.4 Identificadores
@@ -963,7 +983,7 @@ export class FeistelProtocolGenerator implements ProtocolGenerator {
 Propriedades:
 
 - **sem colisão por construção** — a Feistel é uma bijeção sobre `[0, 2⁴⁰)`; dois contadores diferentes nunca geram o mesmo protocolo. Ver [ADR-0008](./adr/0008-protocol-without-collision-risk.md);
-- **opaco, não secreto** — sem o segredo não se deriva o próximo protocolo, mas o espaço de 40 bits é varregável. A defesa contra enumeração é o rate limit do endpoint público, a conferência de e-mail ([§ 14.2](#142-atores)) e a resposta `404` no lugar de `403`;
+- **opaco, não secreto** — sem o segredo não se deriva o próximo protocolo, mas o espaço de 40 bits pode ser varrido por completo. A defesa contra enumeração é de borda, não criptográfica: rate limit do endpoint público, conferência do e-mail do solicitante ([§ 14.2](#142-atores)) e resposta `404` no lugar de `403` — a formulação canônica está no [ADR-0008](./adr/0008-protocol-without-collision-risk.md);
 - **independente da engine** — o contador vem de uma tabela, não de uma sequence do banco;
 - **prefixo configurável** — o `MAAT` é apenas o valor padrão da máscara configurada no portal (`protocol_mask`, até 10 caracteres). Trocar a máscara muda só os protocolos emitidos depois; os existentes nunca são reescritos, e a unicidade continua sendo a do protocolo inteiro. A máscara **não acrescenta entropia**: ela é pública;
 - **formato estável** — `<protocol_mask>-XXXX-XXXX`; o frontend aceita prefixo de 1 a 10 caracteres.
@@ -987,7 +1007,7 @@ export class KnexCounter implements Counter {
 }
 ```
 
-> O `increment` e o `select` rodam na mesma transação: o Postgres e o MySQL mantêm o lock da linha do `UPDATE` até o commit, e o SQLite serializa escritores. **Sem `db.raw()`, sem `RETURNING` e sem `FOR UPDATE`** — o construtor de query do Knex é idêntico nas três engines. Se um dia o contador migrar para um Redis, `KnexCounter` vira outro adapter da mesma porta, sem tocar no gerador.
+> O `increment` e o `select` rodam na mesma transação: o Postgres e o MySQL mantêm o lock da linha do `UPDATE` até o commit, e o SQLite serializa escritores. **Sem `raw()`, sem `RETURNING` e sem `FOR UPDATE`** — o construtor de query do Knex é idêntico nas três engines. Se um dia o contador migrar para um Redis, `KnexCounter` vira outro adapter da mesma porta, sem tocar no gerador.
 
 A máscara vem de `portal-config`, pela porta de leitura que ele publica ([§ 8.4](#84-dependências-entre-domínios)):
 
@@ -1070,7 +1090,7 @@ export class KnexDatabase implements Database, TransactionManager {
     return this.nested(async (trx) => this.scope.run(trx, work));
   }
 
-  async runReadOnly<T>(work: () => Promise<T>): Promise<T> {
+  async runSnapshot<T>(work: () => Promise<T>): Promise<T> {
     return this.nested(async (trx) => this.scope.run(trx, work), "repeatable read");
   }
 
@@ -1095,7 +1115,7 @@ Efeito: dentro de `execute`, qualquer repositório chamado — inclusive de outr
 | --- | --- |
 | **Aninhamento** | O `execute` de um service chamado dentro de outro vira **savepoint**. Só a transação externa faz commit; um savepoint pode ser desfeito sozinho, mas nunca confirma por conta própria. |
 | **Lote** | Processamento em lote faz `execute` por chunk, não um por item — cada chunk é uma transação, e um chunk que falha não desfaz os anteriores. |
-| **Leitura agregada** | Leitura que junta várias tabelas dentro de um domínio (a linha do tempo) usa `this.readOnly(...)`, para que todos os statements vejam o mesmo snapshot. O `KnexDatabase` abre a transação raiz com `isolationLevel: "repeatable read"` no Postgres e no MySQL; no SQLite o nível é ignorado, porque o driver serializa escritores. Não é um modo *read only* imposto pelo banco — a transação é de leitura por decisão do caso de uso. Sem isso, o resultado pode ser uma leitura rasgada — o que a linha do tempo mostra pode não ter coexistido. |
+| **Leitura agregada** | Leitura que junta várias tabelas dentro de um domínio (a linha do tempo) usa `this.readSnapshot(...)`, para que todos os statements vejam o mesmo snapshot. O `KnexDatabase` abre a transação raiz com `isolationLevel: "repeatable read"` no Postgres e no MySQL; no SQLite o nível é ignorado, porque o driver serializa escritores. Não é um modo *read only* imposto pelo banco — a transação é de leitura por decisão do caso de uso — e o nome diz o que ela entrega: snapshot, não permissão. Sem isso, o resultado pode ser uma leitura rasgada — o que a linha do tempo mostra pode não ter coexistido. |
 | **Leitura simples** | Uma tabela, um statement: sem transação, sem snapshot retido. |
 | **Leitura entre domínios** | Projeção (`reports`) que agrega portas de vários domínios não tem snapshot único: cada porta responde na sua própria leitura. Consistência entre domínios é eventual — é o custo de a projeção receber apenas `*Reader` ([§ 7.4](#74-regra-de-herança)). |
 
@@ -1213,8 +1233,8 @@ Tudo que entra pela borda é `unknown` até ser validado.
 ```ts
 // src/domains/requests/requests.schema.ts
 export const CreateRequest = z.strictObject({
-  category: z.string().min(1).max(40),   // classificação: fora dos blocos
   demand: z.strictObject({
+    category: z.string().min(1).max(40), // classificação no wire vigente
     title: z.string().min(1).max(150),
     description: z.string().min(1).max(4000),
   }),
@@ -1225,7 +1245,7 @@ export const CreateRequest = z.strictObject({
 });
 ```
 
-> `demand` é o nome do bloco no contrato público já acordado; ver a exceção em [§ 3](#3-nomenclatura). `category` é a **Classificação**, e é pedida **no topo** — fora dos blocos, porque ela escolhe o formulário.
+> `demand` é o nome do bloco no contrato público já acordado; ver a exceção em [§ 3](#3-nomenclatura). `category` é a **Classificação**; no wire vigente ela viaja em `demand.category`, e a promoção para o topo acompanha o formulário configurável ([`03-Data-Model.md` § 21](./03-Data-Model.md#21-pendências), [ADR-0022](./adr/0022-the-classification-picks-the-form.md)).
 >
 > Os limites por campo são os do **seed do formulário** ([`03-Data-Model.md` Apêndice A](./03-Data-Model.md#22-apêndice-a--o-seed-do-formulário)); este exemplo é ilustrativo do formato, não da fonte dos limites. A definição do formulário é a fonte única: o schema da borda é gerado a partir dela **e do catálogo de classificações** — a classificação não tem linha na definição, e a borda a valida pelo nome, contra as categorias ativas.
 
@@ -1285,55 +1305,74 @@ Solicitante  (ator externo, fora da hierarquia)
 | Perfil | Pode | Não pode |
 | --- | --- | --- |
 | **Solicitante** | Abrir e acompanhar solicitações | Ver as áreas internas |
-| **Analista** | Triar, mapear, priorizar; é o **Responsável** quando designado | Gerenciar usuários ou configuração |
+| **Analista** | Triar, mapear, priorizar e ler as solicitações sob sua custódia; é o **Responsável** quando designado | Ler solicitações fora da custódia; gerenciar usuários ou configuração |
 | **Gestor** | Ler as áreas internas; escrever nota interna | Alterar a solicitação, o status, o responsável e a configuração |
-| **Administrador** | Gerenciar usuários, conteúdo e configuração | Gerenciar outros Administradores |
-| **Admin Root** | Todas as permissões; gerencia Administradores | — |
+| **Administrador** | Gerenciar Solicitante, Analista e Gestor; conteúdo e configuração | Gerenciar Administrador ou Admin Root; promover a eles |
+| **Admin Root** | Todas as permissões; gerencia Administradores | Atribuir Admin Root; alterar o próprio perfil, status ou senha pelas rotas administrativas |
 
-> *Admin Root* existe apenas no seed; nunca há auto-registro.
+> *Admin Root* existe apenas no seed; nunca há auto-registro nem promoção pela API. A matriz de gestão de contas — ator × operação × perfil atual × perfil de destino — está em [`03-Data-Model.md` § 7.5](./03-Data-Model.md#75-gestão-de-contas).
 >
 > A hierarquia define **escopo de leitura**, não herança de permissão: o Gestor enxerga mais que o Analista e escreve menos. Permissão não se herda por posição.
 
 ### 14.4 Autorização
 
-A autorização é uma **matriz de permissões escrita em código**, atrás de uma interface — a costura que vai receber o RBAC configurável no futuro.
+A autorização é uma **matriz de capabilities escrita em código**, atrás de uma interface. O catálogo tem **26 chaves `recurso:ação`**, em oito verbos, e está em [`03-Data-Model.md` Apêndice B](./03-Data-Model.md#23-apêndice-b--catálogo-de-permissões). A matriz de perfil → chave fica em `core/authorization/profile-permissions.ts`.
+
+Três coisas são diferentes e não se derivam uma da outra:
+
+- **Capability** — a chave, como `triage:write`.
+- **Escopo** — `none` ou `owner`; quando `owner`, `own` ou `all`.
+- **Atribuibilidade** — o perfil pode receber solicitações; é uma flag explícita, validada pelas chaves de trabalho.
+
+`request:assign` não deriva de `triage:write`: um perfil pode triar sem transferir, ou distribuir sem triar. A atribuibilidade é derivada das chaves de leitura e escrita, mas a participação no pool é uma decisão explícita (`profiles.is_assignable_*`).
 
 ```ts
-// src/core/authorization/permissions.ts
-export const PERMISSIONS = {
-  REQUEST_READ: "request:read",
-  REQUEST_WRITE: "request:write",
-  REQUEST_ASSIGN: "request:assign",
-  REQUEST_STATUS_CHANGE: "request:status_change",
-  TRIAGE_WRITE: "triage:write",
-  MAPPING_WRITE: "mapping:write",
-  PRIORITIZATION_WRITE: "prioritization:write",
-  PENDING_ITEM_REVIEW: "pending_item:review",
-  INTERNAL_NOTE_WRITE: "internal_note:write",
-  AUDIT_READ: "audit:read",
-  USER_MANAGE: "user:manage",
-  PORTAL_CONFIG_MANAGE: "portal_config:manage",
-} as const;
-
-export type Permission = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
-
-// src/core/authorization/authorization-service.ts
 export interface AuthorizationService {
   can(actor: Actor, permission: Permission): boolean;
   assert(actor: Actor, permission: Permission): void;
+  scopeOf(actor: Actor, permission: Permission): "own" | "all";
 }
 ```
 
-A matriz (permissão → perfis) fica em `core/authorization/profile-permissions.ts`. *Admin Root* recebe todas as permissões.
-
-O catálogo completo das chaves — 25 chaves `recurso:ação` — está em [`03-Data-Model.md` Apêndice B](./03-Data-Model.md#23-apêndice-b--catálogo-de-permissões). É o mesmo catálogo que vai semear `permissions` e `profile_permissions` quando o RBAC configurável entrar, sem que nenhum domínio mude — ver [ADR-0014](./adr/0014-permission-key-is-the-contract.md).
+`Admin Root` recebe todas as permissões. Para chaves `none`, `scopeOf` devolve `all` e o serviço não aplica custódia. `request:status_override` substitui a regra hardcoded “status restrito é do Administrador”; `assignee_directory:read` é a lista de atribuíveis, distinta de `user:read`. A decisão está na [ADR-0025](./adr/0025-authorization-capability-scope.md).
 
 | Nível | O que verifica | Onde |
 | --- | --- | --- |
 | Rota | Gate grosso por perfil | Middleware |
-| Serviço | Regra fina sobre o recurso — o solicitante só vê a própria solicitação, e só quando o e-mail declarado confere com a resposta gravada; o Responsável atua sobre a que lhe foi designada | Service, em um lugar só por domínio |
+| Serviço | Capability e escopo — o solicitante só vê a própria solicitação, e só quando o e-mail declarado confere com a resposta gravada; o Responsável atua sobre a que lhe foi designada | Service, em um lugar só por domínio |
 
-Ver [ADR-0006](./adr/0006-static-profile-authorization.md).
+**O frontend continua por perfil.** `GET /auth/me` passa a devolver `role` e, como campo aditivo, `permissions: [{ key, scope }]`. O frontend ignora a lista até ter o consumidor de RBAC. A troca é coordenada; nenhuma tela muda por causa desta seção.
+
+### 14.5 Compatibilidade com o frontend atual
+
+Enquanto o frontend não consome chaves, esta tabela é o contrato manual entre `access.service.ts` e a matriz:
+
+| Guarda / ação | Hoje | Alvo |
+| --- | --- | --- |
+| `internalArea` (fila e detalhe) | `requireRole` por união de perfis | `queue:read` + `request:read`; `own` no Analista, `all` no Gestor/Admin/Root |
+| `canEditSolicitation` | Admin ou Responsável | `request:write`; `own`/`all` |
+| `canViewTriage` | Admin/Gestor ou Responsável | `triage:read`; `own`/`all` |
+| `canCalculatePriority` | Admin ou Responsável | `prioritization:write`; `own`/`all` |
+| `canChangeStatusRole` | Admin bypass ou custódia | `request:status_change` `own`/`all` + `request:status_override` `none` |
+| `canAssignAnalyst` + modal | Admin; `/users/analysts` aberto a qualquer interno | `request:assign` `own`/`all` + `assignee_directory:read` `none` |
+| `managementOnly` | Gestor/Admin | `reports:read` `none` + `queue:export` `owner`/`all` |
+| `adminOnly` | Admin | `user:manage`, `portal_config:manage`, `form:manage`; `none` |
+| Notas internas | Analista/Gestor/Admin | `internal_note:read`/`write`; `own`/`all` |
+| Auditoria | Admin/Gestor; Analista custodial | `audit:read`; `own`/`all` |
+
+**Drifts conhecidos, para a release coordenada:**
+
+- O Analista ainda vê mais solicitações do que a custódia permite. O alvo é `request:read`/`queue:read` em `own`; o frontend precisa filtrar a fila antes de o backend apertar.
+- `Admin Root` não existe na união de perfis do frontend. Até a união incluí-lo, ele não deve ser atribuído como perfil de um usuário de UI.
+- O Gestor perde `GET /prioritization/criteria`; continua vendo a prioridade pela solicitação e pela fila.
+
+**Regra de mudança:** toda alteração de chave, escopo, atribuibilidade ou matriz de perfil atualiza o Apêndice B e esta tabela na mesma mudança.
+
+### 14.6 Preparação para o RBAC configurável
+
+O modelo alvo completo está no [`03-Data-Model.md` Apêndice C](./03-Data-Model.md#24-apêndice-c--modelo-alvo-de-rbac-configurável): escopo por atribuição, gestão de perfis, separação da configuração do portal, claim e contrato do frontend. Ele não é o contrato vigente.
+
+A transição começa quando o frontend consome `permissions`; a gestão de perfis faz parte do Apêndice C, não é pré-requisito. Até lá, o Apêndice B e esta seção são a fonte da verdade. A [ADR-0025](./adr/0025-authorization-capability-scope.md) registra a decisão.
 
 ---
 
@@ -1503,7 +1542,7 @@ Os padrões abaixo são os que o backend legado usa e que esta arquitetura exist
 | Escrita fora de transação | Commit parcial silencioso | `execute()` no service; `assertInTransaction()` no repositório |
 | `new XService(dependencies)` com o objeto inteiro do módulo | O service passa a carregar `database` e pode montar query fora do repositório | Tipar o construtor com `XServiceDependencies` (§7.2) e retirar o banco na fábrica (§8.2) |
 | `trx` como parâmetro em todo método de repositório | Ruído em todas as assinaturas | Transação implícita por `TransactionManager` |
-| `db.raw()` espalhado em repositório | SQL não portável | `Dialect` ou query builder |
+| `raw()` espalhado em repositório | SQL não portável | `Dialect` ou query builder |
 | `.first()` em busca por protocolo | Retorna a linha errada em silêncio quando há duplicata | Sondagem com `LIMIT 2` |
 | `catch { return [] }` | Erro de banco virando "não tem resultado" | Deixar o erro subir; tratar no service |
 | `switch` gigante mapeando coluna por campo | Regressão ao adicionar campo | Mapeamento por repositório, colunas por constante |
@@ -1532,10 +1571,10 @@ Cada linha aponta a seção que define a regra. Um PR que muda mais de uma camad
 | [ ] | Sem `any`; `unknown` na borda; sem assertion sem validação | `CODING_STANDARDS.md` | Type-check estrito passa |
 | [ ] | Erros tipados, com `cause`; causa logada uma vez, na borda | [§ 12](#12-erros) | Nenhum `log-and-rethrow` |
 | [ ] | Toda escrita é um `execute*`; nenhuma fora de transação — exceto a trilha de tentativas | [§ 11](#11-transações) | `assertInTransaction()` no repositório, com a exceção de `insertAttempt` |
-| [ ] | Leitura agregada usa `this.readOnly()` | [§ 11.2](#112-transações-implícitas) | Linha do tempo |
+| [ ] | Leitura agregada usa `this.readSnapshot()` | [§ 11.2](#112-transações-implícitas) | Linha do tempo |
 | [ ] | Mudança relevante publica evento; trilha da alteração na mesma transação | [§ 9.3](#93-auditoria-de-alteração-por-eventos) | Assinatura no `domains/audit` |
 | [ ] | Recusa auditável carrega contexto e é gravada na borda | [§ 9.4](#94-auditoria-e-log-o-que-cada-um-garante) | `DomainError` com `context` |
-| [ ] | SQL portátil: sem `db.raw` fora do `Dialect` | [§ 10.3](#103-regras-de-portabilidade) | `rg "db\.raw\(" src/domains` |
+| [ ] | SQL portátil: sem `raw()` fora do `Dialect` (em `db` ou `client`) | [§ 10.3](#103-regras-de-portabilidade) | `rg "\.raw\(" src/domains` |
 | [ ] | ID gerado pela aplicação; protocolo com `UNIQUE` e sondagem `LIMIT 2` | [§ 10.5](#105-protocolo) | Leitura por protocolo |
 | [ ] | O service não monta SQL: o contador vem da porta `Counter` | [§ 10.5](#105-protocolo) | `rg "code_counters" src/domains` |
 | [ ] | Schema segue as convenções de nomenclatura e constraints | [`03-Data-Model.md` § 2](./03-Data-Model.md#2-convenções-de-nomenclatura) | `ck_`, `uk_`, `idx_`, `fk_` + tabela |
@@ -1555,9 +1594,27 @@ As pendências de **schema** estão no [`03-Data-Model.md` § 21](./03-Data-Mode
 | Pendência | Impacto | Gatilho |
 | --- | --- | --- |
 | Envelope de erro `{ error: { code, message, requestId } }` | Frontend precisa ajustar `readErrorMessage` | Release coordenada com o frontend |
-| Perfis: 5 no backend, 4 nos contratos publicados | Contrato de API desatualizado | Atualizar `contratos/` no repositório de documentação |
+| Contratos publicados: ids numéricos e 4 perfis | O frontend atual descarta id que não seja número em categorias e status | Release coordenada; ver § 22.1 |
 | Suíte de testes automatizados | Rede de segurança ausente para a reescrita | Ferramentas de teste decididas |
+| Credencial de runtime e de migração | O append-only por privilégio exige duas credenciais no Postgres/MySQL; hoje o schema de ambiente tem uma | Implementação do deploy |
 | Contrato da API de auditoria | A rota é montada; o formato de resposta não está acordado | Formalização do domínio de auditoria |
+| RBAC configurável | Desenho no Apêndice C; o Apêndice B continua sendo o contrato | Frontend consumir `permissions` |
+
+### 22.1 Contratos afetados pelo schema
+
+O banco nasce vazio, então não há dado a migrar; há **consumidores** a migrar. A troca de id numérico por UUID é decisão do [ADR-0003](./adr/0003-knex-dialect-portability.md), e o contrato segue o schema — não o contrário.
+
+| Contrato | Hoje | Com o schema novo | Estratégia |
+| --- | --- | --- | --- |
+| `GET /portal-config` | `categories[].id` e `statuses[].id` são `number`; o status de núcleo é reconhecido por id numérico | Ids UUID; o status ganha `key` estável e o frontend deixa de usar `CORE_STATUS_IDS` numérico | Frontend aceita id string e passa a usar `key`; depois o backend troca |
+| `PATCH /requests/:protocol/status` | `targetStatus` é `number` | Id UUID, ou a `key` do status | Preferir `key`; o frontend troca na mesma release |
+| `GET /reports/dashboard` | Ids de status, categoria e prioridade são `number` | Ids UUID | Atualizar tipos e filtros do frontend |
+| `GET /audit-history` | `audit_id` é `number`; `action_type` é composto | `audit_id` UUID; `action` separado da entidade | Atualizar tipos e rótulos; o vocabulário muda |
+| `GET /auth/me`, `GET /users` | Quatro perfis | Cinco perfis, com `Admin Root` | Atualizar as uniões de perfil do frontend |
+| `POST /requests` | Categoria em `demand.category` | **Sem mudança agora**; passa a `category` no topo quando o formulário configurável entrar ([`03-Data-Model.md` § 21](./03-Data-Model.md#21-pendências)) | Coordenar na release do formulário configurável |
+| `queue.overdueRequests`, `dashboard.overdue`, `situation=overdue` | Derivados de `operational.desiredDeadline` | Indefinidos até a regra de SLA ([ADR-0024](./adr/0024-requested-deadline-is-not-sla.md)) | Não publicar atraso derivado do prazo desejado |
+
+A release é um **cutover coordenado**, não um adapter numérico: devolver id numérico ao frontend reintroduziria a decisão que o ADR-0003 eliminou. A ordem segura é o frontend aceitar os dois formatos e passar a usar a `key` do status; depois o backend novo entra.
 
 ---
 
