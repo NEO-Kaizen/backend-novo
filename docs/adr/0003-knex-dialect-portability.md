@@ -6,7 +6,7 @@ status: aceito
 
 O backend legado usa Knex, mas o Postgres está em toda parte: `nextval()` para obter o id antes do insert, casts `::uuid` e `::int`, `COUNT(*) FILTER (WHERE …)`, `setval` em sequences de seed e colunas do tipo `jsonb`. Trocar de engine exigiria reescrever cada repositório.
 
-Decidimos manter **Knex como query builder, sem ORM**, e tornar a portabilidade uma regra verificável: o repositório usa apenas o subset portátil do builder, `db.raw()` é proibido fora de uma porta `Dialect` (com implementações `PostgresDialect`, `SqliteDialect` e `MySqlDialect`), e **todo identificador primário é um UUID v4 gerado pela aplicação**. O contador que alimenta o protocolo é uma tabela comum, não uma sequence — ver [ADR-0008](./0008-protocol-without-collision-risk.md).
+Decidimos manter **Knex como query builder, sem ORM**, e tornar a portabilidade uma regra verificável: o repositório usa apenas o subset portátil do builder, `raw()` é proibido fora de uma porta `Dialect` (com implementações `PostgresDialect`, `SqliteDialect` e `MySqlDialect`), e **todo identificador primário é um UUID v4 gerado pela aplicação**. O contador que alimenta o protocolo é uma tabela comum, não uma sequence — ver [ADR-0008](./0008-protocol-without-collision-risk.md).
 
 ## Alternativas consideradas
 

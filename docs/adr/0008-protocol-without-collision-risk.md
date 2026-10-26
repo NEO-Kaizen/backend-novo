@@ -10,13 +10,13 @@ Pior que a colisão em si: no legado, `GET /requests/:protocol` em modo público
 
 Decidimos manter a **cifra de Feistel** e trocar apenas a origem do inteiro: um **contador em tabela** (`code_counters`, uma linha por domínio), incrementado dentro da mesma transação do insert com `UPDATE` + `SELECT` — SQL idêntico em Postgres, MySQL e SQLite, sem `RETURNING`, sem `FOR UPDATE` e sem branch de dialeto. A Feistel continua sendo uma bijeção sobre `[0, 2⁴⁰)`, então **colisão é impossível por construção**, e o `UNIQUE` em `protocol` passa a ser belt-and-braces.
 
-A leitura por protocolo deixa de usar `.first()` e passa a fazer uma **sondagem com `LIMIT 2`** que falha explicitamente quando duas linhas correspondem. E o identificador público passa a ter defesa contra enumeração: 40 bits são enumeráveis em ~127 dias a 100k rps, então a defesa não é criptográfica — é o rate limit do endpoint público, a conferência de identidade do solicitante e a resposta `404` no lugar de `403`. O prefixo do protocolo é uma **máscara configurada no portal** (`protocol_mask`), não uma constante de código.
+A leitura por protocolo deixa de usar `.first()` e passa a fazer uma **sondagem com `LIMIT 2`** que falha explicitamente quando duas linhas correspondem. E o identificador público passa a ter defesa contra enumeração: 40 bits são enumeráveis em ~127 dias a 100k rps, então a defesa não é criptográfica — é o rate limit do endpoint público, a conferência do e-mail do solicitante e a resposta `404` no lugar de `403`. O prefixo do protocolo é uma **máscara configurada no portal** (`protocol_mask`), não uma constante de código.
 
 ## Alternativas consideradas
 
 - **HMAC sobre o UUID, com retry.** Determinístico: o retry sobre o mesmo id devolve o mesmo código, então a colisão virava erro permanente. Corrigir com nonce aleatório resolveria, mas a garantia passaria a ser probabilística. Rejeitado.
 - **Base62 em vez de base32 (48 bits).** O frontend aceita `[A-Za-z0-9]`, mas o collation padrão do MySQL é case-insensitive: `MAAT-abcd` e `MAAT-ABCD` seriam a mesma chave no MySQL e chaves diferentes no Postgres — três engines, três semânticas de busca. Misturar maiúsculas em URL também quebra em clientes que normalizam. Rejeitado.
-- **Espaço maior no identificador (`MAAT3K7P-ABCD-EFGH`, 80 bits).** Mudaria o formato exibido ao solicitante e conflita com a máscara configurável do portal. Rejeitado: a defesa do endpoint público não deve depender do espaço do identificador — é o rate limit, a conferência de identidade e o `404` no lugar de `403`.
+- **Espaço maior no identificador (`MAAT3K7P-ABCD-EFGH`, 80 bits).** Mudaria o formato exibido ao solicitante e conflita com a máscara configurável do portal. Rejeitado: a defesa do endpoint público não depende do espaço do identificador.
 - **Inserir id autoincrement e gerar o protocolo depois.** Reintroduz o id inteiro do banco e um segundo `UPDATE` por insert, sem ganho sobre o contador.
 - **Resolver colisão na leitura (detectar duplicata ao buscar).** Converte uma invariante do modelo em verificação de runtime — exatamente como vazamentos entre inquilinos acontecem. Rejeitado.
 
@@ -28,4 +28,4 @@ A leitura por protocolo deixa de usar `.first()` e passa a fazer uma **sondagem 
 - O ponto de troca do contador fica explícito: a porta `Counter` permite que ele vire um `INCR` do Redis sem alterar o gerador, se a escala ou a disponibilidade exigir.
 - O `Counter` entra como costura de testabilidade: em teste, o protocolo é previsível.
 - A busca por protocolo custa o mesmo e passa a ser segura por construção: `LIMIT 2` transforma uma violação de invariante em erro explícito em vez de dados de outra solicitação.
-- Com 40 bits, a defesa contra enumeração não é criptográfica — é o rate limit do endpoint público e a exigência de identidade. A alternativa de 80 bits foi rejeitada: o prefixo é uma máscara configurável, e o formato exibido não muda.
+- Com 40 bits, a defesa contra enumeração não é criptográfica: está no endpoint público, não no identificador. A alternativa de 80 bits foi rejeitada: o prefixo é uma máscara configurável, e o formato exibido não muda.
