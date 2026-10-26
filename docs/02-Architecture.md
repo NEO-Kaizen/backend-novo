@@ -313,7 +313,7 @@ export abstract class BaseService {
 }
 ```
 
-A base recebe **exatamente o que usa**. O service de domínio não herda o objeto inteiro do módulo: ele declara o próprio tipo, que estende `UseCaseDependencies` (§8.2) e acrescenta o repositório e o que mais o caso de uso precisa — nunca `database`.
+A base recebe **exatamente o que usa**. O service de domínio não herda o objeto inteiro do módulo: ele declara o próprio tipo, que estende `ServiceDependencies` — ou `UseCaseDependencies`, definido em [§ 8.2](#82-fábrica-de-módulo), quando aplica autorização — e acrescenta o repositório e o que mais o caso de uso precisa, nunca a porta `Database`.
 
 ```ts
 // src/domains/requests/requests.service.ts
@@ -331,7 +331,9 @@ export class RequestService extends BaseService {
 }
 ```
 
-A fábrica do módulo monta esse recorte e retém o banco consigo (§8.2). `this.dependencies.database` não compila: o service não tem a capacidade de falar com o banco, então não pode montar SQL fora do repositório.
+A fábrica do módulo monta esse recorte e retém a porta `Database` consigo ([§ 8.2](#82-fábrica-de-módulo)). `this.dependencies.database` não compila: o service não recebe a porta do banco, então não pode montar SQL fora do repositório. Em runtime a instância do adapter ainda chega como `transactions`; o que não chega é o tipo `Database` — o tipo exposto é apenas `TransactionManager`.
+
+A decisão está registrada no [ADR-0027](./adr/0027-service-dependencies-are-capability-slices.md).
 
 A distinção é o **nome do método**:
 
@@ -399,7 +401,7 @@ O que um service pode fazer depende da **porta que ele recebe**, não da heranç
 | Projeção de leitura (fila, relatórios) | Não | apenas `*Reader` publicados | **Não** — não tem o que escrever |
 | Service que não herda por engano | Não | repositório de escrita | Só se abrir transação; se não, `transaction_required` |
 
-Um service de leitura não precisa herdar a base: a incapacidade de escrever é **estrutural**, porque ele não recebe porta de escrita — não é uma regra de disciplina. A mesma lógica vale para o banco: nenhum service recebe `Database`; o tipo das dependências (§7.2) só o expõe na fábrica do módulo (§8.2).
+Um service de leitura não precisa herdar a base: a incapacidade de escrever é **estrutural**, porque ele não recebe porta de escrita — não é uma regra de disciplina. A mesma lógica vale para o banco: nenhum service recebe a porta `Database`; ela aparece em `ModuleDependencies` ([§ 8.2](#82-fábrica-de-módulo)) e em `RepositoryDependencies` ([§ 7.3](#73-baserepository)), não no tipo de dependências do service ([§ 7.2](#72-baseservice)).
 
 ---
 
@@ -480,7 +482,7 @@ Adicionar um domínio toca quatro pontos explícitos — `knexfile.ts`, `contain
 
 ### 8.2 Fábrica de Módulo
 
-Cada domínio expõe uma fábrica que recebe as dependências e devolve o que a aplicação precisa montar. As dependências são divididas por **quem as usa**: a base enxerga só os transversais, o service de domínio enxerga também `authorization`, e `database` existe apenas no nível da fábrica — que retém o banco e entrega ao service um recorte sem ele (§7.2).
+Cada domínio expõe uma fábrica que recebe as dependências e devolve o que a aplicação precisa montar. As dependências são divididas por **quem as usa**: a base enxerga só os transversais, o service de caso de uso enxerga também `authorization`, e `database` não chega ao service — o container o cria, a fábrica o repassa ao repositório e entrega ao service um recorte sem ele ([§ 7.2](#72-baseservice)). No nível da fábrica, `ModuleDependencies` estende `UseCaseDependencies` com `database`; é o recorte que a fábrica recebe.
 
 ```ts
 // src/core/service/use-case-dependencies.ts — o que o caso de uso usa
@@ -488,7 +490,7 @@ export interface UseCaseDependencies extends ServiceDependencies {
   readonly authorization: AuthorizationService;
 }
 
-// src/core/service/module-dependencies.ts — o que só a fábrica usa
+// src/core/service/module-dependencies.ts — o que a fábrica usa
 export interface ModuleDependencies extends UseCaseDependencies {
   readonly database: Database;
 }
@@ -510,7 +512,6 @@ export interface RequestsModuleDependencies extends ModuleDependencies {
 export function createRequestsModule(
   dependencies: RequestsModuleDependencies,
 ): RequestsModule {
-  // O banco fica na fábrica: o service não recebe a capacidade de falar com ele.
   const { database, ...serviceDependencies } = dependencies;
 
   const repository = new RequestRepository({
@@ -656,7 +657,6 @@ export type AuditModuleDependencies = ModuleDependencies;
 export function createAuditModule(
   dependencies: AuditModuleDependencies,
 ): AuditModule {
-  // Mesmo recorte do exemplo acima: o banco não atravessa para o service.
   const { database, ...serviceDependencies } = dependencies;
 
   const repository = new AuditRepository({
@@ -682,7 +682,18 @@ export function createAuditModule(
 
 ```ts
 // src/domains/audit/audit.service.ts
+export interface AuditServiceDependencies extends UseCaseDependencies {
+  readonly repository: AuditRepository;
+}
+
 export class AuditService extends BaseService {
+  constructor(private readonly dependencies: AuditServiceDependencies) {
+    super(dependencies);
+  }
+
+  /** Leitura da trilha: aplica `audit:read` e custódia ([§ 14.5](#145-compatibilidade-com-o-frontend-atual)). */
+  async list(): Promise<readonly AuditEntry[]> { /* ... */ }
+
   /** Trilha de alteração: grava na transação do emitente. */
   async recordStatusChange(payload: StatusChangedPayload): Promise<void> { /* ... */ }
 
@@ -1523,7 +1534,7 @@ container → core + platform + domains
 | `core` **nunca** importa de `domains` ou `platform` | O kernel não conhece ninguém |
 | `domains` **nunca** importa de `platform` | A implementação concreta do adapter entra pelo container |
 | Um domínio **nunca** importa repositório, service ou controller de outro domínio | Fronteira entre áreas |
-| Um service **nunca** recebe `Database` | A fábrica cria o repositório e retém o banco (§8.2); sem a capacidade, o service não monta SQL fora do repositório |
+| Um service **nunca** recebe a porta `Database` | A fábrica cria o repositório e retém o banco ([§ 8.2](#82-fábrica-de-módulo)); sem a capacidade, o service não monta SQL fora do repositório |
 | `platform` **nunca** importa de `domains` | Inclusive o *error handler*: ele recebe a porta `AttemptRecorder`, não o domínio |
 | `app.ts` e `server.ts` **nunca** criam dependência | Eles consomem o `Container` |
 
@@ -1535,12 +1546,12 @@ Os padrões abaixo são os que o backend legado usa e que esta arquitetura exist
 
 | Padrão | Por que é problema | O que fazer |
 | --- | --- | --- |
-| `import { db } from "../database/conexion.js"` dentro de um service | Dependência implícita, banco travado, nada testável | Injetar `Database` pelo construtor |
+| `import { db } from "../database/conexion.js"` dentro de um service | Dependência implícita, banco travado, nada testável | Injetar o repositório pelo construtor |
 | Regra de negócio dentro do repository | Repositório deixa de ser persistência e vira regra sem lugar de teste | Regra no service; repositório só lê e escreve |
 | Regra de negócio dentro do controller | Regra não é testável sem HTTP | Regra no service |
 | Service **e** repository abrindo transação | Escopo de transação indefinido | Só o service abre |
 | Escrita fora de transação | Commit parcial silencioso | `execute()` no service; `assertInTransaction()` no repositório |
-| `new XService(dependencies)` com o objeto inteiro do módulo | O service passa a carregar `database` e pode montar query fora do repositório | Tipar o construtor com `XServiceDependencies` (§7.2) e retirar o banco na fábrica (§8.2) |
+| `new XService(dependencies)` com o objeto inteiro do módulo | O service passa a carregar `database` e pode montar query fora do repositório | Tipar o construtor com `XServiceDependencies` ([§ 7.2](#72-baseservice)) e retirar o banco na fábrica ([§ 8.2](#82-fábrica-de-módulo)) |
 | `trx` como parâmetro em todo método de repositório | Ruído em todas as assinaturas | Transação implícita por `TransactionManager` |
 | `raw()` espalhado em repositório | SQL não portável | `Dialect` ou query builder |
 | `.first()` em busca por protocolo | Retorna a linha errada em silêncio quando há duplicata | Sondagem com `LIMIT 2` |
@@ -1563,7 +1574,7 @@ Cada linha aponta a seção que define a regra. Um PR que muda mais de uma camad
 | --- | --- | --- | --- |
 | [ ] | O código pertence a um domínio | [§ 4](#4-estrutura-de-diretórios) | O arquivo está em `src/domains/<domínio>/` |
 | [ ] | Toda dependência externa chega pelo construtor | [§ 8](#8-injeção-de-dependência) | Nenhum import de `platform` dentro de `domains` |
-| [ ] | Service não recebe `Database`; a fábrica retira o banco antes do construtor | [§ 8.2](#82-fábrica-de-módulo) | `rg "ModuleDependencies" src/domains -g "*.service.ts"` vazio |
+| [ ] | Service não recebe a porta `Database`; a fábrica retira o banco antes do construtor | [§ 7.2](#72-baseservice) e [§ 8.2](#82-fábrica-de-módulo) | `rg -e 'new \w+Service\(dependencies' -e 'new \w+Service\(\{ \.\.\.dependencies' src/domains` e `rg -e 'extends \w*ModuleDependencies' -e 'readonly database: Database' src/domains -g '*.service.ts'` vazios (quando `src/domains` existir) |
 | [ ] | Nenhum repositório, service ou controller de outro domínio é importado | [§ 19](#19-dependências-permitidas) | Só `import type` de uma `*.port.ts` |
 | [ ] | Regras no service; tradução HTTP no controller; SQL no repository | [§ 6](#6-responsabilidades-de-camada) | O controller não monta query |
 | [ ] | `core` não importa nada de `domains` ou `platform` | [§ 19](#19-dependências-permitidas) | `rg "from \"\.\./(domains\|platform)" src/core` |
