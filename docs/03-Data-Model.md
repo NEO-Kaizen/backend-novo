@@ -719,7 +719,7 @@ Conjunto append-only de triagens. Cada triagem é uma linha nova; a triagem atua
 | `new_category_id` | uuid | sim | — | FK → `portal-config.categories.id` (RESTRICT) — a categoria proposta, resolvida pelo nome |
 | `preliminary_complexity` | text | não | `''` | |
 | `perceived_risks` | text | não | `''` | |
-| `suggested_responsible` | text | não | `''` | ≤ 150 — **texto livre**, é sugestão, não vínculo |
+| `suggested_responsible` | text | não | `''` | `ck_triages_suggested_responsible_length` ≤ 150 — **texto livre**, é sugestão, não vínculo |
 | `suggested_responsible_justification` | text | não | `''` | |
 | `assignee_user_id` | uuid | sim | — | FK → `users.id` (RESTRICT) — o Responsável designado |
 | `assignee_name` | text | sim | — | Rótulo do responsável no momento da triagem |
@@ -860,7 +860,7 @@ Quesitos ponderados do cálculo.
 | Coluna | Tipo | Nulo | Default | Notas |
 | --- | --- | --- | --- | --- |
 | `id` | uuid | não | — | PK, UUID v4 |
-| `code` | varchar(50) | não | — | UNIQUE `uk_criteria_code` ≤ 50 — o identificador estável do critério |
+| `code` | varchar(50) | não | — | UNIQUE `uk_criteria_code`, `ck_criteria_code_length` ≤ 50 — o identificador estável do critério |
 | `name` | text | não | — | `ck_criteria_name_length` ≤ 100 |
 | `weight` | integer | não | — | `ck_criteria_weight_range` — 0 a 10 |
 | `is_active` | boolean | não | `true` | Critério desativado sai do cálculo |
@@ -1075,7 +1075,7 @@ Marca de leitura por usuário.
 | --- | --- | --- | --- | --- |
 | `request_id` | uuid | não | — | Parte da PK; FK → `requests.id` (RESTRICT) |
 | `user_id` | uuid | não | — | Parte da PK; FK → `users.id` (RESTRICT) |
-| `last_read_note_id` | uuid | não | — | FK → `internal_notes.id` (RESTRICT) |
+| `last_read_note_id` | uuid | não | — | Parte da FK composta (`request_id`, `last_read_note_id`) → `internal_notes` (`request_id`, `id`) — ver Relações |
 | `read_at` | timestamp | não | `now` | |
 
 **Relações** — PK composta (`request_id`, `user_id`); FK composta (`request_id`, `last_read_note_id`) → `internal_notes` (`request_id`, `id`), que impede marcar como lida uma nota de outra solicitação.
