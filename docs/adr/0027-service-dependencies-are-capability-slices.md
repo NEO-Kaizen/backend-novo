@@ -4,13 +4,13 @@ status: aceito
 
 # Dependências de serviço são recortes de capacidade
 
-A injeção manual (ADR-0002) faz o objeto de dependências atravessar container → fábrica → construtor, e o primeiro desenho montava `new RequestService({ ...dependencies, repository })` com `dependencies: RequestsModuleDependencies`, que estende `ModuleDependencies` — e esse objeto carrega `database`. O service passava a ter a **capacidade** de falar com o banco, mesmo sem precisar: podia montar query, e o tipo dizia que podia. A regra "SQL no repositório" ficava na disciplina, e a única barreira em runtime era `assertInTransaction()`, que impede escrita fora de transação, mas não impede SQL no lugar errado dentro dela.
+A injeção manual ([ADR-0002](./0002-manual-dependency-injection.md)) faz o objeto de dependências atravessar container → fábrica → construtor, e o primeiro desenho montava `new RequestService({ ...dependencies, repository })` com `dependencies: RequestsModuleDependencies`, que estende `ModuleDependencies` — e esse objeto carrega `database`. O service passava a ter a **capacidade** de falar com o banco, mesmo sem precisar: podia montar query, e o tipo dizia que podia. A regra "SQL no repositório" ficava na disciplina: `assertInTransaction()` só barra a escrita que passa pelo repositório, e um service com a porta `Database` ainda podia usar `client` para escrever fora dele.
 
 Decidimos que as dependências são um **recorte por quem as usa**, em três níveis:
 
 - `ServiceDependencies` — os cinco transversais (`logger`, `clock`, `ids`, `transactions`, `events`). É o que `BaseService` usa para implementar `execute`, `readSnapshot` e os acessores.
-- `UseCaseDependencies extends ServiceDependencies` — acrescenta `authorization`, que a regra fina do §14.4 aplica no service que autoriza.
-- `ModuleDependencies extends UseCaseDependencies` — acrescenta `database`, que só a fábrica do módulo usa, para construir o repositório.
+- `UseCaseDependencies extends ServiceDependencies` — acrescenta `authorization`, que a regra fina do [§ 14.4](../02-Architecture.md#144-autorização) aplica no service que autoriza.
+- `ModuleDependencies extends UseCaseDependencies` — acrescenta `database`, que a fábrica repassa ao repositório; o service não o recebe.
 
 O `audit` usa o recorte de caso de uso: a leitura aplica `audit:read` ([§ 14.5](../02-Architecture.md#145-compatibilidade-com-o-frontend-atual)).
 
@@ -26,13 +26,13 @@ Com isso, `this.dependencies.database` não compila: o service não recebe a por
 ## Alternativas consideradas
 
 - **Manter o spread do objeto de dependências do módulo.** Menos tipos, mas a capacidade fica no service e o "não use" vira comentário. O erro honesto deixa de ser pego pelo compilador.
-- **Service locator ou registro global.** Reduz o wiring e é justamente a alternativa rejeitada no ADR-0002: esconde a dependência que se quer visível.
+- **Service locator ou registro global.** Reduz o wiring e é justamente a alternativa rejeitada no [ADR-0002](./0002-manual-dependency-injection.md): esconde a dependência que se quer visível.
 - **`Proxy` que lança ao ler `database`.** Garante em runtime, mas atrapalha depuração e serialização, e não pega nada além do que o tipo pega — quem chega ao `Proxy` já teve que dar cast.
 - **Só lint e review.** Barato, mas não estrutural: o `any` é proibido, porém a proibição não aparece na assinatura nem no construtor.
 
 ## Consequências
 
-- O construtor do service fica mais longo e cada service declara o próprio tipo de dependências — consequência da composição manual, já aceita no ADR-0002.
+- O construtor do service fica mais longo e cada service declara o próprio tipo de dependências — consequência da composição manual, já aceita no [ADR-0002](./0002-manual-dependency-injection.md).
 - Adicionar dependência à base toca `ServiceDependencies` e o compilador aponta cada fábrica que não a fornece. O custo de wiring vira erro de compilação.
 - Testes de service ficam menores: o fake não precisa de `database`.
 - O repositório continua recebendo `Database` e continua exigindo transação corrente (`assertInTransaction()`), exceto `insertAttempt` ([§ 7.3](../02-Architecture.md#73-baserepository)). O que muda é quem **não** enxerga a porta do banco.

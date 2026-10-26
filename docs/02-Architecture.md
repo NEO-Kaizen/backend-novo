@@ -331,9 +331,7 @@ export class RequestService extends BaseService {
 }
 ```
 
-A fábrica do módulo monta esse recorte e retém a porta `Database` consigo ([§ 8.2](#82-fábrica-de-módulo)). `this.dependencies.database` não compila: o service não recebe a porta do banco, então não pode montar SQL fora do repositório. Em runtime a instância do adapter ainda chega como `transactions`; o que não chega é o tipo `Database` — o tipo exposto é apenas `TransactionManager`.
-
-A decisão está registrada no [ADR-0027](./adr/0027-service-dependencies-are-capability-slices.md).
+A fábrica do módulo monta esse recorte e retém a porta `Database` consigo ([§ 8.2](#82-fábrica-de-módulo)). `this.dependencies.database` não compila: o service não recebe a porta do banco, então não pode montar SQL fora do repositório. O limite da garantia em runtime está no [ADR-0027](./adr/0027-service-dependencies-are-capability-slices.md).
 
 A distinção é o **nome do método**:
 
@@ -485,7 +483,7 @@ Adicionar um domínio toca quatro pontos explícitos — `knexfile.ts`, `contain
 Cada domínio expõe uma fábrica que recebe as dependências e devolve o que a aplicação precisa montar. As dependências são divididas por **quem as usa**: a base enxerga só os transversais, o service de caso de uso enxerga também `authorization`, e `database` não chega ao service — o container o cria, a fábrica o repassa ao repositório e entrega ao service um recorte sem ele ([§ 7.2](#72-baseservice)). No nível da fábrica, `ModuleDependencies` estende `UseCaseDependencies` com `database`; é o recorte que a fábrica recebe.
 
 ```ts
-// src/core/service/use-case-dependencies.ts — o que o caso de uso usa
+// src/core/service/use-case-dependencies.ts — o que o caso de uso que autoriza usa
 export interface UseCaseDependencies extends ServiceDependencies {
   readonly authorization: AuthorizationService;
 }
@@ -692,7 +690,7 @@ export class AuditService extends BaseService {
   }
 
   /** Leitura da trilha: aplica `audit:read` e custódia ([§ 14.5](#145-compatibilidade-com-o-frontend-atual)). */
-  async list(): Promise<readonly AuditEntry[]> { /* ... */ }
+  async list(actor: Actor): Promise<readonly AuditEntry[]> { /* ... */ }
 
   /** Trilha de alteração: grava na transação do emitente. */
   async recordStatusChange(payload: StatusChangedPayload): Promise<void> { /* ... */ }
