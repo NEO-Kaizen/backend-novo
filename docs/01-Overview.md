@@ -113,7 +113,7 @@ O inventário completo, com responsabilidades e portas publicadas por cada domí
 03-Data-Model.md    → as tabelas, as relações e as invariantes do banco
 db/README.md        → porta de entrada da documentação do banco
   db/01-vocabulary.md → índice termo → tabela
-  db/02-reference.md  → dicionário de dados (colunas, constraints, índices, FKs)
+  db/02-reference.md  → referência do schema (colunas, constraints, índices, FKs)
   db/03-erd.md        → diagramas de entidade
   db/04-seeds.md      → inventário e ordem dos seeds
   db/05-operations.md → operação, migrations, seeds e verificação
