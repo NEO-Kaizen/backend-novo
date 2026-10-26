@@ -37,8 +37,7 @@
             "type": "string"
           },
           "code": {
-            "type": "string",
-            "description": "Código estável em snake_case (aditivo)."
+            "$ref": "#/components/schemas/ErrorCode"
           },
           "requestId": {
             "type": "string",
@@ -91,6 +90,23 @@
           }
         },
         "required": ["data", "page", "pageSize", "total", "totalPages"]
+      },
+      "ErrorCode": {
+        "type": "string",
+        "description": "Código estável em snake_case (catálogo em core/errors/error-codes.ts).",
+        "enum": [
+          "validation_error",
+          "unauthorized",
+          "forbidden",
+          "not_found",
+          "conflict",
+          "rate_limited",
+          "invalid_content_type",
+          "payload_too_large",
+          "internal_error",
+          "not_the_assignee",
+          "invalid_status_transition"
+        ]
       }
     }
   },

@@ -70,7 +70,7 @@ O contrato vigente é o legado (ADR-0005). O OpenAPI documenta o vigente, não o
 { "status": "error", "statusCode": 404, "message": "Solicitação não encontrada." }
 ```
 
-Aditivos permitidos (não quebram o cliente): `code` (snake_case estável), `requestId` (correlation HTTP), `fields` (erros por campo, em validação). O componente `ErrorEnvelope` em `src/docs/components.ts` é a única definição; todas as respostas de erro a referenciam.
+Aditivos permitidos (não quebram o cliente): `code` (snake_case estável), `requestId` (correlation HTTP), `fields` (erros por campo, em validação). O componente `ErrorEnvelope` em `src/docs/components.ts` é a única definição; todas as respostas de erro a referenciam. O campo `code`, quando presente, referencia o componente `ErrorCode`, um enum gerado de `core/errors/error-codes.ts`; no esqueleto atual a lista é a do `docs/04-API-Conventions.md` §2.3, mais códigos de domínio conhecidos. O `code` é opcional no envelope legado e clientes devem ter fallback para valores desconhecidos.
 
 ## 7. Paginação (documentada uma vez)
 

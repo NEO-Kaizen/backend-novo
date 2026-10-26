@@ -32,7 +32,7 @@ Decidimos adotar **OpenAPI 3.1.0 gerado a partir dos schemas Zod**, com metadado
 
 - **`swagger-ui-express` + `src/swagger.json` à mão (legado).** É o que o legado faz; cobre só 2 endpoints, fixa `http://localhost:3000` e declara `bearerAuth` (incorreto, a sessão é cookie). Rejeitado por incompleto e por drift.
 - **`tsoa`, decorators ou geração por AST do TypeScript.** Introduz decoradores/AST e viola a regra de DI manual e "sem decorator" do `CODING_STANDARDS.md`. Rejeitado.
-- **OpenAPI 3.2.** É a versão mais recente, mas `zod-openapi` só suporta 3.1. Rejeitado até a Fase 0 mudar de gerador.
+- **OpenAPI 3.2.** É a versão mais recente, mas `zod-openapi` só suporta 3.1. Rejeitado enquanto o gerador não suportar 3.2.
 - **Gerar SDK/client.** Fora de escopo; o frontend continua tipado manualmente até migração coordenada.
 - **Validar resposta em runtime em produção.** Custo e risco; a validação fica em testes de contrato.
 
