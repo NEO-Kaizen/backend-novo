@@ -12,6 +12,10 @@ São usados os labels canônicos padrão: `needs-triage`, `needs-info`, `ready-f
 
 Layout single-context: `GLOSSARY.md` na raiz e `docs/adr/`. Consulte `docs/agents/domain.md`.
 
+### Data model
+
+O modelo de dados é a especificação do schema em `docs/03-Data-Model.md`. A ordem de leitura obrigatória para agentes está em `docs/agents/domain.md`.
+
 ## Convenções de Git
 
 - Branches: `<type>/<issue>-<slug>` — ex.: `docs/12-coding-standards`, `feat/34-sales-report`.
