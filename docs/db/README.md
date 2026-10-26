@@ -48,6 +48,18 @@ Use antes de abrir ou aprovar um PR que toque o schema:
 - [ ] O Mermaid de [`03-erd.md`](./03-erd.md) renderiza e o DBML importa sem erro.
 - [ ] As decisões em aberto de [§ 21](../03-Data-Model.md#21-pendências) não foram resolvidas por conta própria em um derivado.
 
+## Conferência de contagens
+
+Os números do checklist são reprodutíveis a partir da raiz do repositório:
+
+```bash
+grep -c '^Table ' docs/db/schema.dbml                              # 29 tabelas
+grep -cE '^Ref:|ref:' docs/db/schema.dbml                          # 55 FKs
+awk '/^```mermaid/ { n++ } n == 1 && /--/' docs/db/03-erd.md | wc -l  # 55 arestas
+```
+
+O `awk` conta só o mapa completo, o primeiro bloco Mermaid de [`03-erd.md`](./03-erd.md); os diagramas por domínio repetem arestas.
+
 ## Decisões em aberto
 
 - **SLA e atraso** — `overdue` não é derivado do prazo desejado; a regra de SLA é pendência ([ADR-0024](../adr/0024-requested-deadline-is-not-sla.md)).
