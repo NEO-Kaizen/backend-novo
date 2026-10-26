@@ -111,6 +111,7 @@ O inventário completo, com responsabilidades e portas publicadas por cada domí
 01-Overview.md      → o que é, por que, escopo
 02-Architecture.md  → como o código se organiza e por quê
 03-Data-Model.md    → as tabelas, as relações e as invariantes do banco
+04-API-Conventions.md → convenções transversais da API v1 (envelope, paginação, sessão, ids, datas, request-id, rate limit, CORS)
 db/README.md        → porta de entrada da documentação do banco
   db/01-vocabulary.md → índice termo → tabela
   db/02-reference.md  → referência do schema (colunas, constraints, índices, FKs)
