@@ -12,7 +12,7 @@ O schema é portátil entre **PostgreSQL**, **MySQL** e **SQLite**, atrás da po
 | MySQL | Portabilidade verificável | Sem `ENUM`, sem `ARRAY`, sem índice funcional e sem `jsonb_typeof` |
 | SQLite | Testes rápidos e ambiente local | Não bloqueia linha (`forUpdate`), `returning` e upsert variam |
 
-A regra de portabilidade é a de [§ 10.3](../02-Architecture.md#103-regras-de-portabilidade): `db.raw()` fora do `Dialect` é proibido, o repositório usa só o query builder, e tipo de UUID, JSON, timestamp e booleano vêm do `Dialect`.
+A regra de portabilidade é a de [§ 10.3](../02-Architecture.md#103-regras-de-portabilidade): `raw()` fora do `Dialect` (via `db` ou `client`) é proibido, o repositório usa só o query builder, e tipo de UUID, JSON, timestamp e booleano vêm do `Dialect`.
 
 Texto **indexado ou único** é `varchar(n)` com `ck_` de comprimento; texto longo (descrição, nota, resposta) é `text` e não é indexado pelo valor inteiro. Busca em texto longo usa projeção curta — `form_answers.value_lookup` para o e-mail ([§ 2.9](../03-Data-Model.md#29-texto-números-e-json)).
 
