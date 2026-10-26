@@ -152,7 +152,7 @@ Coluna nomeada `<entidade_no_singular>_id`, referenciando `id` da outra tabela. 
 
 **Quando a FK carrega a função do ator**, o prefixo da função vem antes do nome da entidade: `actor_user_id`, `author_user_id`, `created_by_user_id`, `responsible_id`, `assignee_user_id`, `calculated_by_user_id`, `validated_by_user_id`, `updated_by_user_id`, `requester_user_id`. A entidade alvo é sempre `users.id`.
 
-**Três colunas não seguem o padrão `<entidade>_id`**, porque o nome carrega a função e não o alvo: `form_answers.field_id` e `pending_items.form_field_id` apontam para `forms.form_fields.id`; `internal_note_read_states.last_read_note_id` aponta para `internal_notes.id`. São exceções intencionais.
+**Três colunas não seguem o padrão `<entidade>_id`**, porque o nome carrega a função e não o alvo: `form_answers.field_id` e `pending_items.form_field_id` apontam para `forms.form_fields.id`; `internal_note_read_states.last_read_note_id` é parte da FK composta (`request_id`, `last_read_note_id`) → `internal_notes` (`request_id`, `id`). São exceções intencionais.
 
 `pending_items.classification_key` não é chave estrangeira: é o vocabulário de código das classificações, `∈ category`, espelhado em `ck_pending_items_classification_key` ([§ 2.7](#27-conjuntos-fechados)).
 
