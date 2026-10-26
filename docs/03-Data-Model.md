@@ -10,7 +10,7 @@ Documentos relacionados:
 - [`02-Architecture.md`](./02-Architecture.md) — camadas, injeção de dependências, persistência com Knex.
 - [`db/README.md`](./db/README.md) — porta de entrada da documentação derivada do banco.
 - [`db/01-vocabulary.md`](./db/01-vocabulary.md) — índice termo → tabela.
-- [`db/02-reference.md`](./db/02-reference.md) — dicionário de dados para consulta.
+- [`db/02-reference.md`](./db/02-reference.md) — referência do schema para consulta.
 - [`db/03-erd.md`](./db/03-erd.md) — diagramas de entidade.
 - [`db/schema.dbml`](./db/schema.dbml) — schema para dbdiagram/dbdocs.
 - [`db/04-seeds.md`](./db/04-seeds.md) — inventário e ordem dos seeds.
@@ -303,7 +303,7 @@ Duas consequências operacionais:
 
 ## 5. Visão Geral das Entidades
 
-O schema tem uma entidade central e quatro agrupamentos de leitura. A solicitação (`requests`) é o sujeito do ciclo; o conteúdo dela é uma resposta de formulário, e o que a situa no fluxo são as três classificações — Status, Categoria e Prioridade.
+O schema tem uma entidade central e quatro agrupamentos de leitura. A solicitação (`requests`) é o sujeito do ciclo; o conteúdo dela é uma resposta de formulário, e o que a situa no fluxo são as três classificações — Status, Categoria e Prioridade. O catálogo normativo, com domínio e correspondência no legado, está em [§ 20](#20-catálogo-de-tabelas); a tabela abaixo é a leitura por agrupamento.
 
 | Agrupamento | Entidades | Papel |
 | --- | --- | --- |
@@ -316,7 +316,7 @@ O schema tem uma entidade central e quatro agrupamentos de leitura. A solicitaç
 
 **Caminhos de leitura**
 
-- Para implementar uma tabela: comece por [§ 2](#2-convenções-de-nomenclatura), confira a posição em [§ 4](#4-integridade-referencial-e-ordem-de-criação) e leia a seção do domínio. O dicionário de consulta está em [`db/02-reference.md`](./db/02-reference.md).
+- Para implementar uma tabela: comece por [§ 2](#2-convenções-de-nomenclatura), confira a posição em [§ 4](#4-integridade-referencial-e-ordem-de-criação) e leia a seção do domínio. A referência do schema está em [`db/02-reference.md`](./db/02-reference.md).
 - Para revisar um schema ou uma migration: use o catálogo de [§ 20](#20-catálogo-de-tabelas), o catálogo de constraints em [`db/02-reference.md`](./db/02-reference.md) e os diagramas em [`db/03-erd.md`](./db/03-erd.md).
 - Para operar o banco: leia [`db/04-seeds.md`](./db/04-seeds.md) e [`db/05-operations.md`](./db/05-operations.md).
 
@@ -1332,8 +1332,7 @@ As etapas do ciclo de vida — a configuração mais carregada do portal.
 
 **Invariantes**
 
-- **A `key` é a identidade do status, e ela é do código.** O código referencia status por `key` — nunca por `id`, nunca por `name`. O `name` é o rótulo que o Administrador edita; a `key` é o endereço.
-- **A `key` do seed do ciclo de referência:** `solicitacao_enviada`, `aguardando_triagem`, `em_triagem`, `pendente_de_informacoes`, `aguardando_mapeamento`, `mapeamento_agendado`, `em_mapeamento`, `em_analise_de_viabilidade`, `elegivel`, `nao_elegivel`, `priorizado`, `backlog`, `direcionada_para_outra_area`, `em_desenvolvimento`, `em_homologacao`, `concluido`, `cancelado`.
+- **A `key` é a identidade do status, e ela é do código.** O código referencia status por `key` — nunca por `id`, nunca por `name`. O `name` é o rótulo que o Administrador edita; a `key` é o endereço. A lista das 17 chaves do seed de referência está em [§ 25.6](#256-statuses).
 - **Os status de núcleo são imutáveis.** São os sete com `is_core = true`: a `key` é reservada, e nem o nome, nem `is_public`, `is_terminal`, `is_restricted`, `triage_mode` ou `mapping_mode` podem mudar — nem a linha pode ser desativada.
 - A visibilidade tem **dois** predicados independentes: `is_public` (visível ao solicitante) e `is_restricted` (exige `request:status_override` para um perfil assumir). Não há coluna de visibilidade — a combinação dos dois é o que o glossário chama de "pública, interna ou restrita".
 - **Um status restrito tem `triage_mode` e `mapping_mode` `none`** — ele não é alvo de triagem nem de mapeamento. `request:status_override` libera a entrada por `PATCH /status`; não transforma o status em alvo de conclusão de triagem ou mapeamento.
@@ -1481,7 +1480,7 @@ Schema sem dono de domínio ([ADR-0011](./adr/0011-infrastructure-schema-without
 
 ## 20. Catálogo de Tabelas
 
-Para colunas, tipos, constraints e índices por tabela, use o dicionário de consulta em [`db/02-reference.md`](./db/02-reference.md).
+Para colunas, tipos, constraints e índices por tabela, use a referência do schema em [`db/02-reference.md`](./db/02-reference.md).
 
 | # | Tabela | Domínio | No legado |
 | --- | --- | --- | --- |
@@ -2010,7 +2009,7 @@ Os 17 status do ciclo de referência. As chaves são do código ([ADR-0021](./ad
 | 16 | `concluido` | Concluído | `true` | `true` | `true` | `false` | `conclusion_only` | `conclusion_only` | `success` |
 | 17 | `cancelado` | Cancelado | `true` | `true` | `true` | `false` | `conclusion_only` | `conclusion_only` | `error` |
 
-A decisão do motor v4 é explícita: **só `concluido` e `cancelado` são terminais**. `nao_elegivel` e `direcionada_para_outra_area` são desfechos não terminais; a solicitação continua no fluxo e só encerra (`closed_at`) quando chega a um status terminal. O seed original do legado marcava `nao_elegivel` como final; o v4 o substituiu.
+A regra de terminalidade está em [§ 17.4](#174-statuses); a coluna `is_terminal` acima é a aplicação dela no seed. O seed original do legado marcava `nao_elegivel` como final; o motor v4 o substituiu.
 
 ### 25.7 `criteria`
 
