@@ -20,7 +20,7 @@ O documento registra também as **regras de negócio preservadas do legado** em 
 ## Consequências
 
 - O checklist de revisão ganha um item: schema alterado, documento atualizado.
-- A documentação derivada do banco vive em [`docs/db/`](../db/README.md) — dicionário de consulta, ERD, DBML, seeds e operações. Ela é **não normativa** e é mantida à mão; toda mudança de schema atualiza a especificação e os derivados no mesmo pull request. A paridade é verificada na revisão, pelo checklist de [`docs/db/README.md`](../db/README.md).
+- A documentação derivada do banco vive em [`docs/db/`](../db/README.md) — referência do schema, ERD, DBML, seeds e operações. Ela é **não normativa** e é mantida à mão; toda mudança de schema atualiza a especificação e os derivados no mesmo pull request. A paridade é verificada na revisão, pelo checklist de [`docs/db/README.md`](../db/README.md).
 - A lista de colunas é a especificação — não uma documentação paralela. Quando as duas divergem, o defeito está no código.
 - O documento é o artefato de revisão do remodelamento: quem aprova o modelo olha o documento, não as migrations.
 - Quando as ferramentas forem decididas, um script pode comparar o documento com a definição em Knex e falhar quando divergirem; até lá, a verificação é humana e é feita na revisão.
