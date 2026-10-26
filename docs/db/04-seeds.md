@@ -29,7 +29,7 @@ A ordem respeita as FKs do [§ 4](../03-Data-Model.md#4-integridade-referencial-
 
 `code_counters` não é semeado: o contador começa vazio e a primeira emissão consome o valor 1. `pending_batches` e `pending_items` também não são semeados: dependem de uma solicitação. `permissions` e `profile_permissions` só entram quando o RBAC configurável chegar.
 
-A ordem entre domínios não é garantida pelo Knex por padrão: ele ordena os arquivos pelo caminho completo, o que agrupa por diretório. Para respeitar a tabela acima, o `knexfile.ts` lista `seeds.directory` na ordem das dependências e usa `sortDirsSeparately: true`, ou um seed orquestrador chama os seeds de domínio na ordem. Detalhes em [`05-operations.md`](./05-operations.md#ordem-dos-seeds).
+A ordem entre domínios não é garantida pelo Knex por padrão: ele ordena os arquivos pelo caminho completo, o que agrupa por diretório. A configuração do `knexfile.ts` que garante a ordem da tabela acima está em [`05-operations.md` § Ordem dos seeds](./05-operations.md#ordem-dos-seeds).
 
 ## Idempotência
 
