@@ -28,7 +28,7 @@ O critério por trás da política de exclusão é que **nada é apagado**: soli
 ## Consequências
 
 - O catálogo de constraints de uma tabela é previsível: `ck_<tabela>_<assunto>`, `uk_<tabela>_<colunas>`, `idx_<tabela>_<colunas>`, `fk_<tabela>_<coluna>`.
-- Constraints são declaradas com o construtor do knex (`table.check(predicate, undefined, "ck_nome")`), nunca com `ALTER TABLE` escrito à mão — `db.raw()` fora da porta `Dialect` é proibido por [ADR-0003](./0003-knex-dialect-portability.md).
+- Constraints são declaradas com o construtor do knex (`table.check(predicate, undefined, "ck_nome")`), nunca com `ALTER TABLE` escrito à mão — `raw()` fora da porta `Dialect` é proibido por [ADR-0003](./0003-knex-dialect-portability.md).
 - **Predicado que depende de função de engine vem do `Dialect`.** `table.check` recebe SQL cru e não traduz função: `INSTR` existe no SQLite e no MySQL, mas não no Postgres. Regex de cor, por exemplo, sai de `dialect.hexColorCheck(column)`, e a migration precisa ser testada nas três engines com valor válido, inválido e nulo.
 - **Texto longo não é indexado pelo valor inteiro.** No Postgres a entrada de B-tree tem limite de tamanho, e no MySQL o índice em `TEXT` exigiria prefixo; a busca usa uma projeção curta e normalizada, como `form_answers.value_lookup`.
 - Uma constraint de check não enxerga outras linhas: invariantes que dependem de mais de uma linha (faixas de prioridade que não podem se sobrepor, por exemplo) são regras de aplicação e aparecem listadas como invariantes na documentação do modelo.

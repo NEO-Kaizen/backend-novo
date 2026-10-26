@@ -137,4 +137,4 @@ Decisões já tomadas e follow-up que dependem de outro time:
 | Envelope de erro | Decidido: manter o legado por ora; migração exige mudança coordenada no frontend | [ADR-0005](./adr/0005-legacy-error-envelope-temporary.md) |
 | Perfis: cinco ou quatro | Decidido: cinco no backend; os contratos publicados ainda listam quatro | [ADR-0006](./adr/0006-static-profile-authorization.md) |
 | Remodelagem do banco | Decidido: cada domínio é dono do seu schema; as migrações do legado são referência de dados, não de estrutura | [ADR-0004](./adr/0004-domain-owned-schema-and-migrations.md) |
-| Entropia do prefixo do protocolo | Decidido: 40 bits mantidos; a máscara é configurável e a defesa contra enumeração é o rate limit do endpoint público com a conferência de identidade | [ADR-0008](./adr/0008-protocol-without-collision-risk.md) |
+| Entropia do prefixo do protocolo | Decidido: 40 bits mantidos; a máscara é configurável e a defesa contra enumeração é de borda — rate limit do endpoint público e conferência do e-mail do solicitante | [ADR-0008](./adr/0008-protocol-without-collision-risk.md) |
