@@ -6028,3 +6028,313 @@ CSV (`F2 src/lib/api/report.api.ts:27-39`):
 
 - `GET /reports/dashboard` (#47)
 - `GET /reports/requests.csv` (#48)
+
+## 16. audit
+
+Trilha de auditoria somente leitura. Três rotas: a tabela administrativa (`/audit-history`), o
+detalhe de um evento (`/audit-history/:id`) e a timeline de uma solicitação (`/audit-logs/:protocol`).
+Não existe rota de escrita: `audit_history` é só-INSERT no banco
+(`F1 docs/audit-history-contract.md:372-374`; `F1 docs/audit-events.md:47`).
+
+### 16.1 Fontes
+
+| Ref | Caminho                                               | Uso                                                    |
+| --- | ----------------------------------------------------- | ------------------------------------------------------ |
+| F1  | `src/modules/auditHistory/auditHistory.router.ts`     | montagem, guards, `Cache-Control`                      |
+| F1  | `src/modules/auditHistory/auditHistory.controller.ts` | borda HTTP, validação, `:id` numérico                  |
+| F1  | `src/modules/auditHistory/auditHistory.schema.ts`     | `auditHistoryQuerySchema`                              |
+| F1  | `src/modules/auditHistory/auditHistory.service.ts`    | rótulos, ator, custódia de `audit-logs`                |
+| F1  | `src/modules/auditHistory/auditHistory.repository.ts` | SQL das três leituras                                  |
+| F1  | `src/modules/DTOs/auditHistory/AuditHistory.dto.ts`   | shapes de lista e detalhe                              |
+| F1  | `src/shared/audit/auditCatalog.ts`                    | vocabulário de `entity_type` / `action_type` e rótulos |
+| F1  | `migrations/202609100009_create_audit_history.js`     | colunas base (`audit_id` bigint, `occurred_at`)        |
+| F1  | `docs/audit-history-contract.md`                      | contrato das três rotas                                |
+| F1  | `docs/audit-events.md`                                | modelo de gravação dos eventos                         |
+| F2  | `src/lib/api/audit-history.api.ts`                    | cliente de lista e detalhe                             |
+| F2  | `src/lib/types/audit.ts`                              | tipos do consumidor                                    |
+
+### 16.2 Rotas
+
+| #   | Método | Path                    | Autenticação/autorização                                              | Handler                            | Sucesso          | Erros                   |
+| --- | ------ | ----------------------- | --------------------------------------------------------------------- | ---------------------------------- | ---------------- | ----------------------- |
+| 49  | GET    | `/audit-history`        | sessão + `Administrador` ou `Gestor`                                  | `listAuditHistoryController`       | 200 JSON         | 400, 401, 403, 500      |
+| 50  | GET    | `/audit-history/:id`    | sessão + `Administrador` ou `Gestor`                                  | `getAuditHistoryDetailController`  | 200 JSON         | 400, 401, 403, 404, 500 |
+| 51  | GET    | `/audit-logs/:protocol` | sessão + `Analista`, `Gestor` ou `Administrador`; custódia no service | `getAuditLogsByProtocolController` | 200 JSON (array) | 400, 401, 403, 404, 500 |
+
+Evidência: `F1 src/modules/auditHistory/auditHistory.router.ts:19-31,38-45`; montagens em
+`F1 src/router.ts:31-32`.
+
+`Cache-Control: private, no-store` é aplicado por um middleware montado apenas no router de
+`/audit-history` (`F1 src/modules/auditHistory/auditHistory.router.ts:14-17`); o router de
+`/audit-logs` é criado depois e **não** herda esse middleware
+(`F1 src/modules/auditHistory/auditHistory.router.ts:38-45`).
+
+**Desatualizado no legado:** `F1 docs/audit-history-contract.md:102-104` afirma que "as respostas"
+trafegam com `Cache-Control: private, no-store`. Vale para `/audit-history` e `/audit-history/:id`,
+não para `/audit-logs/:protocol`.
+
+### 16.3 GET /audit-history
+
+#### Request — query
+
+Validada por `auditHistoryQuerySchema` (`F1 src/modules/auditHistory/auditHistory.schema.ts:11-35`;
+chamada em `F1 src/modules/auditHistory/auditHistory.controller.ts:12-16`).
+
+| Param        | Tipo aceito                                                                          | Regra                     | Default | Mensagem                                               | Evidência                                                                                              |
+| ------------ | ------------------------------------------------------------------------------------ | ------------------------- | ------- | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
+| `page`       | inteiro ≥ 1                                                                          | `coerce`                  | 1       | Zod (inglês): `"Too small: expected number to be >0"`  | `F1 src/modules/auditHistory/auditHistory.schema.ts:5,13,31`                                           |
+| `limit`      | inteiro 1..100                                                                       | `coerce`                  | 20      | Zod (inglês): `"Too big: expected number to be <=100"` | `F1 src/modules/auditHistory/auditHistory.schema.ts:14,32`                                             |
+| `entityType` | `user` \| `prioritization` \| `request` \| `mapping` \| `settings` \| `pending_item` | enum derivado do catálogo | ausente | mensagem do Zod listando os valores válidos            | `F1 src/modules/auditHistory/auditHistory.schema.ts:9,15`; `F1 src/shared/audit/auditCatalog.ts:13-57` |
+
+O schema declara também as refines `"Page deve ser maior ou igual a 1."` e
+`"Limit não pode exceder 100."` (`F1 src/modules/auditHistory/auditHistory.schema.ts:18-25`), mas
+elas repetem a condição já coberta por `.int().positive()` e `.max(100)` no tipo base. Como refine
+de objeto só roda depois de o shape base passar, valor fora da faixa é reportado com a mensagem
+padrão do Zod, não com esses textos.
+
+- O schema é `.strict()`: query param desconhecido → 400
+  (`F1 src/modules/auditHistory/auditHistory.schema.ts:17`; `F1 docs/audit-history-contract.md:259`).
+- A lista de `entityType` é gerada de `Object.keys(auditCatalog)`, então incluir entidade no catálogo
+  inclui a opção de filtro automaticamente
+  (`F1 src/modules/auditHistory/auditHistory.schema.ts:7-9`).
+- Não há filtro por `entity_id`, ator, ação ou período — registrado como fora de escopo no contrato
+  (`F1 docs/audit-history-contract.md:375-376`).
+
+#### Response 200
+
+```json
+{
+  "items": [
+    {
+      "audit_id": 9,
+      "entity_type": "settings",
+      "entity_type_label": "Configuração do portal",
+      "action_type": "settings.update",
+      "actor": { "kind": "user", "userId": 102, "displayName": "Administrador Exemplo" },
+      "occurred_at": "2026-09-21T04:15:49.041Z"
+    }
+  ],
+  "total": 1,
+  "page": 1,
+  "limit": 20
+}
+```
+
+| Campo                       | Tipo                   | Regra                                                 | Evidência                                                                                                        |
+| --------------------------- | ---------------------- | ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `items[].audit_id`          | number                 | `Number(bigint)`; a coluna é `bigIncrements` no banco | `F1 src/modules/auditHistory/auditHistory.service.ts:23`; `F1 migrations/202609100009_create_audit_history.js:7` |
+| `items[].entity_type`       | string                 | `audit_history.entity_type` (vocabulário do catálogo) | `F1 src/modules/auditHistory/auditHistory.service.ts:24`                                                         |
+| `items[].entity_type_label` | string                 | rótulo PT-BR do catálogo; fallback = `entity_type`    | `F1 src/modules/auditHistory/auditHistory.service.ts:13-15,25`                                                   |
+| `items[].action_type`       | string                 | ação composta `<entidade>.<ação>`                     | `F1 src/modules/auditHistory/auditHistory.service.ts:26`; `F1 src/shared/audit/auditCatalog.ts:9-12`             |
+| `items[].actor.kind`        | `"system"` \| `"user"` | `"system"` quando `user_id` é nulo                    | `F1 src/modules/auditHistory/auditHistory.service.ts:27-31`                                                      |
+| `items[].actor.userId`      | number \| null         | `audit_history.user_id`                               | `F1 src/modules/auditHistory/auditHistory.service.ts:29`                                                         |
+| `items[].actor.displayName` | string \| null         | `users.full_name` via LEFT JOIN                       | `F1 src/modules/auditHistory/auditHistory.repository.ts:37,43`                                                   |
+| `items[].occurred_at`       | string ISO-8601        | `occurred_at.toISOString()`                           | `F1 src/modules/auditHistory/auditHistory.service.ts:32`                                                         |
+| `total`                     | number                 | `COUNT(*)` com o mesmo filtro de `entityType`         | `F1 src/modules/auditHistory/auditHistory.repository.ts:52-60`                                                   |
+| `page`, `limit`             | number                 | eco dos valores aplicados (ou do default)             | `F1 src/modules/auditHistory/auditHistory.service.ts:38-39`                                                      |
+
+Paginação:
+
+- Ordem fixa `occurred_at DESC`, **sem** desempate por `audit_id`
+  (`F1 src/modules/auditHistory/auditHistory.repository.ts:46`); eventos no mesmo instante podem
+  trocar de posição entre requisições.
+- Não há `totalPages` e o frontend deriva `Math.ceil(total / limit)`
+  (`F1 src/modules/auditHistory/auditHistory.service.ts:35-40`; `F1 docs/audit-history-contract.md:56-63`).
+- Não há clamp: `page` além do fim devolve `items: []` com o `page` solicitado ecoado
+  (`F1 src/modules/auditHistory/auditHistory.repository.ts:62-65`).
+- Consulta vazia devolve `200` com `items: []`
+  (`F1 docs/audit-history-contract.md:110-112,224-235`).
+
+#### Erros
+
+| Status | Condição                                                                                       | Mensagem                                                                                                                                                  | Evidência                                                                                              |
+| ------ | ---------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| 400    | `page`/`limit` não numéricos, fora da faixa, `entityType` fora do catálogo, param desconhecido | agregada por `formatZodIssues(..., "query")`                                                                                                              | `F1 src/modules/auditHistory/auditHistory.controller.ts:14-16`                                         |
+| 400    | `entityType` inválido                                                                          | `"Campos inválidos: entityType — Invalid option: expected one of \"user\"\|\"prioritization\"\|\"request\"\|\"mapping\"\|\"settings\"\|\"pending_item\""` | `F1 docs/audit-history-contract.md:243-250`                                                            |
+| 400    | query param desconhecido                                                                       | `"Campos inválidos: query — Unrecognized key: \"foo\""`                                                                                                   | `F1 src/modules/auditHistory/auditHistory.schema.ts:17`; `F1 src/shared/validation/zodErrors.ts:74,84` |
+| 401    | sem sessão / sessão inválida                                                                   | `"Token não fornecido"` / `"Token inválido ou expirado"`                                                                                                  | `F1 src/shared/middleware/auth.ts:27-45`                                                               |
+| 403    | perfil fora de Administrador/Gestor ou senha pendente                                          | `"Acesso restrito ao perfil Administrador ou Gestor"` / `"Troca de senha obrigatória antes de continuar"`                                                 | `F1 src/shared/middleware/requireRole.ts:11-22`; `F1 docs/audit-history-contract.md:96`                |
+| 500    | falha não prevista                                                                             | `"Erro interno do servidor"`                                                                                                                              | `F1 src/shared/middleware/errorHandler.ts:32-43`                                                       |
+
+### 16.4 GET /audit-history/:id
+
+#### Request
+
+- `:id` é o `audit_id` **numérico**; o controller faz `Number(req.params.id)` e exige inteiro ≥ 1,
+  senão 400 `"ID inválido"` (`F1 src/modules/auditHistory/auditHistory.controller.ts:25-29`).
+- Sem query params: nada além de `:id` é lido
+  (`F1 src/modules/auditHistory/auditHistory.controller.ts:21-33`).
+
+#### Response 200
+
+```json
+{
+  "audit_id": 9,
+  "entity_type": "request",
+  "entity_id": "MAAT-0000-0000",
+  "action_type": "request.status_change",
+  "actor": { "kind": "user", "userId": 7, "displayName": "Analista Exemplo" },
+  "previous_value": "Em triagem",
+  "new_value": "Em mapeamento",
+  "note": null,
+  "last_technical_message": null,
+  "ip_address": null,
+  "change_origin": "admin",
+  "occurred_at": "2026-09-21T04:15:49.041Z"
+}
+```
+
+| Campo                    | Tipo                            | Origem                                                          | Evidência                                                                                                              |
+| ------------------------ | ------------------------------- | --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `audit_id`               | number                          | `audit_id`                                                      | `F1 src/modules/auditHistory/auditHistory.service.ts:50`                                                               |
+| `entity_type`            | string                          | `audit_history.entity_type`                                     | `F1 src/modules/auditHistory/auditHistory.service.ts:51`                                                               |
+| `entity_id`              | string                          | `audit_history.entity_id` (protocolo, para `request`)           | `F1 src/modules/auditHistory/auditHistory.service.ts:52`                                                               |
+| `action_type`            | string                          | `audit_history.action_type`                                     | `F1 src/modules/auditHistory/auditHistory.service.ts:53`                                                               |
+| `actor`                  | `{ kind, userId, displayName }` | `user_id` + `users.full_name`; `kind` = `"system"` se nulo      | `F1 src/modules/auditHistory/auditHistory.service.ts:48,54-58`                                                         |
+| `previous_value`         | string \| null                  | valor anterior, texto livre (pode ser JSON serializado)         | `F1 src/modules/auditHistory/auditHistory.service.ts:59`; `F1 docs/audit-history-contract.md:363-365`                  |
+| `new_value`              | string \| null                  | valor novo, texto livre                                         | `F1 src/modules/auditHistory/auditHistory.service.ts:60`                                                               |
+| `note`                   | string \| null                  | justificativa interna da transição                              | `F1 src/modules/auditHistory/auditHistory.service.ts:61`; `F1 src/modules/DTOs/auditHistory/AuditHistory.dto.ts:32-33` |
+| `last_technical_message` | string \| null                  | snapshot do retorno público da transição                        | `F1 src/modules/auditHistory/auditHistory.service.ts:62`; `F1 src/modules/DTOs/auditHistory/AuditHistory.dto.ts:34-35` |
+| `ip_address`             | string \| null                  | IP do ator no evento                                            | `F1 src/modules/auditHistory/auditHistory.service.ts:63`                                                               |
+| `change_origin`          | string \| null                  | origem (`admin`, `system`, `internal`, ou nulo em linha legada) | `F1 src/modules/auditHistory/auditHistory.service.ts:64`; `F1 src/shared/types/internalNotes.ts:38`                    |
+| `occurred_at`            | string ISO-8601                 | instante do evento                                              | `F1 src/modules/auditHistory/auditHistory.service.ts:46-47,65`                                                         |
+
+- O detalhe **não** tem `entity_type_label`; o rótulo só existe no item de lista
+  (`F1 src/modules/DTOs/auditHistory/AuditHistory.dto.ts:24-39`).
+- `null` significa "não registrado para este evento", não string vazia
+  (`F1 docs/audit-history-contract.md:363-365`).
+
+#### Erros
+
+| Status | Condição                            | Mensagem                                                 | Evidência                                                      |
+| ------ | ----------------------------------- | -------------------------------------------------------- | -------------------------------------------------------------- |
+| 400    | `:id` não inteiro ou < 1            | `"ID inválido"`                                          | `F1 src/modules/auditHistory/auditHistory.controller.ts:27-29` |
+| 401    | sem sessão / sessão inválida        | `"Token não fornecido"` / `"Token inválido ou expirado"` | `F1 src/shared/middleware/auth.ts:27-45`                       |
+| 403    | perfil fora de Administrador/Gestor | `"Acesso restrito ao perfil Administrador ou Gestor"`    | `F1 src/shared/middleware/requireRole.ts:21-22`                |
+| 404    | `audit_id` inexistente              | `"Log não encontrado"`                                   | `F1 src/modules/auditHistory/auditHistory.service.ts:69-74`    |
+| 500    | falha não prevista                  | `"Erro interno do servidor"`                             | `F1 src/shared/middleware/errorHandler.ts:32-43`               |
+
+### 16.5 GET /audit-logs/:protocol
+
+#### Request
+
+- `:protocol` é o protocolo da solicitação (`entity_id` dos eventos `request.*`); não há query
+  params lidos (`F1 src/modules/auditHistory/auditHistory.controller.ts:35-53`).
+- `:protocol` só com espaços → 400 `"Protocolo é obrigatório"`
+  (`F1 src/modules/auditHistory/auditHistory.controller.ts:43-46`).
+- O protocolo é aparado antes da consulta
+  (`F1 src/modules/auditHistory/auditHistory.controller.ts:43`; `F1 src/modules/auditHistory/auditHistory.service.ts:86`).
+
+#### Autorização e custódia
+
+1. `requireRole("Analista", "Gestor", "Administrador")` no router
+   (`F1 src/modules/auditHistory/auditHistory.router.ts:40-45`).
+2. No service, `Administrador` e `Gestor` são "admin-like" e passam sem checagem de custódia
+   (`F1 src/modules/auditHistory/auditHistory.service.ts:87`).
+3. Para os demais, a solicitação é resolvida por `findRequestStatusContext`; se não existir,
+   recebe 403 genérico — só perfil admin-like vê o 404 real
+   (`F1 src/modules/auditHistory/auditHistory.service.ts:89-101`).
+4. A custódia é do responsável de triagem **ou** do designado de mapeamento, comparados por
+   `user_id` da sessão (`F1 src/modules/auditHistory/auditHistory.service.ts:103-115`).
+
+#### Response 200 — array direto
+
+`AuditHistoryDetail[]`, sem envelope, na ordem `occurred_at DESC` e, no empate, `audit_id DESC`
+(`F1 src/modules/auditHistory/auditHistory.repository.ts:117-123`). Os campos de cada item são
+exatamente os da §16.4.
+
+- **Sem paginação e sem `limit`**: a consulta não aplica `limit`/`offset`
+  (`F1 src/modules/auditHistory/auditHistory.repository.ts:99-124`;
+  `F1 docs/audit-history-contract.md:330-332`).
+- Filtro fixo no repositório: `entity_type = 'request' AND entity_id = :protocol`. Não há allowlist
+  de `action_type`, então **toda** ação registrada em `request.*` aparece — inclusive
+  `request.triage`, `request.update`, `request.access_denied` e
+  `request.override_status_admin` sem normalização
+  (`F1 src/modules/auditHistory/auditHistory.repository.ts:119-120`;
+  `F1 src/shared/audit/auditCatalog.ts:30-44`).
+  A timeline de observações internas, ao contrário, filtra 5 ações e normaliza o override (§17.3).
+- Eventos de `mapping` não entram: o `entity_id` deles é o `mapping_id`, não o protocolo
+  (`F1 src/modules/auditHistory/auditHistory.repository.ts:119`;
+  `F1 src/modules/internalNotes/internalNotes.repository.ts:95-103`).
+- A rota **não** emite `Cache-Control` (§16.2).
+
+#### Erros
+
+| Status | Condição                                                      | Mensagem / `code`                                                                                                                 | Evidência                                                                                                |
+| ------ | ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| 400    | `:protocol` vazio após `trim`                                 | `"Protocolo é obrigatório"`                                                                                                       | `F1 src/modules/auditHistory/auditHistory.controller.ts:44-46`                                           |
+| 401    | sem sessão / sessão inválida                                  | `"Token não fornecido"` / `"Token inválido ou expirado"`; o controller repete `"Token inválido ou expirado"` se `req.user` faltar | `F1 src/modules/auditHistory/auditHistory.controller.ts:39-41`; `F1 src/shared/middleware/auth.ts:27-45` |
+| 403    | perfil fora dos três internos                                 | `"Acesso restrito ao perfil Analista ou Gestor ou Administrador"`                                                                 | `F1 src/shared/middleware/requireRole.ts:21-22`                                                          |
+| 403    | protocolo inexistente para não admin-like                     | `"Ação restrita ao Administrador ou ao Analista responsável pela demanda."`, `code: "INSUFFICIENT_ROLE_PERMISSIONS"`              | `F1 src/modules/auditHistory/auditHistory.service.ts:90-99`                                              |
+| 403    | sem custódia (não é responsável de triagem nem de mapeamento) | idem acima                                                                                                                        | `F1 src/modules/auditHistory/auditHistory.service.ts:109-115`                                            |
+| 404    | protocolo inexistente para Administrador/Gestor               | `"Protocolo não encontrado"`                                                                                                      | `F1 src/modules/auditHistory/auditHistory.service.ts:100`                                                |
+| 500    | falha não prevista                                            | `"Erro interno do servidor"`                                                                                                      | `F1 src/shared/middleware/errorHandler.ts:32-43`                                                         |
+
+O contrato registra o mesmo recorte de permissão e de erros
+(`F1 docs/audit-history-contract.md:341-354`).
+
+### 16.6 Visão do consumidor (F2) e drift
+
+- O F2 consome apenas `/audit-history` e `/audit-history/:id`
+  (`F2 src/lib/api/audit-history.api.ts:10-53`). **Não há cliente para `/audit-logs/:protocol`** em
+  `src/lib/api` nem `src/lib/types` do F2.
+- A query é montada com `page`, `limit` e `entityType`, só quando definidos
+  (`F2 src/lib/api/audit-history.api.ts:21-35`).
+- O detalhe é buscado por id numérico, interpolado no path
+  (`F2 src/lib/api/audit-history.api.ts:44-53`).
+- `AuditHistoryDetail` do F2 **omite** `last_technical_message` e `ip_address`: são enviados pelo
+  backend e não declarados no tipo do consumidor
+  (`F2 src/lib/types/audit.ts:44-55`; `F1 src/modules/DTOs/auditHistory/AuditHistory.dto.ts:24-39`).
+- `AuditEntityType` do F2 lista as mesmas 6 entidades
+  (`F2 src/lib/types/audit.ts:7-8`), e `AuditHistoryListResponse` declara
+  `{ items, total, page, limit }` sem `totalPages`, com o total de páginas derivado no cliente
+  (`F2 src/lib/types/audit.ts:34-41`).
+- `entity_type_label` é consumido do item de lista (`F2 src/lib/types/audit.ts:25-32`); o detalhe do
+  F2 não o declara, o que coincide com o detalhe do backend, que também não o envia (§16.4).
+- As chaves snake_case são consumidas como estão (`F2 src/lib/types/audit.ts:1-4`); não há camada de
+  tradução no cliente.
+- Erros são lidos de `body.message` (`F2 src/lib/api/client.ts:86-92`): o `code`
+  `INSUFFICIENT_ROLE_PERMISSIONS` do 403 não é usado.
+
+### 16.7 Confronto com `docs/04-API-Conventions.md`
+
+- **Divergente (legado vigente):** paths sem `/api/v1` — convenção §1.
+- **Compatível por exceção registrada:** chaves de topo em snake_case (`audit_id`, `entity_type`,
+  `entity_type_label`, `action_type`, `entity_id`, `previous_value`, `new_value`, `note`,
+  `change_origin`, `last_technical_message`, `ip_address`, `occurred_at`) e ator interno em
+  camelCase (`userId`, `displayName`) — é exatamente a exceção legada de auditoria da convenção §11.
+- **Compatível por exceção registrada:** envelope `{ items, total, page, limit }` sem `totalPages`,
+  item com `audit_id` numérico e `entity_type_label` — convenção §15.2 (legado), com linha na §4.3
+  ("Auditoria (legado)": default 20, máximo 100, sem clamp).
+- **Divergente (legado vigente):** o envelope `{ items, total, page, limit }` não é o
+  `{ data, page, pageSize, total, totalPages }` da §4.1 — é a forma que a §15.2 (legado) registra
+  para a auditoria até a migração. A ausência de clamp de `page` é o que a §4.3 anota como
+  "não no legado" para a auditoria.
+- **Divergente (legado vigente):** `audit_id` numérico no corpo e `:id` numérico no path — §15.2
+  (alvo) e ADR-0003 preveem UUID; §0.2 #23 mantém o formato legado até a spec de auditoria.
+- **Divergente (legado vigente):** `GET /audit-logs/:protocol` devolve array sem envelope e sem
+  paginação, e não tem linha na tabela de exceções da §4.3.
+- **Divergente (legado vigente):** `code` de domínio em `UPPER_SNAKE_CASE`
+  (`INSUFFICIENT_ROLE_PERMISSIONS`) — §11 e §2.3 exigem `snake_case` minúsculo e catálogo estável.
+- **Divergente (legado vigente):** protocolo inexistente devolve `403` para perfil não admin-like,
+  escondendo a existência; §2.3 define `not_found` "também para protocolo não encontrado, sem 403"
+  (ADR-0023). O comportamento é intencional e comentado no legado
+  (`F1 src/modules/auditHistory/auditHistory.service.ts:91-92`).
+- **Registrado (sem convenção correspondente):** `Cache-Control: private, no-store` existe em
+  `/audit-history` e `/audit-history/:id` e não existe em `/audit-logs/:protocol`
+  (`F1 src/modules/auditHistory/auditHistory.router.ts:14-17,38-45`). Nenhuma seção de
+  `docs/04-API-Conventions.md` trata cache de resposta.
+- **Desatualizado no legado:** `F1 docs/audit-events.md:13-20` lista 4 entidades e 14 ações; o
+  catálogo vigente tem 6 entidades e 25 ações — faltam `mapping` (`assign`, `save`, `complete`),
+  `pending_item` (`create`, `respond`, `attach`, `validate`, `reopen`), `user.update_profile`,
+  `user.update` e `request.update` (`F1 src/shared/audit/auditCatalog.ts:13-57`). O mesmo documento
+  descreve a coluna `created_at` (`F1 docs/audit-events.md:7`), mas a coluna é `occurred_at`
+  (`F1 migrations/202609100009_create_audit_history.js:14`), e omite `ip_address` e
+  `last_technical_message`, criados depois
+  (`F1 migrations/requester_request/20260926000000_complete_status_transition_v4.js:256-260`).
+
+**Cobertura da seção:** 3 de 3 rotas do inventário.
+
+- `GET /audit-history` (#49)
+- `GET /audit-history/:id` (#50)
+- `GET /audit-logs/:protocol` (#51)
