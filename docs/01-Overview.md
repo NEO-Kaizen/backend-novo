@@ -8,6 +8,8 @@ Documentos relacionados:
 
 - [`02-Architecture.md`](./02-Architecture.md) — arquitetura em camadas, injeção de dependências, persistência com Knex e regras de modularização.
 - [`03-Data-Model.md`](./03-Data-Model.md) — o modelo de dados: tabelas, colunas, relações e invariantes.
+- [`04-API-Conventions.md`](./04-API-Conventions.md) — convenções transversais da API v1 herdadas por todas as specs de domínio.
+- [`_template.md`](./_template.md) — template de spec de domínio.
 - [`../GLOSSARY.md`](../GLOSSARY.md) — vocabulário do domínio.
 - [`adr/`](./adr/) — decisões de arquitetura registradas.
 
@@ -108,22 +110,25 @@ O inventário completo, com responsabilidades e portas publicadas por cada domí
 ## 6. Mapa da documentação
 
 ```text
-01-Overview.md      → o que é, por que, escopo
-02-Architecture.md  → como o código se organiza e por quê
-03-Data-Model.md    → as tabelas, as relações e as invariantes do banco
+01-Overview.md        → o que é, por que, escopo
+02-Architecture.md    → como o código se organiza e por quê
+03-Data-Model.md      → as tabelas, as relações e as invariantes do banco
 04-API-Conventions.md → convenções transversais da API v1 (envelope, paginação, sessão, ids, datas, request-id, rate limit, CORS)
-db/README.md        → porta de entrada da documentação do banco
+_template.md          → template de spec de domínio
+db/README.md          → porta de entrada da documentação do banco
   db/01-vocabulary.md → índice termo → tabela
   db/02-reference.md  → referência do schema (colunas, constraints, índices, FKs)
   db/03-erd.md        → diagramas de entidade
   db/04-seeds.md      → inventário e ordem dos seeds
   db/05-operations.md → operação, migrations, seeds e verificação
   db/schema.dbml      → schema para dbdiagram/dbdocs
-GLOSSARY.md         → o que cada termo do domínio significa
-adr/                → decisões que custam caro para reverter
-CODING_STANDARDS.md → como escrever o código
-SETUP.md            → como preparar o ambiente
+GLOSSARY.md           → o que cada termo do domínio significa
+adr/                  → decisões que custam caro para reverter
+CODING_STANDARDS.md   → como escrever o código
+SETUP.md              → como preparar o ambiente
 ```
+
+As convenções transversais da API v1 estão em [`04-API-Conventions.md`](./04-API-Conventions.md); o template de spec de domínio está em [`_template.md`](./_template.md).
 
 ---
 

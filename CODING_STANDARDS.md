@@ -150,7 +150,12 @@ const CreateUser = z.strictObject({
 const parsed = CreateUser.safeParse(req.body);
 if (!parsed.success) {
   return res.status(400).json({
-    error: { code: "validation_error", fields: parsed.error.issues.map((i) => ({ path: i.path.join("."), message: i.message })) },
+    error: {
+      code: "validation_error",
+      message: "Dados inválidos.",
+      requestId: req.id,
+      fields: parsed.error.issues.map((i) => ({ path: i.path.join("."), message: i.message })),
+    },
   });
 }
 ```
