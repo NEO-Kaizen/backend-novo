@@ -1,10 +1,11 @@
 # Setup do ambiente de desenvolvimento
 
-Este documento reúne os passos para preparar o ambiente local. A primeira dependência coberta é o **GitHub CLI** (`gh`). As demais serão adicionadas conforme o projeto evoluir.
+Este documento reúne os passos para preparar o ambiente local. As dependências cobertas são o **GitHub CLI** (`gh`) e o **Node.js 24** (com npm). As demais serão adicionadas conforme o projeto evoluir.
 
 ## Pré-requisitos
 
 - Conta no GitHub com acesso ao repositório `NEO-Kaizen/backend-novo`.
+- Node.js 24+ (`.nvmrc`) e npm.
 - Terminal: bash/zsh no Linux e macOS; PowerShell no Windows.
 
 ## 1. Instalar o GitHub CLI
@@ -105,6 +106,18 @@ Instale a extensão usada pelo fluxo de pull requests do repositório:
 ```bash
 gh extension install github/gh-stack
 ```
+
+## 3. Rodar o backend
+
+```bash
+npm ci
+npm run dev
+npm run check
+npm run build
+npm start:prod
+```
+
+`npm run dev` usa `--watch` sobre `src/server.ts`; `npm start:prod` executa `dist/server.js`. O `.env` é opcional: os scripts usam `--env-file-if-exists=.env`.
 
 ## Problemas comuns
 

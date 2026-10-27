@@ -86,14 +86,14 @@ A reescrita não é uma reimplementação linha a linha. O legado é a **fonte d
 | --- | --- | --- |
 | Runtime | Node.js 24+ | `CODING_STANDARDS.md` |
 | Módulos | ESM | `CODING_STANDARDS.md` |
-| Linguagem | TypeScript 7, modo estrito | `CODING_STANDARDS.md` |
+| Linguagem | TypeScript ~6.0.3 (alvo 7), modo estrito | `CODING_STANDARDS.md` |
 | HTTP | Express 5 | `CODING_STANDARDS.md` |
 | Persistência | Knex como query builder, sem ORM | [ADR-0003](./adr/0003-knex-dialect-portability.md) |
 | Validação | Zod na borda | [02-Architecture § 13](./02-Architecture.md#13-validação-e-a-borda) |
 | Autorização | Matriz de capabilities em código, com escopo e atribuibilidade | [ADR-0025](./adr/0025-authorization-capability-scope.md) |
 | Auditoria | Alteração orientada a evento; tentativa gravada na borda | [ADR-0007](./adr/0007-event-driven-audit.md) |
 
-> Ferramentas de apoio (gerenciador de pacotes, linter, formatter, runner de testes) ainda não foram decididas e não são tratadas aqui.
+> Ferramentas de apoio: npm (lockfile v3), ESLint (flat config) e Prettier estão definidas em `package.json`, `eslint.config.js` e `.prettierrc`; o runner de testes segue em aberto (issue própria).
 
 ---
 
