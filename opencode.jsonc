@@ -4,12 +4,13 @@
     // Base: qualquer comando de shell pede confirmação, salvo as exceções abaixo.
     { "action": "shell", "resource": "*", "effect": "ask" },
 
-    // Todo comando Git pede confirmação, exceto a inspeção liberada logo abaixo.
+    // Todo comando Git pede confirmação, exceto os comandos liberados logo abaixo.
     { "action": "shell", "resource": "git *", "effect": "ask" },
     { "action": "shell", "resource": "git status *", "effect": "allow" },
     { "action": "shell", "resource": "git diff *", "effect": "allow" },
     { "action": "shell", "resource": "git log *", "effect": "allow" },
     { "action": "shell", "resource": "git show *", "effect": "allow" },
+    { "action": "shell", "resource": "git add *", "effect": "allow" },
 
     // Scripts versionados e revisados no package.json.
     { "action": "shell", "resource": "npm run *", "effect": "allow" },
