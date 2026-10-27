@@ -65,7 +65,7 @@ O Knex ordena os seeds pelo caminho completo por padrão, e isso agrupa por dire
 
 ## Fluxo local
 
-Os comandos abaixo são a interface prevista: `knexfile.ts`, `migrations/` e `seeds/` nascem no scaffolding. No Node 24 o type stripping é nativo, então o `--knexfile knexfile.ts` não exige o flag `--experimental-strip-types` nem um loader.
+Os comandos abaixo são a interface prevista: `knexfile.ts`, `migrations/` e `seeds/` nascem no scaffolding. No Node 24 o type stripping é nativo, então o `--knexfile knexfile.ts` não exige o flag `--experimental-strip-types` nem um loader — a verificação dessa premissa está em [Type stripping do `knexfile.ts`](#type-stripping-do-knexfilets).
 
 1. **Criar o banco** (exemplo; o nome é o de `DATABASE.NAME`):
 
@@ -96,6 +96,28 @@ Os comandos abaixo são a interface prevista: `knexfile.ts`, `migrations/` e `se
    ```
 
 5. **Verificar** as contagens do [`04-seeds.md`](./04-seeds.md) e o checklist de paridade do [`README.md`](./README.md).
+
+### Type stripping do `knexfile.ts`
+
+A interface acima depende de o CLI do Knex carregar um arquivo `.ts`, e isso foi verificado no Node 24 sem loader. Com um `knexfile.ts` mínimo e `knex` instalado:
+
+```bash
+npx knex migrate:list --knexfile knexfile.ts
+```
+
+Saída em Node 24.15.0 com `knex` 3.3.0:
+
+```text
+Failed to load external module ts-node/register
+Failed to load external module typescript-node/register
+Failed to load external module typescript-register
+Failed to load external module typescript-require
+Failed to load external module sucrase/register/ts
+Failed to load external module @babel/register
+Error: ENOENT: no such file or directory, scandir '.../migrations'
+```
+
+As seis linhas `Failed to load external module` são o CLI sondando registradores opcionais (`ts-node`, `sucrase`, `@babel/register`); elas aparecem sempre e não impedem nada. O `ENOENT` em `migrations/` é a prova de que o `.ts` foi carregado e executado: um erro de sintaxe apareceria antes, e a falha restante é só o diretório que ainda não existe. Quando `migrations/` existir, o comando lista as migrations em vez de falhar.
 
 ### Rollback
 
