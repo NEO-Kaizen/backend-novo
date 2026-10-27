@@ -18,7 +18,7 @@ Ver [`docs/04-API-Conventions.md`](./04-API-Conventions.md). Esta spec apenas re
 
 ## 6. Paginação
 
-- cada endpoint de listagem marcado como “global” ou citando a exceção de §4.3; “não paginado” justificado.
+- cada endpoint de listagem marcado como “global” ou citando a exceção de §4.3; “não paginado” só com linha em §4.3.
 
 ## 7. Erros
 

@@ -35,12 +35,12 @@ divergência exige emenda aqui e emenda ao ADR correspondente.
 | 12 | Content types | decidido | JSON 1 MiB; multipart em §9; 400/413/415 | `02-Architecture.md` §15; este §9 | Backend |
 | 13 | Datas e horas | decidido | ISO-8601 UTC para timestamps; `yyyy-mm-dd` para datas puras; tipo único via `dialect.timestampType()` | F1 (`docs/solicitations-api-requests-0_4.md` §1; `docs/requests-internal-query-contract.md`); `03-Data-Model.md` §2.5 (tipo do banco) | Backend + FE |
 | 14 | Idioma | decidido | Chaves EN camelCase; valores pt-BR; `code` em snake_case; exceção legada de auditoria em §11 | C14; `GLOSSARY.md` | Backend + FE |
-| 15 | Request-id | decidido | `x-request-id` UUID, echo e log; `correlationId` (HTTP) × `requestId` (solicitação); exceção do envelope de erro em §2.2 | C11; `02-Architecture.md` §9.4/§17 | Backend |
+| 15 | Request-id | decidido | `x-request-id` UUID, echo e log; `correlationId` é o id HTTP no log e `requestId` é o id de negócio fora do envelope; no envelope de erro, `requestId` é o id HTTP (emenda ao C11 em §12) | C11 (emenda em §12); `02-Architecture.md` §9.4/§17 | Backend |
 | 16 | Rate limiting (verify público) | decidido | 10 req/10 min por IP+protocolo; 429 `rate_limited`; `Retry-After`; storage compartilhado; login em §0.2 | C12; `02-Architecture.md` §14.2; F1 (`docs/contract-pendencias_03.md` §3) | Backend + Infra |
 | 17 | CORS | decidido | Origens explícitas, `credentials`, `exposedHeaders` (`Content-Disposition`, `x-request-id`), sem wildcard | C13; `02-Architecture.md` §15 | Backend + Infra |
 | 18 | Ids e `key` de status | decidido | PKs de entidade em UUID v4 gerado pela app; `status.key` `varchar(50)` UNIQUE e imutável; referências a status usam `key`, e id numérico de status não vai ao wire | ADR-0003; ADR-0021; `02-Architecture.md` §10.4/§22.1 | Backend + FE |
 | 19 | Header do solicitante | decidido | Aceitar `X-Requester-Email` e `X-Requester-Identity` por uma release; depois só Email; o header não autentica | C10; ADR-0023 | Backend + FE |
-| 20 | Códigos de sucesso | decidido | 200 leitura/atualização; 201 criação; 204 sem corpo | F1 (contratos legados: 200/201/204) | Backend |
+| 20 | Códigos de sucesso | decidido | 200 leitura/atualização; 201 criação; 204 sem corpo | F1 (`docs/solicitations-api-requests-0_4.md` §1 — 201; `docs/audit-history-contract.md` §1–§3 — 200; `docs/internal-observations.md` §7 — 204) | Backend |
 | 21 | Envelope de auditoria (legado) | decidido | `{ items, total, page, limit }`; item com `audit_id` numérico, `entity_type_label` e `action_type`; mantido até a migração | `02-Architecture.md` §22.1; F1 (`docs/audit-history-contract.md`); F2 (`src/lib/types/audit.ts`) | Backend + FE |
 | 22 | Multipart — limites por rota | decidido | Limites por rota e total em §9; nenhum outro limite é válido | F1; este §9 | Backend |
 
@@ -49,7 +49,7 @@ divergência exige emenda aqui e emenda ao ADR correspondente.
 | # | Convenção | Status | Recomendação | Citação | Dono | Destino | Prazo/gatilho |
 |---|---|---|---|---|---|---|---|
 | 23 | Envelope de auditoria (alvo) | conflito | Envelope padrão camelCase; `id` UUID; `action` separado de `entityType`; `entity_type_label` a definir | `02-Architecture.md` §22/§22.1; `03-Data-Model.md` §15.1; F1 (`docs/audit-history-contract.md`); F2 (`src/lib/types/audit.ts`) | Backend + FE | Spec de auditoria | Antes de congelar a spec de auditoria |
-| 24 | Rate limiting de login | decisão necessária | 10 req/min por IP+e-mail; `rate_limited` + `Retry-After`; registrar janela e chave na spec | C15 (novo); F1 (`docs/contract-pendencias_03.md` §3 — verify); o legado não limita login | Backend + Infra | Spec de `auth` | Antes de congelar a spec de `auth` |
+| 24 | Rate limiting de login | decisão necessária | 10 req/min por IP+e-mail; `rate_limited` + `Retry-After`; registrar janela e chave na spec | C15 (novo); F1 (`docs/contract-pendencias_03.md` §3 — só o verify, 10/10 min; login sem limite no legado) | Backend + Infra | Spec de `auth` | Antes de congelar a spec de `auth` |
 
 ## 1. Base path e versionamento
 
@@ -82,7 +82,7 @@ divergência exige emenda aqui e emenda ao ADR correspondente.
 ```
 
 - Migração coordenada (ver ADR-0005 §Gatilho da migração).
-- `requestId` aqui é o id HTTP (correlação), aditivo ao envelope legado. Em código de domínio, o id HTTP é `correlationId` e o id de negócio é `requestId` (C11); a exceção de nomenclatura está em §12.
+- `requestId` aqui é o id HTTP (correlação), aditivo ao envelope legado. No log, o id HTTP é `correlationId` e, fora do envelope, o id de negócio é `requestId`; a emenda ao C11 está em §12.
 
 ### 2.3 Catálogo de códigos
 
@@ -137,11 +137,13 @@ divergência exige emenda aqui e emenda ao ADR correspondente.
 ### 4.3 Exceções à regra global
 
 - **Regra global:** todo endpoint de listagem usa default **20**, máximo **100** e clamp de página. O valor de cada endpoint é a regra global; não há uma tabela por endpoint repetindo o mesmo número.
+- **Emenda ao critério de aceite da #30:** o default 20, o máximo 100 e o clamp são globais; este registro de exceções atende ao requisito “por endpoint” e não há tabela repetindo os mesmos valores.
+- **Listagem não paginada:** também é exceção e só existe com uma linha nesta tabela, citada pela spec; sem linha, a listagem é paginada.
 - A tabela abaixo é o **registro de exceções**. Um endpoint com default, máximo ou clamp diferente só existe se estiver aqui; a spec de domínio lista seus endpoints e marca cada um como “global” ou cita a linha da exceção.
 
 | Endpoint / grupo | Default | Máximo | Clamp | Dono | Destino | Prazo/gatilho |
 |---|---|---|---|---|---|---|
-| Linha do tempo (`GET /api/v1/requests/:protocol/internal-notes`) | 20 (`limit`) | 50 | keyset (`cursor`/`nextCursor`) | Backend | Spec de `requests` | Antes de congelar a spec de `requests` (F1, `docs/internal-observations.md` §4) |
+| Linha do tempo (`GET /api/v1/requests/:protocol/internal-notes`) | 20 (`limit`) | 50 | keyset (`cursor`/`nextCursor`) | Backend | Spec de `requests` | Antes de congelar a spec de `requests` (F1, `docs/internal-observations.md` §4 — exceção keyset; §7 — default 20/máximo 50) |
 | Auditoria (legado) | 20 (`limit`) | 100 | não no legado | Backend + FE | Spec de auditoria | Antes de congelar a spec de auditoria |
 
 Os valores 20/100 da auditoria são os globais; a exceção é o parâmetro `limit` e a ausência de `totalPages`.
@@ -156,7 +158,7 @@ Os valores 20/100 da auditoria são os globais; a exceção é o parâmetro `lim
 - TTL: 1 dia (configurável via `JWT_EXPIRES_IN`, default `1d`).
 - Validação por requisição: assinatura + expiração; relê usuário/perfil no banco; compara `password_changed_at` com o do token.
 - **Pendência de implementação (não é decisão de API):** o env schema (`src/platform/config/environment-schema.ts`) ainda não tem `COOKIE_NAME` nem `JWT_EXPIRES_IN`. Dono: Backend + Infra. Destino: o próprio env schema. Prazo/gatilho: antes do primeiro deploy com sessão.
-- Tokens, cookies e segredos nunca em URL; a senha do login vai apenas no body de `POST /auth/login`, nunca em URL ou log.
+- Tokens, cookies e segredos nunca em URL nem em body; a única exceção é a senha de `POST /auth/login`, que vai no body, nunca em URL ou log.
 
 ## 6. Autorização (ADR-0025)
 
@@ -259,7 +261,7 @@ Os valores 20/100 da auditoria são os globais; a exceção é o parâmetro `lim
 
 - Header: `x-request-id` (minúsculo na entrada; echo no response). Aceito apenas se for UUID válido; senão o servidor gera um.
 - Naming: `correlationId` = id HTTP (`req.id`), usado no log estruturado; `requestId` = id da solicitação de negócio. `AttemptRecord.correlationId` é sempre o `req.id`.
-- **Exceção do envelope de erro:** no corpo do erro (legado e alvo), `requestId` carrega o id HTTP; fora dele, `requestId` é o id de negócio.
+- **Emenda ao C11:** no envelope de erro (legado e alvo), `requestId` carrega o id HTTP; fora dele, `requestId` é o id de negócio e o id HTTP é `correlationId`. O envelope de erro é a única exceção.
 - Citação: `02-Architecture.md` §9.4, §17.
 
 ## 13. Rate limiting (C12)
@@ -326,7 +328,7 @@ Uma spec de domínio só vira `frozen` se todas as caixas abaixo estiverem marca
 
 - [ ] Cita `docs/04-API-Conventions.md` em vez de redefinir envelope, paginação, sessão, ids, datas, request-id, CORS ou rate limit.
 - [ ] Endpoints listados com método, path sob `/api/v1`, auth e capability.
-- [ ] Paginação: cada endpoint de listagem listado e marcado como “global” ou com a exceção de §4.3; “não paginado” justificado.
+- [ ] Paginação: cada endpoint de listagem listado e marcado como “global” ou com a exceção de §4.3; “não paginado” só com linha em §4.3.
 - [ ] Erros: códigos do catálogo + códigos de domínio registrados em `error-codes.ts` (a implementar).
 - [ ] Validação: campos, limites e mensagens pt-BR.
 - [ ] Multipart: rota, quantidade, tamanho, MIME e 400/413/415 coerentes com §9.
@@ -353,13 +355,15 @@ Uma spec de domínio só vira `frozen` se todas as caixas abaixo estiverem marca
 | C8 | Status de destino e precondição no wire (`targetStatusKey` + `expectedStatusKey`) | #10 |
 | C9 | `Idempotency-Key` no v1 | #11 |
 | C10 | Header do solicitante | #19 |
-| C11 | `requestId` = id HTTP ou da solicitação | #15 |
+| C11 | `requestId` = id HTTP ou da solicitação (emenda em §12) | #15 |
 | C12 | 429: código e headers (verify) | #16 |
 | C13 | CORS `exposedHeaders` | #17 |
 | C14 | Chaves de auditoria (legado) | #14, #21 |
 | C15 | Rate limit de login (novo) | #24 |
 
 > C14: o alvo da auditoria está aberto na §0.2 #23; a linha acima cobre a regra de idioma e o contrato legado.
+>
+> C11: emenda em §12 — `correlationId` no log; `requestId` no envelope de erro (HTTP) e nos DTOs de negócio (solicitação).
 
 ## Apêndice B — Fontes externas
 

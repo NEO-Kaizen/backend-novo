@@ -103,6 +103,7 @@ const [user, orders] = await Promise.all([
 - Não engula erro. Se recuperar, registre o motivo e o que foi feito.
 - Logue a causa uma vez, na borda; não faça log-and-rethrow em cada camada.
 - Resposta de erro: `{ error: { code, message, requestId } }`. `code` é estável em `snake_case` e não é traduzido; `message` é em português e só é exposta quando `expose` é true — o resto vira `internal_error` com mensagem genérica.
+- No corpo do erro, `requestId` é o id HTTP (emenda ao C11 em `docs/04-API-Conventions.md` §12); no log estruturado, o id HTTP é `correlationId`. Fora do envelope, `requestId` é o id da solicitação de negócio.
 - Nunca devolva stack, SQL, path, nome de tabela ou versão interna.
 - Use exceção para condição excepcional; validação de entrada retorna 400, não lança erro genérico.
 
@@ -134,6 +135,7 @@ export class AppError extends Error {
 - `params`, `query`, `body` e headers relevantes passam por schema (Zod ou equivalente).
 - Use `strictObject` para rejeitar campos desconhecidos e limite strings, arrays, números e profundidade.
 - `safeParse` → 400 `validation_error` com detalhes por campo; `Content-Type` errado → 415.
+- Mensagens de validação vêm de um catálogo pt-BR por campo; não use a mensagem default do Zod (inglês) nem um texto genérico para todos os campos.
 - Normalize antes de comparar. Valide formato; não “sanitize” substituindo caracteres — encode na saída.
 - Não faça mass assignment: mapeie os campos validados explicitamente para o input do domínio.
 - SQL sempre parametrizado (`$1`, `?`); nunca interpole valor em string.
@@ -156,7 +158,7 @@ if (!parsed.success) {
       requestId: req.id,
       fields: parsed.error.issues.map((i) => ({
         path: i.path.join("."),
-        message: "Campo inválido.", // em produção, use a mensagem pt-BR do campo
+        message: fieldMessage(i), // catálogo pt-BR por campo
       })),
     },
   });
@@ -220,6 +222,7 @@ const errorHandler: ErrorRequestHandler = (err, req, res, next) => {
 - Log estruturado (JSON), com nível e campos estáveis.
 - Header `x-request-id`: aceite só se for UUID válido; senão gere um; devolva no header.
 - Logue método, rota, status, duração e correlation ID (`correlationId`). Não logue body por default.
+- `correlationId` é o mesmo id HTTP do header `x-request-id`; no corpo do erro ele mantém o nome `requestId` por compatibilidade (ver §5).
 - Redija `authorization`, `cookie`, `set-cookie`, `password`, `token` e `secret`.
 - Não logue PII.
 - Logue a causa do erro uma vez, na borda; não faça log-and-rethrow.
