@@ -4901,3 +4901,481 @@ Evidência: `F1 src/modules/prioritization/prioritization.controller.ts:30-48`; 
 | Request-id       | Ausente                                                                                                    | **Divergente (legado vigente):** §12; anotado na §3 do baseline                                                                          |
 
 **Cobertura da seção:** 2 de 2 rotas do inventário — #37 `GET /prioritization/criteria`; #38 `PUT /prioritization/:protocol/score`.
+
+## 13. pending-items
+
+Seis rotas do inventário (§4, #39 a #44). As cinco rotas de pendência são montadas em `/requests/:protocol/pending-items` (`F1 src/router.ts:22`); o verify público é montado em `/requests/:protocol/public` e responde em `/verify` (`F1 src/router.ts:23`).
+
+O domínio usa dois transportes de identidade: cookie de sessão nas rotas internas de criação e revisão, e cookie **ou** header `X-Requester-Identity` nas rotas de leitura, resposta e anexo (`F1 src/shared/middleware/dualAuth.ts:6-18`). A posse é verificada no service, não no middleware (`F1 src/modules/pendingItems/pendingItems.service.ts:210-233`).
+
+### 13.1 Fontes
+
+| Ref | Caminho                                                                                                                          | Uso                                                         |
+| --- | -------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| F1  | `src/modules/pendingItems/pendingItems.router.ts`                                                                                | montagem, middlewares, multipart e handlers                 |
+| F1  | `src/modules/pendingItems/pendingItems.controller.ts`                                                                            | validação de entrada, rate limit e códigos de sucesso       |
+| F1  | `src/modules/pendingItems/pendingItems.schema.ts`                                                                                | corpos de criação, revisão e verify                         |
+| F1  | `src/modules/pendingItems/pendingItems.service.ts`                                                                               | posse, regras de estado, catálogo de campos, anexo e verify |
+| F1  | `src/modules/pendingItems/pendingItems.repository.ts`                                                                            | consultas, transações, auditoria e mapeamento               |
+| F1  | `src/modules/DTOs/pendingItems/PendingItems.dto.ts`                                                                              | formatos de request/response                                |
+| F1  | `src/shared/catalog/fieldCatalog.ts`                                                                                             | catálogo fechado de `fieldKey`, rótulos e snapshot          |
+| F1  | `src/shared/middleware/dualAuth.ts`; `src/shared/utils/requesterIdentity.ts`                                                     | cookie OU header de identidade                              |
+| F1  | `src/shared/utils/normalizeIdentity.ts`                                                                                          | normalização de nome e e-mail                               |
+| F1  | `src/shared/middleware/upload.ts`                                                                                                | allowlist de MIME e limite de 10 MB                         |
+| F1  | `src/shared/middleware/rateLimit.ts`                                                                                             | janela e limite do verify                                   |
+| F1  | `docs/contract-pendencias_03.md`                                                                                                 | contrato de referência do próprio legado                    |
+| F2  | `src/lib/api/pending-item.api.ts`                                                                                                | chamadas do consumidor                                      |
+| F2  | `src/lib/types/pendency.ts`                                                                                                      | tipos de wire e de agrupamento                              |
+| F2  | `src/lib/services/pendency.service.ts`; `src/lib/services/requester-tracking.service.ts`                                         | validação local, mensagens e agrupamento                    |
+| F2  | `src/lib/pendency/pending-attachments.ts`; `src/lib/pendency/field-catalog.ts`                                                   | regras locais de anexo e catálogo de campos                 |
+| F2  | `src/lib/types/request.ts`                                                                                                       | limites de anexo do consumidor                              |
+| F2  | `src/lib/api/requester-tracking.api.ts`; `src/lib/types/requester-tracking.ts`; `src/lib/services/requester-identity.service.ts` | verify público e identidade em `sessionStorage`             |
+
+O código não referencia `F1 docs/internal-observations.md`; o documento apenas menciona `pending_item.*` como fora da timeline de observações internas (`F1 docs/internal-observations.md` §2).
+
+### 13.2 Rotas
+
+| #   | Método | Path                                                           | Autenticação/autorização                                                                 | Handler              | Sucesso | Erros                                    |
+| --- | ------ | -------------------------------------------------------------- | ---------------------------------------------------------------------------------------- | -------------------- | ------- | ---------------------------------------- |
+| 39  | POST   | `/requests/:protocol/pending-items`                            | cookie; `Analista`, `Gestor` ou `Administrador`; no service, `Administrador` ou assignee | `createPendingItems` | `201`   | `400`, `401`, `403`, `404`, `409`, `500` |
+| 40  | GET    | `/requests/:protocol/pending-items`                            | dual: cookie ou `X-Requester-Identity`                                                   | `listPendingItems`   | `200`   | `401`, `403`, `500`                      |
+| 41  | PATCH  | `/requests/:protocol/pending-items/review`                     | cookie; `Analista`, `Gestor` ou `Administrador`; no service, `Administrador` ou assignee | `reviewPendingItems` | `200`   | `400`, `401`, `403`, `404`, `409`, `500` |
+| 42  | PATCH  | `/requests/:protocol/pending-items/:pendingItemId`             | dual: cookie ou `X-Requester-Identity`                                                   | `respondPendingItem` | `200`   | `400`, `401`, `403`, `404`, `409`, `500` |
+| 43  | POST   | `/requests/:protocol/pending-items/:pendingItemId/attachments` | dual: cookie ou `X-Requester-Identity`; multipart                                        | `attachPendingItem`  | `201`   | `400`, `401`, `403`, `404`, `500`        |
+| 44  | POST   | `/requests/:protocol/public/verify`                            | pública; rate limit                                                                      | `publicVerify`       | `200`   | `400`, `401`, `403`, `429`, `500`        |
+
+#### Cookie nas rotas internas (#39 e #41)
+
+`authMiddleware` responde `401 "Token não fornecido"` sem cookie, `401 "Token inválido ou expirado"` para token inválido/expirado/usuário inativo, `401 "Sua sessão foi revogada. Faça login novamente."` para token anterior à troca de senha e `403 "Troca de senha obrigatória antes de continuar"` com `must_change_password` (`F1 src/shared/middleware/auth.ts:27-72`). O `requireRole` responde `403 "Acesso restrito ao perfil Analista ou Gestor ou Administrador"` (`F1 src/modules/pendingItems/pendingItems.router.ts:36-48`; `F1 src/shared/middleware/requireRole.ts:21-23`). Criar ou revisar exige `Administrador` ou o responsável técnico da solicitação; qualquer outro perfil interno recebe `403 "Acesso restrito ao responsável pela solicitação"` (`F1 src/modules/pendingItems/pendingItems.service.ts:194-208`).
+
+#### Dual auth nas rotas #40, #42 e #43
+
+O middleware testa o cookie literal `session_id`: com cookie, delega ao `authMiddleware` (mensagens de token acima); sem cookie, faz o parse de `X-Requester-Identity` como JSON `{ name, email }`; header ausente ou malformado responde `401 "Valide seus dados para acompanhar esta solicitação."` (`F1 src/shared/middleware/dualAuth.ts:19-40`; `F1 src/shared/utils/requesterIdentity.ts:1-13`). No service, o perfil `Solicitante` autenticado precisa ter nome e e-mail normalizados iguais aos da solicitação; qualquer outro perfil interno passa sem checagem de custódia; a identidade pública do header é comparada do mesmo modo (`F1 src/modules/pendingItems/pendingItems.service.ts:210-233`). Divergência de nome/e-mail e protocolo inexistente respondem o mesmo `401 "Valide seus dados para acompanhar esta solicitação."` (`F1 src/modules/pendingItems/pendingItems.service.ts:210-219,226-232`).
+
+### 13.3 POST `/requests/:protocol/pending-items`
+
+Cria um lote de pendências (observação e/ou campos) e move a solicitação para `Pendente de informações`.
+
+#### Request
+
+`application/json`, corpo `CreatePendingItemsBody` (`F1 src/modules/pendingItems/pendingItems.schema.ts:3-28`; `F1 src/modules/DTOs/pendingItems/PendingItems.dto.ts:53-57`):
+
+| Campo               | Tipo                             | Obrigatório   | Regra                                                                                        |
+| ------------------- | -------------------------------- | ------------- | -------------------------------------------------------------------------------------------- |
+| `observation`       | string                           | não           | `trim`; mínimo 1 e máximo 2000; gera um item `type: "observation"`                           |
+| `requestAttachment` | boolean                          | não           | default `false`; é flag do lote inteiro                                                      |
+| `items`             | array de `{ fieldKey, comment }` | não           | default `[]`; `fieldKey` com `trim` e mínimo 1; `comment` com `trim`, mínimo 1 e máximo 2000 |
+| `items[].fieldKey`  | string                           | sim, por item | precisa estar no catálogo fechado de 33 chaves                                               |
+| `items[].comment`   | string                           | sim, por item | máximo 2000                                                                                  |
+
+Pelo menos um entre `observation` não vazia e `items` não vazio é exigido (`F1 src/modules/pendingItems/pendingItems.schema.ts:17-27`).
+
+Exemplo (PII-free):
+
+```json
+{
+  "requestAttachment": true,
+  "items": [
+    {
+      "fieldKey": "operational.volumetry",
+      "comment": "Informe a volumetria real do processo."
+    }
+  ],
+  "observation": "Ajustar os dados operacionais antes da triagem."
+}
+```
+
+Regras efetivas:
+
+- O schema **não** é `.strict()`: `type`, `responseComment`, `attachments` e outras chaves extras são descartadas pelo Zod e não chegam ao service (`F1 src/modules/pendingItems/pendingItems.schema.ts:3-28`). Anexo não entra neste corpo; existe apenas na rota #43. Não há `responseComment` por campo; a resposta discursiva de uma observação fica em `responseText` (`F1 src/modules/DTOs/pendingItems/PendingItems.dto.ts:18-33`).
+- `observation` não vazia gera **um** item `type: "observation"`, `field_key: null`, `comment` igual à observação e `description` igual à observação; cada item de `items` gera **um** item `type: "field_edit"` (`F1 src/modules/pendingItems/pendingItems.service.ts:142-174`).
+- O `fieldKey` é validado contra `FIELD_KEYS`, o catálogo de 33 chaves (`F1 src/shared/catalog/fieldCatalog.ts:6-44`); fora dele: `400 "Campos inválidos: fieldKey — <fieldKey> não está no catálogo"` (`F1 src/modules/pendingItems/pendingItems.service.ts:114-118`).
+- `requester.fullName` e `requester.corporateEmail` só podem ser pedidos quando a solicitação não tem `requester_user_id`; em solicitação autenticada: `400 "Campos inválidos: fieldKey — <fieldKey> só pode ser solicitado para solicitação pública"` (`F1 src/modules/pendingItems/pendingItems.service.ts:125-133`).
+- O rótulo (`fieldLabel`) e o valor atual (`currentValue`) são derivados no servidor pelo catálogo; o cliente envia apenas `fieldKey` (`F1 src/modules/pendingItems/pendingItems.service.ts:157-173`; `F1 src/shared/catalog/fieldCatalog.ts:190-200`).
+- Antes da autorização, o service valida existência, estado e conteúdo, nesta ordem: solicitação inexistente (`404 "Solicitação não encontrada"`), status `Concluído`/`Cancelado` (`409 "Solicitação já concluída ou cancelada"`), lote aberto (`409 "Já existe uma pendência em aberto para este protocolo"`), presença de `observation`/`items`, tamanho da observação, catálogo e comentários (`F1 src/modules/pendingItems/pendingItems.service.ts:86-135`). A checagem de custódia vem depois (`F1 src/modules/pendingItems/pendingItems.service.ts:137`).
+- “Lote aberto” significa qualquer item `requested` ou `responded` da solicitação, de qualquer lote (`F1 src/modules/pendingItems/pendingItems.repository.ts:60-67`).
+- O `batchId` é um UUID novo por chamada; todas as linhas recebem `status: "requested"`, `corrected_value: null`, `response_text: null`, `deadline: null`, `responded_at: null` e `validated_at: null` (`F1 src/modules/pendingItems/pendingItems.service.ts:139-183`; `F1 src/modules/pendingItems/pendingItems.repository.ts:324-343`).
+- Na mesma transação, se o status atual não for `Pendente de informações`, a solicitação passa para esse status e são gravados dois eventos: `pending_item.create` (origem `admin`) e `request.status_change` (origem `system`); se o status já for `Pendente de informações`, grava apenas `pending_item.create`, com `newValue` igual ao `batchId` (`F1 src/modules/pendingItems/pendingItems.repository.ts:349-385`).
+
+#### Response `201`
+
+`CreatePendingItemsResponse` (`F1 src/modules/DTOs/pendingItems/PendingItems.dto.ts:59-63`):
+
+```json
+{
+  "batchId": "3f1c2c4e-7a0b-4f2e-9d3c-1b2a3c4d5e6f",
+  "requestAttachment": true,
+  "items": [
+    {
+      "id": "0b7e9a52-3c4d-4e5f-8a90-1b2c3d4e5f60",
+      "protocol": "MAAT-8K3P-9X2M",
+      "batchId": "3f1c2c4e-7a0b-4f2e-9d3c-1b2a3c4d5e6f",
+      "type": "field_edit",
+      "field": {
+        "fieldKey": "operational.volumetry",
+        "fieldLabel": "Volumetria",
+        "currentValue": "1200"
+      },
+      "comment": "Informe a volumetria real do processo.",
+      "status": "requested",
+      "correctedValue": null,
+      "responseText": null,
+      "responseAttachments": [],
+      "deadline": null,
+      "createdAt": "2026-10-27T13:00:00.000Z",
+      "respondedAt": null,
+      "validatedAt": null
+    }
+  ]
+}
+```
+
+A resposta não devolve `solicitationStatus`; a transição de status é observada por `GET /requests/:protocol/internal` ou `GET /requests/:protocol/tracking` (`F1 docs/contract-pendencias_03.md` §7, D-P18).
+
+#### Erros
+
+| Status | `code` | Mensagem literal                                                                                                 | Condição                                                                                     |
+| ------ | ------ | ---------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| 400    | —      | `"Protocolo é obrigatório"`                                                                                      | `:protocol` vazio                                                                            |
+| 400    | —      | `"Campos inválidos: observation — Pelo menos um de observation ou items deve ser informado"`                     | nem `observation` nem `items` informados                                                     |
+| 400    | —      | `"Campos inválidos: items.<n>.comment — comment vazio"`                                                          | `comment` vazio após `trim`                                                                  |
+| 400    | —      | `"Campos inválidos: fieldKey — <fieldKey> não está no catálogo"`                                                 | `fieldKey` fora das 33 chaves                                                                |
+| 400    | —      | `"Campos inválidos: fieldKey — <fieldKey> só pode ser solicitado para solicitação pública"`                      | identidade do solicitante marcada em solicitação com usuário                                 |
+| 400    | —      | `"Campos inválidos: observation — Máximo de 2.000 caracteres."`                                                  | observação acima de 2000 (checagem do service, posterior ao schema e não alcançada por HTTP) |
+| 400    | —      | `"Campos inválidos: comment — Campo obrigatório."` / `"Campos inválidos: comment — Máximo de 2.000 caracteres."` | checagens do service, posteriores ao schema e não alcançadas por HTTP                        |
+| 401    | —      | `"Token não fornecido"` / `"Token inválido ou expirado"`                                                         | sessão ausente/inválida                                                                      |
+| 403    | —      | `"Acesso restrito ao perfil Analista ou Gestor ou Administrador"`                                                | perfil fora do router                                                                        |
+| 403    | —      | `"Acesso restrito ao responsável pela solicitação"`                                                              | perfil interno que não é `Administrador` nem o assignee                                      |
+| 404    | —      | `"Solicitação não encontrada"`                                                                                   | protocolo inexistente                                                                        |
+| 409    | —      | `"Solicitação já concluída ou cancelada"`                                                                        | status `Concluído` ou `Cancelado`                                                            |
+| 409    | —      | `"Já existe uma pendência em aberto para este protocolo"`                                                        | existe item `requested`/`responded`                                                          |
+| 500    | —      | `"Erro interno do servidor"`                                                                                     | falha não prevista                                                                           |
+
+Limites de 2000 e o mínimo de `fieldKey` sem mensagem customizada no schema produzem a mensagem default do Zod, agregada por `formatZodIssues` no mesmo formato `"Campos inválidos: <path> — <mensagem>"` (`F1 src/shared/validation/zodErrors.ts:57-91`). As checagens equivalentes do service ficam depois do schema e não são alcançadas por HTTP quando o schema já recusa o corpo.
+
+### 13.4 GET `/requests/:protocol/pending-items`
+
+Lista todas as pendências da solicitação.
+
+#### Request
+
+| Parte   | Conteúdo                                                                 |
+| ------- | ------------------------------------------------------------------------ |
+| path    | `:protocol`                                                              |
+| query   | nenhuma                                                                  |
+| body    | —                                                                        |
+| headers | cookie de sessão **ou** `X-Requester-Identity: {"name":"…","email":"…"}` |
+
+#### Response `200`
+
+`ListPendingItemsResponse` (`F1 src/modules/DTOs/pendingItems/PendingItems.dto.ts:65-74`):
+
+```json
+{
+  "batchId": "3f1c2c4e-7a0b-4f2e-9d3c-1b2a3c4d5e6f",
+  "requestAttachment": true,
+  "items": []
+}
+```
+
+Regras efetivas:
+
+- Todos os itens da solicitação, de todos os lotes, são devolvidos em ordem de `created_at` ascendente, sem filtro por status, lote ou visibilidade, e sem paginação (`F1 src/modules/pendingItems/pendingItems.repository.ts:69-78`).
+- Sem nenhum item: `{ "batchId": null, "requestAttachment": false, "items": [] }` (`F1 src/modules/pendingItems/pendingItems.service.ts:245-247`).
+- `batchId` é o primeiro item, na ordem cronológica, com status `requested` ou `responded`; se não houver, é o último item da lista (`F1 src/modules/pendingItems/pendingItems.service.ts:249-256`).
+- `requestAttachment` é `true` quando qualquer item do lote escolhido tem a flag `true`; a flag é do lote e a resposta devolve apenas a do lote vigente (`F1 src/modules/pendingItems/pendingItems.service.ts:257-261`).
+- Cada item segue `PendingItem` (`F1 src/modules/DTOs/pendingItems/PendingItems.dto.ts:18-33`): `field` é `null` em `observation`; `currentValue` e `correctedValue` são convertidos de JSON quando o valor é escalar; `deadline` é `yyyy-mm-dd` ou `null`; `createdAt`, `respondedAt` e `validatedAt` são ISO-8601 UTC; `responseAttachments` traz `downloadUrl: null` e `canDownload: false` (`F1 src/modules/pendingItems/pendingItems.service.ts:40-77`; `F1 src/modules/pendingItems/pendingItems.repository.ts:744-773`).
+- Perfil `Solicitante` autenticado e identidade pública só leem a própria solicitação; perfis internos leem qualquer protocolo, sem custódia (`F1 src/modules/pendingItems/pendingItems.service.ts:210-231`).
+
+#### Erros
+
+| Status | `code` | Mensagem literal                                        | Condição                                                                                                                                                |
+| ------ | ------ | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 401    | —      | `"Valide seus dados para acompanhar esta solicitação."` | sem cookie e sem header; header malformado; nome/e-mail divergentes; protocolo inexistente                                                              |
+| 401    | —      | `"Token inválido ou expirado"`                          | cookie presente, mas inválido/expirado                                                                                                                  |
+| 403    | —      | `"Troca de senha obrigatória antes de continuar"`       | cookie com `must_change_password`                                                                                                                       |
+| 404    | —      | `"Solicitação não encontrada"`                          | presente no código, mas inalcançável: a checagem de acesso responde `401` antes (`F1 src/modules/pendingItems/pendingItems.service.ts:210-212,239-241`) |
+| 500    | —      | `"Erro interno do servidor"`                            | falha não prevista                                                                                                                                      |
+
+**Desatualizado no legado:** `F1 docs/contract-pendencias_03.md` §7 registra `404` para solicitação inexistente no `GET`; no código, protocolo inexistente responde `401 "Valide seus dados para acompanhar esta solicitação."` antes de qualquer `404` (`F1 src/modules/pendingItems/pendingItems.service.ts:210-212`).
+
+### 13.5 PATCH `/requests/:protocol/pending-items/review`
+
+Revisa um subconjunto de itens respondidos do lote.
+
+#### Request
+
+Cookie de sessão; `application/json`, corpo `ReviewPendingItemsBody` (`F1 src/modules/pendingItems/pendingItems.schema.ts:36-55`; `F1 src/modules/DTOs/pendingItems/PendingItems.dto.ts:76-86`):
+
+| Campo               | Tipo                       | Obrigatório     | Regra                                                              |
+| ------------------- | -------------------------- | --------------- | ------------------------------------------------------------------ |
+| `batchId`           | string                     | sim             | `trim` e mínimo 1                                                  |
+| `requestAttachment` | boolean                    | não             | quando presente, redefine a flag em **todas** as linhas do lote    |
+| `items`             | array de decisão           | sim             | no mínimo 1                                                        |
+| `items[].id`        | string                     | sim             | mínimo 1                                                           |
+| `items[].decision`  | `"validate"` ou `"reopen"` | sim             | união discriminada                                                 |
+| `items[].note`      | string                     | não             | só em `validate`; `trim`; máximo 2000; vai apenas para a auditoria |
+| `items[].comment`   | string                     | sim em `reopen` | `trim`; mínimo 1 e máximo 2000                                     |
+
+Exemplo:
+
+```json
+{
+  "batchId": "3f1c2c4e-7a0b-4f2e-9d3c-1b2a3c4d5e6f",
+  "items": [
+    { "id": "0b7e9a52-3c4d-4e5f-8a90-1b2c3d4e5f60", "decision": "validate" },
+    {
+      "id": "1c8f0b63-4d5e-4f60-9ba1-2c3d4e5f6071",
+      "decision": "reopen",
+      "comment": "A volumetria não confere com o relatório."
+    }
+  ]
+}
+```
+
+Regras efetivas:
+
+- A solicitação precisa existir (`404 "Solicitação não encontrada"`); o lote precisa pertencer a ela (`404 "Lote não encontrado"`); cada `id` decidido precisa pertencer ao lote (`404 "Item <id> não pertence ao lote"`) (`F1 src/modules/pendingItems/pendingItems.service.ts:470-483`).
+- Reenvio idempotente: `validate` em item já `validated` e `reopen` em item já `requested` são ignorados, sem novo evento de auditoria (`F1 src/modules/pendingItems/pendingItems.service.ts:485-487`).
+- Qualquer outra decisão sobre item que não esteja `responded` responde `409 "Item <id> não está com status responded"` (`F1 src/modules/pendingItems/pendingItems.service.ts:488-490`).
+- `validate` em `field_edit` aplica o `correctedValue` gravado no item ao campo correspondente da solicitação, com validação de vocabulário; `validate` em `observation` apenas marca o item (`F1 src/modules/pendingItems/pendingItems.repository.ts:535-552,602-742`).
+- `reopen` exige `comment`; sobrescreve `comment`, limpa `corrected_value`, `response_text`, `responded_at` e `validated_at`, e redefine `created_at` para o instante da reabertura (`F1 src/modules/pendingItems/pendingItems.repository.ts:553-573`).
+- `requestAttachment` booleano atualiza todas as linhas do lote antes das decisões; omitido, a flag não muda (`F1 src/modules/pendingItems/pendingItems.repository.ts:518-522`).
+- Se a chamada tiver ao menos um `reopen`, a solicitação passa para `Pendente de informações` com auditoria `request.status_change` e nota `"reopen pending"`; se todas as decisões forem `validate`, o status da solicitação não muda (`F1 src/modules/pendingItems/pendingItems.service.ts:519`; `F1 src/modules/pendingItems/pendingItems.repository.ts:577-591`).
+- Cada decisão nova grava `pending_item.validate` ou `pending_item.reopen` com anterior/novo (`F1 src/modules/pendingItems/pendingItems.repository.ts:542-573`).
+
+#### Response `200`
+
+`{ batchId, items }`, com os itens decididos nesta chamada no estado atual; a ordem não é definida pela consulta (`F1 src/modules/pendingItems/pendingItems.service.ts:522-523`; `F1 src/modules/pendingItems/pendingItems.repository.ts:593-598`). A resposta não devolve `solicitationStatus`.
+
+#### Validação do `correctedValue` na revisão
+
+| `fieldKey`                                                     | Regra                                      | Mensagem                                                                                           |
+| -------------------------------------------------------------- | ------------------------------------------ | -------------------------------------------------------------------------------------------------- |
+| `operational.peopleInvolved`, `operational.monthlyEffortHours` | precisa ser número                         | `"Campos inválidos: correctedValue — <fieldKey> deve ser número"`                                  |
+| `operational.peopleInvolved`                                   | precisa ser maior que zero                 | `"Campos inválidos: correctedValue — peopleInvolved > 0"`                                          |
+| `operational.hasManualControls`                                | `false` ou texto não vazio                 | `"Campos inválidos: correctedValue — hasManualControls deve ser false ou texto não vazio"`         |
+| `operational.desiredDeadline`                                  | `yyyy-mm-dd`                               | `"Campos inválidos: correctedValue — desiredDeadline deve ser yyyy-mm-dd"` / `"… — data inválida"` |
+| `operational.operationalImpact`                                | `Baixo`, `Médio`, `Alto` ou `Crítico`      | `"Campos inválidos: correctedValue — operationalImpact inválido"`                                  |
+| `operational.perceivedCriticality`                             | `Baixa`, `Média`, `Alta` ou `Crítica`      | `"Campos inválidos: correctedValue — perceivedCriticality inválido"`                               |
+| demais                                                         | texto ou `null`                            | `"Campos inválidos: correctedValue — <fieldKey> deve ser texto"`                                   |
+| demais, string vazia                                           | apenas sete chaves anuláveis aceitam vazio | `"Campos inválidos: correctedValue — <fieldKey> não pode ser vazio"`                               |
+
+As chaves que aceitam string vazia são `requester.department`, `requester.additionalContact`, `complementary.additionalNotes`, `complementary.hasProcessDocumentation`, `complementary.hasSimilarSolution`, `complementary.dependsOnOtherAreas` e `complementary.handlesRestrictedInfo` (`F1 src/modules/pendingItems/pendingItems.service.ts:392-453,440-451`). `demand.category` precisa existir e estar ativa em `categories`, senão `400 "Categoria inválida — selecione uma opção da lista."` (`F1 src/modules/pendingItems/pendingItems.repository.ts:648-655`).
+
+#### Erros
+
+| Status | `code` | Mensagem literal                                                  | Condição                                                          |
+| ------ | ------ | ----------------------------------------------------------------- | ----------------------------------------------------------------- |
+| 400    | —      | `"Campos inválidos: items.<n>.comment — comment vazio"`           | `comment` de `reopen` vazio após `trim`                           |
+| 400    | —      | `"Campos obrigatórios ausentes: comment"`                         | checagem do service, posterior ao schema e não alcançada por HTTP |
+| 400    | —      | mensagens da tabela de `correctedValue`                           | valor inválido para o campo validado                              |
+| 401    | —      | `"Token não fornecido"` / `"Token inválido ou expirado"`          | sessão ausente/inválida                                           |
+| 403    | —      | `"Acesso restrito ao perfil Analista ou Gestor ou Administrador"` | perfil fora do router                                             |
+| 403    | —      | `"Acesso restrito ao responsável pela solicitação"`               | não é `Administrador` nem assignee                                |
+| 404    | —      | `"Solicitação não encontrada"`                                    | protocolo inexistente                                             |
+| 404    | —      | `"Lote não encontrado"`                                           | `batchId` inexistente ou de outra solicitação                     |
+| 404    | —      | `"Item <id> não pertence ao lote"`                                | id fora do lote                                                   |
+| 409    | —      | `"Item <id> não está com status responded"`                       | decisão sobre item em estado incompatível                         |
+| 500    | —      | `"Erro interno do servidor"`                                      | falha não prevista                                                |
+
+### 13.6 PATCH `/requests/:protocol/pending-items/:pendingItemId`
+
+Registra a resposta de um item do lote, por identidade pública ou sessão.
+
+#### Request
+
+| Parte   | Conteúdo                                                                            |
+| ------- | ----------------------------------------------------------------------------------- |
+| path    | `:protocol`, `:pendingItemId`                                                       |
+| body    | `{ correctedValue }` para item `field_edit`; `{ response }` para item `observation` |
+| headers | cookie de sessão **ou** `X-Requester-Identity`                                      |
+
+Corpo discriminado pelo `type` armazenado (`F1 src/modules/pendingItems/pendingItems.service.ts:284-313`):
+
+- `field_edit`: a chave `correctedValue` precisa existir e não pode ser `undefined`; `null` é aceito. Qualquer valor JSON é gravado como string JSON. Enviar `response` → `400 "Campos inválidos: response — não permitido para field_edit"`.
+- `observation`: `response` precisa existir, ser string não vazia após `trim` e ter no máximo 2000 caracteres. Enviar `correctedValue` → `400 "Campos inválidos: correctedValue — não permitido para observation"`.
+- O item precisa pertencer ao `:protocol`; item inexistente ou de outro protocolo → `404 "Solicitação não encontrada"` (mensagem anti-IDOR) (`F1 src/modules/pendingItems/pendingItems.service.ts:276-279`).
+- Item que não está `requested` → `409 "Esta pendência já foi respondida."` (`F1 src/modules/pendingItems/pendingItems.service.ts:281-283`).
+- Não há schema Zod nesta rota: chaves extras no body são ignoradas, e o `correctedValue` **não** é validado por vocabulário na resposta; essa validação acontece apenas na revisão (`F1 src/modules/pendingItems/pendingItems.service.ts:287-313`; `F1 src/modules/pendingItems/pendingItems.service.ts:392-453`).
+
+#### Efeito
+
+- O item passa a `responded`, com `responded_at` preenchido (`F1 src/modules/pendingItems/pendingItems.repository.ts:414-420`).
+- Se não restar nenhum `requested` no lote, a exigência de anexo do lote estiver satisfeita (sem linha com `request_attachment = true` ou com ao menos um anexo no lote) e o status atual não for `Em triagem`, a solicitação passa para `Em triagem`; caso contrário, o status não muda (`F1 src/modules/pendingItems/pendingItems.service.ts:324-330`; `F1 src/modules/pendingItems/pendingItems.repository.ts:433-466`).
+- Auditoria: `pending_item.respond` com origem `admin` quando há cookie de sessão (inclusive `Solicitante` autenticado) e `requester` quando a identidade vem apenas do header; a mudança de status grava `request.status_change` com nota `"pendencia respondida completa"` e origem `system` (`F1 src/modules/pendingItems/pendingItems.controller.ts:59-69`; `F1 src/modules/pendingItems/pendingItems.repository.ts:422-431,456-465`).
+
+#### Response `200`
+
+O `PendingItem` atualizado (`F1 src/modules/pendingItems/pendingItems.service.ts:332-333`). A resposta não inclui `solicitationStatus`.
+
+#### Erros
+
+| Status | `code` | Mensagem literal                                                                         | Condição                                                                |
+| ------ | ------ | ---------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| 400    | —      | `"pendingItemId é obrigatório"`                                                          | `:pendingItemId` vazio                                                  |
+| 400    | —      | `"Campos obrigatórios ausentes: correctedValue"`                                         | `field_edit` sem a chave ou com `undefined`                             |
+| 400    | —      | `"Campos inválidos: response — não permitido para field_edit"`                           | `response` em item de campo                                             |
+| 400    | —      | `"Campos obrigatórios ausentes: response"`                                               | `observation` sem a chave                                               |
+| 400    | —      | `"Campos inválidos: response — Campo obrigatório."`                                      | `response` não string ou vazia                                          |
+| 400    | —      | `"Campos inválidos: response — Máximo de 2.000 caracteres."`                             | `response` acima de 2000                                                |
+| 400    | —      | `"Campos inválidos: correctedValue — não permitido para observation"`                    | `correctedValue` em observação                                          |
+| 401    | —      | `"Valide seus dados para acompanhar esta solicitação."` / `"Token inválido ou expirado"` | identidade ausente/divergente, sessão inválida ou protocolo inexistente |
+| 403    | —      | `"Troca de senha obrigatória antes de continuar"`                                        | cookie com `must_change_password`                                       |
+| 404    | —      | `"Solicitação não encontrada"`                                                           | item inexistente ou de outro protocolo                                  |
+| 409    | —      | `"Esta pendência já foi respondida."`                                                    | status diferente de `requested`                                         |
+| 500    | —      | `"Erro interno do servidor"`                                                             | falha não prevista                                                      |
+
+### 13.7 POST `/requests/:protocol/pending-items/:pendingItemId/attachments`
+
+Anexa um arquivo a um item, em requisição separada.
+
+#### Request
+
+`multipart/form-data` com uma parte de arquivo no campo `file` (`F1 src/modules/pendingItems/pendingItems.router.ts:19-33,50-67`).
+
+| Regra                   | Valor                                                                                                                                                                                        |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Arquivos por requisição | 1 (`files: 1`)                                                                                                                                                                               |
+| Tamanho por arquivo     | 10 MiB (`MAX_FILE_SIZE_BYTES`)                                                                                                                                                               |
+| MIME aceitos            | `application/pdf`, `application/vnd.openxmlformats-officedocument.wordprocessingml.document`, `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`, `image/png`, `image/jpeg` |
+| Storage                 | memória (`multer.memoryStorage()`), persistido depois por `saveFiles`                                                                                                                        |
+
+Regras efetivas:
+
+- MIME fora da allowlist → `400 "Formato de arquivo não permitido. Aceitos: PDF, DOCX, XLSX, PNG e JPG."`, tanto no `fileFilter` do multer quanto no service (`F1 src/modules/pendingItems/pendingItems.router.ts:22-30`; `F1 src/modules/pendingItems/pendingItems.service.ts:357-362`).
+- Arquivo acima de 10 MiB → o multer aborta com `LIMIT_FILE_SIZE`, convertido em `400 "Cada anexo deve ter no máximo 10MB."` (`F1 src/modules/pendingItems/pendingItems.router.ts:54-60`).
+- Sem parte `file` → `400 "Campos obrigatórios ausentes: file"` (`F1 src/modules/pendingItems/pendingItems.controller.ts:78-79`).
+- Somente `LIMIT_FILE_SIZE` é convertido pelo router; os demais erros do multer não viram `AppError` e caem no handler genérico, que responde `500 "Erro interno do servidor"` (`F1 src/modules/pendingItems/pendingItems.router.ts:55-63`; `F1 src/shared/middleware/errorHandler.ts:34-43`).
+- O item precisa pertencer ao `:protocol` (`404 "Solicitação não encontrada"` para item inexistente ou de outro protocolo) (`F1 src/modules/pendingItems/pendingItems.service.ts:349-355`).
+- **Não há checagem de status nem da flag `requestAttachment`:** o anexo é aceito em item `requested`, `responded` ou `validated`, e mesmo quando o lote tem `requestAttachment: false` (`F1 src/modules/pendingItems/pendingItems.service.ts:336-390`).
+- O anexo não altera o status do item nem o da solicitação; apenas insere uma linha em `attachments` (`F1 src/modules/pendingItems/pendingItems.repository.ts:474-504`).
+- **Não há limite de quantidade por item, lote ou solicitação, nem deduplicação por nome/tamanho/MIME.** Cada requisição acrescenta uma linha em `attachments` (`F1 src/modules/pendingItems/pendingItems.repository.ts:474-504`).
+- Não há validação de extensão; a decisão é apenas pelo `file.mimetype` (`F1 src/shared/middleware/upload.ts:5-11,22-30`).
+- A gravação usa `uploaded_by: "requester"` e `is_restricted: false`; auditoria `pending_item.attach` com `changeOrigin: "requester"` (`F1 src/modules/pendingItems/pendingItems.repository.ts:480-503`).
+- Não existe `expectedAttachmentType` nem limite de 3 anexos no backend. No legado, a coluna `expected_attachment_type` aparece apenas na documentação de persistência de `requests` (`F1 docs/database/requests-persistence.md:312`), sem uso por este domínio; o limite de 3 existe somente no consumidor (`F2 src/lib/types/request.ts:335`).
+
+#### Response `201`
+
+`InternalAttachment` derivado do arquivo salvo (`F1 src/modules/pendingItems/pendingItems.service.ts:383-389`):
+
+```json
+{
+  "fileName": "comprovante.pdf",
+  "mimeType": "application/pdf",
+  "sizeBytes": 245000,
+  "downloadUrl": null,
+  "canDownload": false
+}
+```
+
+`downloadUrl` é sempre `null` e `canDownload` é sempre `false`; não há rota de download neste domínio (`F1 src/modules/pendingItems/pendingItems.service.ts:43-49,383-389`).
+
+#### Erros
+
+| Status | `code` | Mensagem literal                                                                         | Condição                                                                |
+| ------ | ------ | ---------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| 400    | —      | `"pendingItemId é obrigatório"`                                                          | `:pendingItemId` vazio                                                  |
+| 400    | —      | `"Campos obrigatórios ausentes: file"`                                                   | multipart sem parte `file`                                              |
+| 400    | —      | `"Formato de arquivo não permitido. Aceitos: PDF, DOCX, XLSX, PNG e JPG."`               | MIME fora da allowlist                                                  |
+| 400    | —      | `"Cada anexo deve ter no máximo 10MB."`                                                  | arquivo acima de 10 MiB                                                 |
+| 401    | —      | `"Valide seus dados para acompanhar esta solicitação."` / `"Token inválido ou expirado"` | identidade ausente/divergente, sessão inválida ou protocolo inexistente |
+| 403    | —      | `"Troca de senha obrigatória antes de continuar"`                                        | cookie com `must_change_password`                                       |
+| 404    | —      | `"Solicitação não encontrada"`                                                           | protocolo/item inexistente ou item de outro protocolo                   |
+| 500    | —      | `"Falha ao salvar anexo"`                                                                | falha ao persistir o arquivo no storage                                 |
+| 500    | —      | `"Erro interno do servidor"`                                                             | falha não prevista, inclusive erro de multer não mapeado                |
+
+### 13.8 POST `/requests/:protocol/public/verify`
+
+Verifica nome, e-mail e protocolo no modo público e devolve um booleano, sem emitir sessão.
+
+#### Request
+
+`application/json` (`F1 src/modules/pendingItems/pendingItems.schema.ts:30-34`):
+
+| Campo      | Tipo   | Obrigatório   | Regra                                                                                   |
+| ---------- | ------ | ------------- | --------------------------------------------------------------------------------------- |
+| `name`     | string | sim           | `trim`; 3 a 150 caracteres                                                              |
+| `email`    | string | sim           | `trim`, minúsculas, e-mail válido, máximo 254                                           |
+| `protocol` | string | sim no schema | `trim` e mínimo 1; se ausente no corpo, o controller preenche com o `:protocol` do path |
+
+Exemplo:
+
+```json
+{
+  "name": "Nome do Solicitante",
+  "email": "solicitante@example.com",
+  "protocol": "MAAT-8K3P-9X2M"
+}
+```
+
+Ordem efetiva, verificada no controller e no service: rate limit → formato (`400`) → modo do portal (`403`) → protocolo do corpo igual ao do path (`401`) → existência da solicitação (`401`) → nome/e-mail normalizados (`401`) (`F1 src/modules/pendingItems/pendingItems.controller.ts:103-124`; `F1 src/modules/pendingItems/pendingItems.service.ts:526-544`).
+
+- O rate limit é de 10 tentativas por 10 minutos, chave `<ip>:<protocolo em minúsculas>`, em memória do processo; todas as tentativas contam, inclusive as inválidas (`F1 src/modules/pendingItems/pendingItems.controller.ts:8-12,109-112`; `F1 src/shared/middleware/rateLimit.ts:7-23`).
+- O modo é lido de `portal-config`; fora de `PUBLIC` → `403 "Verificação indisponível no modo atual"` (`F1 src/modules/pendingItems/pendingItems.service.ts:531-533`).
+- A comparação de nome remove acentos e ignora caixa; a de e-mail faz `trim` e minúsculas (`F1 src/shared/utils/normalizeIdentity.ts:1-11`).
+- A resposta não tem `Set-Cookie`, JWT nem `expiresInMinutes` (`F1 src/modules/pendingItems/pendingItems.controller.ts:124`).
+
+#### Response `200`
+
+```json
+{
+  "protocol": "MAAT-8K3P-9X2M",
+  "canAccess": true
+}
+```
+
+O `protocol` ecoado é o do path, já com `trim` (`F1 src/modules/pendingItems/pendingItems.controller.ts:124`).
+
+#### Erros
+
+| Status | `code` | Mensagem literal                                          | Condição                                                                               |
+| ------ | ------ | --------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| 400    | —      | `"Protocolo é obrigatório"`                               | `:protocol` vazio                                                                      |
+| 400    | —      | mensagem agregada de `formatZodIssues`                    | corpo fora do schema                                                                   |
+| 401    | —      | `"Valide seus dados para acompanhar esta solicitação."`   | protocolo do corpo diferente do path; solicitação inexistente; nome/e-mail divergentes |
+| 403    | —      | `"Verificação indisponível no modo atual"`                | portal em modo diferente de `PUBLIC`                                                   |
+| 429    | —      | `"Muitas tentativas. Tente novamente em alguns minutos."` | mais de 10 tentativas na janela de 10 minutos para o mesmo IP e protocolo              |
+| 500    | —      | `"Erro interno do servidor"`                              | falha não prevista                                                                     |
+
+**Desatualizado no legado:** `F1 docs/contract-pendencias_03.md` §7 apresenta `protocol` como parte obrigatória do corpo do verify; o controller preenche o campo a partir do path quando ele está ausente (`F1 src/modules/pendingItems/pendingItems.controller.ts:105-108`), então o corpo sem `protocol` passa pela validação e é comparado pelo valor do path.
+
+### 13.9 Visão do consumidor (F2) e drift
+
+- O consumidor usa exatamente os paths do legado, sem `/api/v1`: `/requests/:protocol/pending-items` (`F2 src/lib/api/pending-item.api.ts:18-21`), `.../:pendingItemId` (`F2 src/lib/api/pending-item.api.ts:90-98`), `.../:pendingItemId/attachments` (`F2 src/lib/api/pending-item.api.ts:130-138`), `.../review` (`F2 src/lib/api/pending-item.api.ts:154-161`) e `/requests/:protocol/public/verify` (`F2 src/lib/api/requester-tracking.api.ts:30-33`).
+- O transporte é o do legado: `credentials: "include"` por padrão e `X-Requester-Identity` montado como JSON `{name,email}` quando há identidade pública (`F2 src/lib/api/client.ts:47-69`; `F2 src/lib/api/client.ts:36-43`).
+- Os tipos de wire espelham o legado: `ListPendingItemsResponse` com `batchId`, `requestAttachment` e `items`; `CreatePendingItemsResponse`; `ReviewPendingItemsResponse`; `RespondPendingItemBody` como união `{response}`/`{correctedValue}` (`F2 src/lib/types/pendency.ts:54-108`). `ListPendenciesResponse` é um alias do mesmo tipo (`F2 src/lib/types/pendency.ts:107-108`).
+- O consumidor agrupa os itens por `batchId` em `PendingBatch`, tipo que não existe no backend; deriva `observation`, `fields`, contadores e `resolved` (todos `validated`) localmente (`F2 src/lib/types/pendency.ts:131-149`; `F2 src/lib/services/pendency.service.ts:160-215`). `requestAttachment` só é `true` quando o lote é o `batchId` do envelope (`F2 src/lib/services/pendency.service.ts:170-177`).
+- O consumidor bloqueia nova pendência quando existe lote não resolvido (`F2 src/lib/services/pendency.service.ts:217-221`), espelhando o `409` do backend.
+- **Mensagens do consumidor.** O service do consumidor substitui as mensagens do backend por textos próprios: `"Já existe uma pendência em aberto para esta solicitação."`, `"Solicitação não encontrada."`, `"Você não tem permissão para solicitar alterações nesta tratativa."`, `"Não foi possível carregar as pendências por campo."`, `"Pendência não encontrada."`, `"Esta pendência já foi respondida."`, `"Resposta inválida. Confira o valor informado."`, `"Arquivo inválido. Use PDF, DOCX, XLSX, PNG ou JPG de até 10 MB."` (`F2 src/lib/services/pendency.service.ts:55-113,235-314`). O `apiClient` lê `body.message || body.error` do envelope legado (`F2 src/lib/api/client.ts:86-94`), mas as mensagens acima são escolhidas pelo status.
+- O consumidor valida o corpo antes de enviar: criação com `observation`/`items` (`F2 src/lib/services/pendency.service.ts:410-423`), resposta por tipo e tamanho (`F2 src/lib/services/pendency.service.ts:353-372`), revisão com ao menos uma decisão e `comment` em `reopen` (`F2 src/lib/services/pendency.service.ts:425-431`).
+- Em `field_edit`, o consumidor recusa `correctedValue: null` localmente com `"Informe o valor corrigido."` (`F2 src/lib/services/pendency.service.ts:366-370`); o backend aceita `null` (presença da chave basta) (`F1 src/modules/pendingItems/pendingItems.service.ts:287-297`).
+- **Anexos no consumidor.** O consumidor aplica limite de **3 anexos por lote** (`MAX_PENDING_ATTACHMENTS_PER_BATCH = 3`) (`F2 src/lib/types/request.ts:335`; `F2 src/lib/pendency/pending-attachments.ts:8-14`), rejeita duplicados por `nome + tamanho + MIME` (`F2 src/lib/pendency/pending-attachments.ts:41-43,79-90`) e aceita arquivo por extensão quando o MIME vem vazio ou `application/octet-stream` (`F2 src/lib/pendency/pending-attachments.ts:30-39`). Nenhuma dessas três regras existe no backend (`F1 src/modules/pendingItems/pendingItems.router.ts:19-33`; `F1 src/shared/middleware/upload.ts:5-13`).
+- O consumidor verifica o arquivo antes do envio e, sem arquivo, lança `ApiError(400, "Selecione um arquivo para enviar.")` localmente (`F2 src/lib/api/pending-item.api.ts:108-110`); o backend responderia `"Campos obrigatórios ausentes: file"` se recebesse a requisição sem a parte.
+- O consumidor verifica o `protocol` no `sessionStorage` antes de reutilizar a identidade e limpa a identidade ao sair do protocolo (`F2 src/lib/services/requester-identity.service.ts:40-69`); a resposta do verify é tipada como `{ protocol, canAccess: true }` (`F2 src/lib/types/requester-tracking.ts:21-27`).
+- O consumidor mapeia `429` para `"Muitas tentativas de validação. Aguarde alguns minutos antes de tentar novamente."` e `403` para `"A consulta pública não está habilitada neste portal."` (`F2 src/lib/services/requester-tracking.service.ts:52-74`).
+- **Catálogo de campos no consumidor.** O consumidor tem a mesma lista de 33 `fieldKey`, mas monta rótulos próprios, diferentes dos `FIELD_LABELS` do backend (por exemplo `"Nome"` vs `"Nome completo"`, `"Área do solicitante"` vs `"Área"`, `"Gestor Responsável"` vs `"Gestor responsável"`, `"Contato adicional"` igual) (`F2 src/lib/pendency/field-catalog.ts:43-52`; `F1 src/shared/catalog/fieldCatalog.ts:46-52`).
+- O consumidor deixa `requester.fullName`/`requester.corporateEmail` fora da seleção por default, atrás de `includeIdentityFields`, com o comentário de que o detalhe interno ainda não expõe o id de origem (`F2 src/lib/pendency/field-catalog.ts:27-45`). O backend aceita as duas chaves apenas quando `requester_user_id` é nulo (`F1 src/modules/pendingItems/pendingItems.service.ts:125-133`).
+- A revisão feita pelo modal do analista envia apenas `{ batchId, items }`, sem `requestAttachment` (`F2 src/routes/(admin)/fila/[protocolo]/components/pendency/PendingItemsModal.svelte:167`); o campo existe no tipo do consumidor (`F2 src/lib/types/pendency.ts:80-84`).
+- O consumidor deriva `overdue` de `requested + deadline` vencido e a completude do lote no solicitante (`F2 src/lib/services/pendency.service.ts:378-408`); o backend não expõe status `overdue` nem calcula completude (`F1 src/modules/DTOs/pendingItems/PendingItems.dto.ts:1`).
+
+### 13.10 Confronto com docs/04-API-Conventions.md
+
+| Tema                      | Situação no legado                                                                                                          | Convenção                                                                                                                                                     |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Base path                 | `/requests/:protocol/pending-items` e `/requests/:protocol/public/verify`, sem prefixo                                      | **Divergente (legado vigente):** `/api/v1` — §1                                                                                                               |
+| Envelope de erro          | `{ status, statusCode, message }`, sem `code`                                                                               | Compatível com o envelope legado da §2.1; a ausência de `code` é **divergente (legado vigente)** — §2.3 e §4                                                  |
+| Validação                 | `400` com mensagem agregada, sem `code` e sem `fields`; não há `422` neste domínio                                          | **Divergente (legado vigente):** §5 congela `400` + `validation_error` + `fields` como lista                                                                  |
+| Paginação                 | `GET .../pending-items` sem paginação e sem envelope de página                                                              | **Divergente (legado vigente):** §4/§4.3 exigem linha de exceção para listagem não paginada                                                                   |
+| Multipart                 | 1 arquivo, 10 MiB, allowlist de MIME; MIME inválido → `400`; tamanho → `400`                                                | Limites compatíveis; status **divergente (legado vigente):** §9 congela `415` para MIME e `413` para tamanho                                                  |
+| Rate limit                | 10 tentativas/10 min por IP+protocolo, em memória, `429` com mensagem textual                                               | **Divergente (legado vigente):** §13 congela `429` com `rate_limited`, `Retry-After` e storage compartilhado                                                  |
+| Identidade do solicitante | `X-Requester-Identity` com nome+e-mail; divergência → `401` genérico; protocolo inexistente → `401`                         | **Divergente (legado vigente):** §15.3 e ADR-0023 apontam `X-Requester-Email` como chave de busca e `404` para protocolo não encontrado                       |
+| Autorização               | Perfis `Analista`/`Gestor`/`Administrador` no router; custódia por `professional_id` em criar/revisar                       | **Divergente (legado vigente):** §6 e ADR-0025 usam as capabilities `pending_item:read`, `pending_item:write` e `pending_item:review`, com escopo `own`/`all` |
+| Sucesso                   | `201` em criação e anexo; `200` em leitura, resposta, revisão e verify                                                      | Compatível — §15.4                                                                                                                                            |
+| Datas                     | timestamps ISO-8601 UTC; `deadline` como `yyyy-mm-dd`                                                                       | Compatível — §10                                                                                                                                              |
+| Idioma                    | Chaves `camelCase`; valores de enum (`field_edit`, `observation`, `requested`, `responded`, `validated`) em inglês          | Compatível — §11; os valores de enum são identificadores internos, não texto de UI                                                                            |
+| Idempotência              | `review` ignora reenvio de `id+decision`; `respond` não é idempotente (segunda chamada → `409`); `POST` não deduplica       | Compatível com a tabela da §8.2; a idempotência do `review` é regra do contrato legado (`F1 docs/contract-pendencias_03.md` §7; D-P23 em §12)                 |
+| Request-id                | Ausente                                                                                                                     | **Divergente (legado vigente):** §12; anotado na §3 do baseline                                                                                               |
+| `deadline` no wire        | A chave é sempre emitida, com `null` quando não há prazo (`F1 src/modules/pendingItems/pendingItems.repository.ts:764-766`) | **Desatualizado no legado:** o contrato marca `deadline` como opcional (`F1 docs/contract-pendencias_03.md` §7)                                               |
+
+**Cobertura da seção:** 6 de 6 rotas do inventário — #39 `POST /requests/:protocol/pending-items`; #40 `GET /requests/:protocol/pending-items`; #41 `PATCH /requests/:protocol/pending-items/review`; #42 `PATCH /requests/:protocol/pending-items/:pendingItemId`; #43 `POST /requests/:protocol/pending-items/:pendingItemId/attachments`; #44 `POST /requests/:protocol/public/verify`.
