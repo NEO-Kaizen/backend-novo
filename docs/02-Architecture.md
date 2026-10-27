@@ -585,7 +585,7 @@ Um domínio **nunca** importa o repositório, o service ou o controller de outro
 
 ```ts
 // src/domains/queue/queue.service.ts
-import type { RequestReader } from "../requests/requests.port.js";
+import type { RequestReader } from "../requests/requests.port.ts";
 
 export class QueueService {
   constructor(private readonly requests: RequestReader) {}
