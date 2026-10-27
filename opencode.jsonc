@@ -1,5 +1,17 @@
 {
   "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "servers": {
+      "context7": {
+        "type": "remote",
+        "url": "https://mcp.context7.com/mcp",
+        "oauth": false,
+        "headers": {
+          "Authorization": "Bearer {file:.context7API}"
+        }
+      }
+    }
+  },
   "permissions": [
     // Base: qualquer comando de shell pede confirmação, salvo as exceções abaixo.
     { "action": "shell", "resource": "*", "effect": "ask" },
@@ -35,6 +47,11 @@
     { "action": "edit", "resource": "*.env", "effect": "deny" },
     { "action": "edit", "resource": "*.env.*", "effect": "deny" },
     { "action": "edit", "resource": "*.env.example", "effect": "allow" },
+
+    // Secret local do Context7: o arquivo fica na raiz e é ignorado pelo Git.
+    { "action": "read", "resource": "*.context7API", "effect": "deny" },
+    { "action": "edit", "resource": "*.context7API", "effect": "deny" },
+    { "action": "shell", "resource": "*context7API*", "effect": "deny" },
 
     // Fora do projeto: sempre confirmar.
     { "action": "external_directory", "resource": "*", "effect": "ask" }
