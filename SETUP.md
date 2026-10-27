@@ -109,15 +109,18 @@ gh extension install github/gh-stack
 
 ## 3. Rodar o backend
 
+Instale as dependências e valide o build antes de subir o processo compilado:
+
 ```bash
 npm ci
-npm run dev
 npm run check
 npm run build
 npm start:prod
 ```
 
-`npm run dev` usa `--watch` sobre `src/server.ts`; `npm start:prod` executa `dist/server.js`. O `.env` é opcional: os scripts usam `--env-file-if-exists=.env`.
+Para desenvolver, rode `npm run dev` em um terminal próprio: ele usa `--watch` sobre `src/server.ts` e **não retorna** — as demais sequências não avançam enquanto ele estiver ativo.
+
+`npm start:prod` executa `dist/server.js`. O `.env` é opcional: os scripts usam `--env-file-if-exists=.env`.
 
 ## 4. Context7 MCP
 
