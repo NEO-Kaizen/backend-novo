@@ -76,7 +76,7 @@ gramática do payload de formulário (§6) que não tem superfície HTTP própri
 
 **Fora de escopo:** deltas intencionais, geração de OpenAPI, implementação em `src/`, migração de
 dados e qualquer julgamento sobre o que deveria ser diferente. Rotas de infraestrutura
-(`GET /uploads/*`, `GET /health` quando existir) são citadas apenas como contexto de transporte.
+(`GET /uploads/*`) são citadas apenas como contexto de transporte.
 
 ## 2. Fontes
 
@@ -92,8 +92,7 @@ Limitações das fontes:
 - Vários documentos do legado em `F1 docs/` já estão desatualizados em relação ao próprio código
   (o motor de status v4 é o caso mais visível). Onde isso ocorre, a seção marca
   **Desatualizado no legado**.
-- `F1` é o HEAD do backend no momento deste port (`git log -1`), mas o contrato é fixado por SHA:
-  se o legado avançar, este documento não muda.
+- O contrato é fixado por SHA; se o legado avançar, este documento não muda.
 - Comportamentos que dependem de dados ou configuração (por exemplo, o modo de abertura do portal e o
   conteúdo de `system_settings`) são descritos pela regra do código, não por um estado específico.
 
@@ -257,7 +256,8 @@ aposentadoria gradual do verify.
 true` e `exposedHeaders: ["Content-Disposition"]` (`F1 src/app.ts:11-18`; `F1 src/configs.ts:19-21`).
 - `x-powered-by` desligado (`F1 src/app.ts:19`).
 - Não há middleware de `x-request-id` nem headers de segurança no legado; também não há handler de
-  404 dedicado — rota inexistente cai no `errorHandler` (`F1 src/app.ts:28-31`).
+  404 dedicado — rota não casada recebe o 404 HTML padrão do Express, e o `errorHandler` só trata
+  erros encaminhados por `next(err)` (`F1 src/app.ts:28-31`).
 
 **Divergente (legado vigente):** sem request-id, sem headers de segurança e sem 404 explícito —
 convenções §12 e §14; `02-Architecture.md` §9.4.
@@ -509,12 +509,12 @@ Não há 429 no legado (ver §5.8).
 
 #### Transporte
 
-- `Set-Cookie: <COOKIE_NAME>=<jwt>; Max-Age=<COOKIE_MAX_AGE em segundos>; Path=/; HttpOnly; SameSite=Lax[; Secure]`
+- `Set-Cookie: <COOKIE_NAME>=<jwt>; Max-Age=<COOKIE_MAX_AGE convertido de ms para segundos>; Path=/; HttpOnly; SameSite=Lax[; Secure]`
   (`F1 src/modules/auth/auth.controller.ts:12-17,50,73`).
 - `COOKIE_NAME` default `session_id` (`F1 src/configs.ts:23`). `COOKIE_MAX_AGE` é derivado de
   `JWT_EXPIRES_IN` (default `1d`) por `jwtExpiryToMs`, que lê o último caractere como unidade `d`/`h`/`m`
-  e, na ausência dessas, trata o valor como segundos (`F1 src/configs.ts:17,22,28-35`). Com o default,
-  `Max-Age=86400`.
+  e, na ausência dessas, trata o valor como segundos (`F1 src/configs.ts:17,22,28-35`). O valor de `Config.COOKIE_MAX_AGE` está em milissegundos; o Express converte para segundos ao
+  serializar. Com o default, `Max-Age=86400`.
 - `httpOnly: true`, `sameSite: "lax"`, `secure: Config.NODE_ENV === "production"`
   (`F1 src/modules/auth/auth.controller.ts:12-17`). `path` e `domain` não são definidos; o Express usa
   `Path=/` e sem `Domain`. Um cookie de sessão já existente é sobrescrito pelo novo valor.
@@ -1311,8 +1311,6 @@ top-level, fora do formulário; o wire de abertura mantém `demand.category` por
 | #22 — multipart com limites por rota                                      | limites coincidem; status divergem (acima)                                  | Divergente (legado vigente) | convenção §9; tabela 0.1 #22                                       |
 
 Contexto de delta intencional (ponteiro, sem decisão nesta seção): ADR-0012, ADR-0019 e ADR-0022.
-O seed desses ADRs tem 32 campos — as 33 chaves do catálogo legado menos `demand.category`
-(`docs/adr/0012-form-is-a-configurable-entity.md`, "Consequências").
 
 **Cobertura da seção:** 0 rotas (sem superfície HTTP); 33 chaves de campo catalogadas.
 
@@ -1333,7 +1331,7 @@ por migration e cada `PATCH` altera apenas a sua seção (`F1 docs/portal-config
 | F1  | `src/modules/portalConfig/portalConfig.service.ts`                                                                                  | projeção do GET e regras por seção                      |
 | F1  | `src/modules/portalConfig/portalConfig.repository.ts`                                                                               | leituras ordenadas, locks, upserts                      |
 | F1  | `src/modules/portalConfig/portalConfig.schema.ts`                                                                                   | validação Zod das 7 seções                              |
-| F1  | `src/modules/portalConfig/portalConfig.mappers.ts`                                                                                  | tema (contrato ↔ colunas planas) e defaults             |
+| F1  | `src/modules/portalConfig/portalConfig.mappers.ts`                                                                                  | Aparência (contrato ↔ colunas planas) e defaults        |
 | F1  | `src/shared/middleware/uploadAssets.ts`                                                                                             | multipart de `/assets`                                  |
 | F1  | `src/shared/types/portalConfig.ts`                                                                                                  | tipos do contrato, allowlists, `CORE_STATUS_IDS`        |
 | F1  | `src/shared/types/systemSettings.ts`, `src/shared/types/systemTheme.ts`, `src/shared/types/criteria.ts`, `src/shared/types/role.ts` | linhas de banco e ponte de critérios/perfis             |
@@ -1559,6 +1557,9 @@ mesma mensagem genérica para 5xx. Não há 401/403 nesta rota.
 #### Transporte
 
 JSON; resposta completa `200` (sem `201`/`204`); nenhum header de cache.
+
+**Confronto:** `GET /portal-config` é público e devolve status inativos e
+`prioritizationWeights`; o ADR-0018 separa a leitura pública da administrativa.
 
 #### Evidência
 
@@ -2116,7 +2117,7 @@ Cookie: session_id=<sessão de Administrador>
 }
 ```
 
-Exemplo abreviado: como a lista é atômica e os sete ids de núcleo são obrigatórios, uma lista real
+Regra: como a lista é atômica e os sete ids de núcleo são obrigatórios, uma lista real
 precisa conter `1, 3, 4, 6, 7, 16, 17` — a ausência de qualquer um responde
 409 `core_status_removed` (`F1 src/modules/portalConfig/portalConfig.service.ts:288-295`).
 
@@ -3693,7 +3694,7 @@ Modo `authenticated` — `RequesterRequestDetails` = base do modo público **sem
       "area": "Financeiro",
       "department": "Contabilidade",
       "manager": "Gestor Exemplo",
-      "additionalContact": "(11) 90000-0000"
+      "additionalContact": "<contato-adicional>"
     },
     "demand": {
       "title": "Conferência de diárias",
@@ -3805,7 +3806,7 @@ no início da mesma request (`F1 src/modules/requests/requests.service.ts:1302`)
 entre a leitura e o `UPDATE`, a transição falha com
 `409 "Solicitação foi atualizada por outra operação"` (`F1 src/modules/requests/statusTransition.ts:38-51`).
 
-**Não verificado:** o comentário do schema e do service afirma que status terminais nunca são
+**Desatualizado no legado:** o comentário do schema e do service afirma que status terminais nunca são
 saída e que a tentativa responde `422` (`F1 src/modules/requests/requests.schema.ts:206-210`;
 `F1 src/modules/requests/requests.service.ts:1156-1166`), mas `updateRequestStatus` não consulta
 `current_is_terminal`: a coluna é selecionada em `F1 src/modules/requests/requests.repository.ts:826` e não tem leitor nesta rota (`F1 src/modules/requests/requests.service.ts:1189-1330`). Nenhuma outra rota deste domínio aplica o
@@ -4001,7 +4002,7 @@ pendências tem degradação silenciosa para zeros em caso de erro (`F1 src/modu
     "area": "Financeiro",
     "department": "Contabilidade",
     "manager": "Gestor Exemplo",
-    "additionalContact": "(11) 90000-0000"
+    "additionalContact": "<contato-adicional>"
   },
   "demand": {
     "title": "Conferência de diárias",
@@ -4591,8 +4592,8 @@ O rascunho inicial de `createEmptyTriageAssessment` traz `lastTechnicalMessage: 
 
 | Tema                | Situação                                                                                                                                                                            | Ponteiro                        |
 | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------- |
-| Base path           | Divergente (legado vigente): rotas na raiz, sem `/api/v1`                                                                                                                           | convenção §1 (#1)               |
-| Sucesso             | Compatível: `200` leitura, `201` criação                                                                                                                                            | #20 / §15.4                     |
+| Base path           | Divergente (legado vigente): rotas na raiz, sem `/api/v1`                                                                                                                           | convenção §1                    |
+| Sucesso             | Compatível: `200` leitura, `201` criação                                                                                                                                            | tabela 0.1 #20 / §15.4          |
 | Validação           | Divergente (legado vigente): `422` + `fields` como objeto; `400` de path via mensagem agregada                                                                                      | #5 / §3; #19                    |
 | `code` de erro      | Divergente (legado vigente): `403` da leitura e `404`/`409`/`422` sem `code`; `code` de domínio em `UPPER_SNAKE` (`INSUFFICIENT_ROLE_PERMISSIONS`) em vez de snake_case do catálogo | #4 / §2.3                       |
 | Referência a status | Divergente (legado vigente): `exitStatus` é `statuses.status_id` numérico; a `key` não vai ao wire                                                                                  | #18 / ADR-0003, ADR-0021; §15.1 |
@@ -5098,7 +5099,7 @@ Evidência: `F1 src/modules/prioritization/prioritization.controller.ts:30-48`; 
 - A Prioridade devolvida em `GET /requests` e na fila vem do join com `priorities` por `requests.priority_id` (`F1 src/modules/requests/requests.repository.ts:365,395`; `F1 src/modules/queue/queue.repository.ts:68`; `F1 src/modules/reports/reports.repository.ts:225`).
 - O detalhe interno expõe as duas leituras lado a lado: `priority` (join de `requests.priority_id`) e `prioritization { score, maxScore: 50, label }` (de `prioritization_evaluations`) (`F1 src/modules/requests/requests.service.ts:305-312`; `F1 src/modules/requests/requests.repository.ts:579-580,626-639`).
 
-**Divergente (legado vigente):** a Prioridade tem duas casas no legado (`requests.priority_id` e `prioritization_evaluations.classification`) e a avaliação não mantém a primeira. O ADR-0016 fixa a faixa em uma única casa, lida por join/porta do domínio `prioritization`. Ver ADR-0016.
+**Divergente (legado vigente):** a Prioridade tem duas casas no legado (`requests.priority_id` e `prioritization_evaluations.classification`) e a avaliação não mantém a primeira. O ADR-0016 fixa a faixa em uma única casa, lida por join no domínio `prioritization`. Ver ADR-0016.
 
 ### 12.5 Visão do consumidor (F2) e drift
 
@@ -5119,7 +5120,7 @@ Evidência: `F1 src/modules/prioritization/prioritization.controller.ts:30-48`; 
 | Tema             | Situação no legado                                                                                         | Convenção                                                                                                                                |
 | ---------------- | ---------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
 | Base path        | `/prioritization/*`, sem prefixo                                                                           | **Divergente (legado vigente):** `/api/v1` — §1                                                                                          |
-| Envelope de erro | `{ status, statusCode, message }`, sem `code`                                                              | Compatível com o envelope legado da §2.1; a ausência de `code` é **Divergente (legado vigente)** — §2.3 e §4                             |
+| Envelope de erro | `{ status, statusCode, message }`, sem `code`                                                              | Compatível com o envelope legado da §2.1; a ausência de `code` é **Divergente (legado vigente)** — §2.3 e tabela 0.1 #4                  |
 | Validação        | `400` com mensagem agregada, sem `code` e sem `fields`                                                     | **Divergente (legado vigente):** §3 congela `400` + `validation_error` + `fields` como lista                                             |
 | Sucesso          | `200` em leitura e em atualização                                                                          | Compatível — §15.4                                                                                                                       |
 | Paginação        | `GET /prioritization/criteria` é lista não paginada com envelope `{ criteria }`                            | **Divergente (legado vigente):** §4/§4.3 só admitem lista não paginada com linha de exceção registrada                                   |
@@ -5260,7 +5261,7 @@ Regras efetivas:
 }
 ```
 
-A resposta não devolve `solicitationStatus`; a transição de status é observada por `GET /requests/:protocol/internal` ou `GET /requests/:protocol/tracking` (`F1 docs/contract-pendencias_03.md` §7, D-P18).
+A resposta não devolve `solicitationStatus`; a transição de status é observada por `GET /requests/:protocol/internal` ou `GET /requests/:protocol/tracking` (`F1 docs/contract-pendencias_03.md` §7, `D-P18` do contrato de pendências).
 
 #### Erros
 
@@ -5591,22 +5592,22 @@ O `protocol` ecoado é o do path, já com `trim` (`F1 src/modules/pendingItems/p
 
 ### 13.10 Confronto com docs/04-API-Conventions.md
 
-| Tema                      | Situação no legado                                                                                                          | Convenção                                                                                                                                                     |
-| ------------------------- | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Base path                 | `/requests/:protocol/pending-items` e `/requests/:protocol/public/verify`, sem prefixo                                      | **Divergente (legado vigente):** `/api/v1` — §1                                                                                                               |
-| Envelope de erro          | `{ status, statusCode, message }`, sem `code`                                                                               | Compatível com o envelope legado da §2.1; a ausência de `code` é **Divergente (legado vigente)** — §2.3 e §4                                                  |
-| Validação                 | `400` com mensagem agregada, sem `code` e sem `fields`; não há `422` neste domínio                                          | **Divergente (legado vigente):** §3 congela `400` + `validation_error` + `fields` como lista                                                                  |
-| Paginação                 | `GET .../pending-items` sem paginação e sem envelope de página                                                              | **Divergente (legado vigente):** §4/§4.3 exigem linha de exceção para listagem não paginada                                                                   |
-| Multipart                 | 1 arquivo, 10 MiB, allowlist de MIME; MIME inválido → `400`; tamanho → `400`                                                | Limites compatíveis; status **Divergente (legado vigente):** §9 congela `415` para MIME e `413` para tamanho                                                  |
-| Rate limit                | 10 tentativas/10 min por IP+protocolo, em memória, `429` com mensagem textual                                               | **Divergente (legado vigente):** §13 congela `429` com `rate_limited`, `Retry-After` e storage compartilhado                                                  |
-| Identidade do solicitante | `X-Requester-Identity` com nome+e-mail; divergência → `401` genérico; protocolo inexistente → `401`                         | **Divergente (legado vigente):** §15.3 e ADR-0023 apontam `X-Requester-Email` como chave de busca e `404` para protocolo não encontrado                       |
-| Autorização               | Perfis `Analista`/`Gestor`/`Administrador` no router; custódia por `professional_id` em criar/revisar                       | **Divergente (legado vigente):** §6 e ADR-0025 usam as capabilities `pending_item:read`, `pending_item:write` e `pending_item:review`, com escopo `own`/`all` |
-| Sucesso                   | `201` em criação e anexo; `200` em leitura, resposta, revisão e verify                                                      | Compatível — §15.4                                                                                                                                            |
-| Datas                     | timestamps ISO-8601 UTC; `deadline` como `yyyy-mm-dd`                                                                       | Compatível — §10                                                                                                                                              |
-| Idioma                    | Chaves `camelCase`; valores de enum (`field_edit`, `observation`, `requested`, `responded`, `validated`) em inglês          | Compatível — §11; os valores de enum são identificadores internos, não texto de UI                                                                            |
-| Idempotência              | `review` ignora reenvio de `id+decision`; `respond` não é idempotente (segunda chamada → `409`); `POST` não deduplica       | Compatível com a tabela da §8.2; a idempotência do `review` é regra do contrato legado (`F1 docs/contract-pendencias_03.md` §7; D-P23 em §12)                 |
-| Request-id                | Ausente                                                                                                                     | **Divergente (legado vigente):** §12; anotado na §3                                                                                                           |
-| `deadline` no wire        | A chave é sempre emitida, com `null` quando não há prazo (`F1 src/modules/pendingItems/pendingItems.repository.ts:764-766`) | **Desatualizado no legado:** o contrato marca `deadline` como opcional (`F1 docs/contract-pendencias_03.md` §7)                                               |
+| Tema                      | Situação no legado                                                                                                          | Convenção                                                                                                                                                                 |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Base path                 | `/requests/:protocol/pending-items` e `/requests/:protocol/public/verify`, sem prefixo                                      | **Divergente (legado vigente):** `/api/v1` — §1                                                                                                                           |
+| Envelope de erro          | `{ status, statusCode, message }`, sem `code`                                                                               | Compatível com o envelope legado da §2.1; a ausência de `code` é **Divergente (legado vigente)** — §2.3 e tabela 0.1 #4                                                   |
+| Validação                 | `400` com mensagem agregada, sem `code` e sem `fields`; não há `422` neste domínio                                          | **Divergente (legado vigente):** §3 congela `400` + `validation_error` + `fields` como lista                                                                              |
+| Paginação                 | `GET .../pending-items` sem paginação e sem envelope de página                                                              | **Divergente (legado vigente):** §4/§4.3 exigem linha de exceção para listagem não paginada                                                                               |
+| Multipart                 | 1 arquivo, 10 MiB, allowlist de MIME; MIME inválido → `400`; tamanho → `400`                                                | Limites compatíveis; status **Divergente (legado vigente):** §9 congela `415` para MIME e `413` para tamanho                                                              |
+| Rate limit                | 10 tentativas/10 min por IP+protocolo, em memória, `429` com mensagem textual                                               | **Divergente (legado vigente):** §13 congela `429` com `rate_limited`, `Retry-After` e storage compartilhado                                                              |
+| Identidade do solicitante | `X-Requester-Identity` com nome+e-mail; divergência → `401` genérico; protocolo inexistente → `401`                         | **Divergente (legado vigente):** §15.3 e ADR-0023 apontam `X-Requester-Email` como chave de busca e `404` para protocolo não encontrado                                   |
+| Autorização               | Perfis `Analista`/`Gestor`/`Administrador` no router; custódia por `professional_id` em criar/revisar                       | **Divergente (legado vigente):** §6 e ADR-0025 usam as capabilities `pending_item:read`, `pending_item:write` e `pending_item:review`, com escopo `own`/`all`             |
+| Sucesso                   | `201` em criação e anexo; `200` em leitura, resposta, revisão e verify                                                      | Compatível — §15.4                                                                                                                                                        |
+| Datas                     | timestamps ISO-8601 UTC; `deadline` como `yyyy-mm-dd`                                                                       | Compatível — §10                                                                                                                                                          |
+| Idioma                    | Chaves `camelCase`; valores de enum (`field_edit`, `observation`, `requested`, `responded`, `validated`) em inglês          | Compatível — §11; os valores de enum são identificadores internos, não texto de UI                                                                                        |
+| Idempotência              | `review` ignora reenvio de `id+decision`; `respond` não é idempotente (segunda chamada → `409`); `POST` não deduplica       | Compatível com a tabela da §8.2; a idempotência do `review` é regra do contrato legado (`F1 docs/contract-pendencias_03.md` §7; `D-P23` do contrato de pendências em §12) |
+| Request-id                | Ausente                                                                                                                     | **Divergente (legado vigente):** §12; anotado na §3                                                                                                                       |
+| `deadline` no wire        | A chave é sempre emitida, com `null` quando não há prazo (`F1 src/modules/pendingItems/pendingItems.repository.ts:764-766`) | **Desatualizado no legado:** o contrato marca `deadline` como opcional (`F1 docs/contract-pendencias_03.md` §7)                                                           |
 
 **Cobertura da seção:** 6 de 6 rotas do inventário — #39 `POST /requests/:protocol/pending-items`; #40 `GET /requests/:protocol/pending-items`; #41 `PATCH /requests/:protocol/pending-items/review`; #42 `PATCH /requests/:protocol/pending-items/:pendingItemId`; #43 `POST /requests/:protocol/pending-items/:pendingItemId/attachments`; #44 `POST /requests/:protocol/public/verify`.
 
@@ -5688,6 +5689,8 @@ Sem path params e sem query params: o controller não lê `req.query`, apenas re
   números podem divergir na virada do dia.
 - A lista de status "em andamento" é fixa em código; `inProgressRequests` não deriva de
   `statuses.closes_request`/`is_terminal`.
+- **Divergente (legado vigente):** `overdueRequests` trata o prazo desejado como atraso; o ADR-0024
+  fixa que o prazo desejado não é SLA.
 
 #### Escopo por perfil
 
@@ -5905,9 +5908,8 @@ Drift observado:
 - **Divergente (legado vigente):** `page` e `pageSize` obrigatórios, sem default 20; a §4.2 fixa
   default 20 e máximo 100, e §4.3 exige linha de exceção para default diferente. O máximo 100 e o
   `totalPages: 0` quando vazio coincidem com §4.1/§4.2.
-- **Divergente (legado vigente):** o clamp é apenas do eco (`page`), não da janela — pedir página
-  além do fim devolve `data: []` com `page` ajustada; a §4.2 descreve a página ajustada como
-  resultado.
+- **Compatível por exceção registrada:** `GET /queue` exige `page` e `pageSize` e faz clamp apenas
+  do eco (`page`); a §4.3 registra essa exceção e a §4.2 descreve a página ajustada como resultado.
 - **Divergente (legado vigente):** `status` filtra pelo **nome** do status, rótulo editável no
   Admin, em vez de `status.key` — convenção §15.1 e ADR-0021.
 - **Divergente (legado vigente):** identificadores de usuário numéricos no wire (`assigneeId` como
@@ -6093,6 +6095,9 @@ Regras de composição:
 
 JSON `200`, sem `Cache-Control` próprio. Datas puras trafegam como `AAAA-MM-DD` (eco dos filtros) e
 `period` como `AAAA-MM`; não há timestamp no payload.
+
+**Divergente (legado vigente):** `overdue` e `situation=overdue` tratam o prazo desejado como SLA;
+o ADR-0024 fixa que ele não é.
 
 ### 15.4 GET /reports/requests.csv
 
@@ -6536,15 +6541,14 @@ O contrato registra o mesmo recorte de permissão e de erros
   camelCase (`userId`, `displayName`) — é exatamente a exceção legada de auditoria da convenção §11.
 - **Compatível por exceção registrada:** envelope `{ items, total, page, limit }` sem `totalPages`,
   item com `audit_id` numérico e `entity_type_label` — convenção §15.2 (legado), com linha na §4.3
-  ("Auditoria (legado)": default 20, máximo 100, sem clamp).
-- **Divergente (legado vigente):** o envelope `{ items, total, page, limit }` não é o
-  `{ data, page, pageSize, total, totalPages }` da §4.1 — é a forma que a §15.2 (legado) registra
-  para a auditoria até a migração. A ausência de clamp de `page` é o que a §4.3 anota como
-  "não no legado" para a auditoria.
+  ("Auditoria (legado)": default 20, máximo 100, sem clamp). A ausência de clamp de `page` é o
+  desvio que a própria §4.3 registra para a auditoria; não é uma segunda divergência.
 - **Divergente (legado vigente):** `audit_id` numérico no corpo e `:id` numérico no path — §15.2
   (alvo) e ADR-0003 preveem UUID; §0.2 #23 mantém o formato legado até a spec de auditoria.
 - **Divergente (legado vigente):** `GET /audit-logs/:protocol` devolve array sem envelope e sem
   paginação, e não tem linha na tabela de exceções da §4.3.
+- **Divergente (legado vigente):** `action_type` composto; o ADR-0020 separa `entity_type` e
+  `action` no modelo novo.
 - **Divergente (legado vigente):** `code` de domínio em `UPPER_SNAKE_CASE`
   (`INSUFFICIENT_ROLE_PERMISSIONS`) — §11 e §2.3 exigem `snake_case` minúsculo e catálogo estável.
 - **Divergente (legado vigente):** protocolo inexistente devolve `403` para perfil não admin-like,
@@ -6572,8 +6576,8 @@ O contrato registra o mesmo recorte de permissão e de erros
 
 ## 17. internal-notes
 
-Timeline interna da solicitação: observações escritas, eventos leves de atribuição/status/mapeamento
-e os históricos completos de triagem e mapeamento. Três rotas, todas sob
+Linha do tempo interna da solicitação: notas internas escritas, eventos leves de
+atribuição/status/mapeamento e os registros completos de triagem e mapeamento. Três rotas, todas sob
 `/requests/:protocol/internal-notes` e todas com o mesmo gate de perfil.
 
 ### 17.1 Fontes
@@ -6616,7 +6620,7 @@ Evidência: `F1 src/modules/internalNotes/internalNotes.router.ts:10-17`; montag
   (`F1 src/shared/middleware/requireRole.ts:16-22`).
 - Não há checagem de custódia: qualquer perfil interno lê e escreve a timeline de qualquer
   solicitação. A leitura embutida dos históricos de triagem/mapeamento segue o gate da rota, sem o
-  check de responsável do `GET /requests/:protocol/triage` — #27
+  check de responsável do `GET /requests/:protocol/triage` — issue #27
   (`F1 docs/internal-observations.md:91-95,641`).
 
 ### 17.3 GET /requests/:protocol/internal-notes
@@ -6915,7 +6919,8 @@ Sem corpo (`F1 src/modules/internalNotes/internalNotes.controller.ts:75`).
 - **Divergente (legado vigente):** paths sem `/api/v1` — convenção §1.
 - **Compatível por exceção registrada:** paginação keyset `{ items, nextCursor }` com `limit` default
   20 e máximo 50 — a §4.3 tem linha própria para a timeline com esses valores e esse keyset; é a
-  única listagem da §14–§17 que aparece na tabela de exceções.
+  exceção de paginação registrada para a timeline na §4.3; a auditoria tem linha própria na
+  mesma tabela.
 - **Compatível:** `201` na criação e `204` sem corpo na marcação — §15.4.
 - **Compatível:** datas de timestamp em ISO-8601 UTC (§10). Observação de forma: `occurredAt` e
   `createdAt` levam milissegundos, enquanto `mapping.scheduledFor` é serializado com precisão de
@@ -6959,22 +6964,22 @@ Este índice não decide nada: ele apenas agrupa, por tema, onde o legado diverg
 congeladas. As decisões correspondentes estão nas specs de domínio (#15–#27) e nos ADRs em
 `docs/adr/`.
 
-| Tema                      | O que o legado faz                                                                                           | Onde aparece                                 | Ponteiro                                                     |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------ | -------------------------------------------- | ------------------------------------------------------------ |
-| Base path                 | Rotas na raiz, sem `/api/v1`                                                                                 | §3.1; todas as seções                        | Convenção §1; #19; #24                                       |
-| Envelope de erro          | `{ status, statusCode, message }`, `code` opcional, sem `requestId`                                          | §3.3; todas as seções                        | ADR-0005; convenções §2, §12; #19; #23                       |
-| Validação                 | Mistura `400` (mensagem agregada) e `422` (`fields` como objeto)                                             | §3.4; §5.3; §9.12; §10.4; §13                | Convenção §3 (C2); #19                                       |
-| Paginação                 | Sem convenção única; auditoria usa `{ items, total, page, limit }`; fila usa envelope próprio                | §3.6; §14.4; §16.3                           | Convenção §6; #18; #24; #26                                  |
-| Ids                       | Números em auditoria, fila, triagem, priorização, status e portal-config; `id` de sessão como string decimal | §3.2; §5.3; §7.3; §10.3; §12.3; §14.4; §16.3 | ADR-0003; ADR-0021; convenção §15.1; #17; #20; #22; #24; #26 |
-| Status no wire            | Nome ou id numérico; `key` não existe                                                                        | §9; §10; §11; §14; §15; §16                  | ADR-0021; convenções §15.1; #19; #20; #21; #24               |
-| Perfis e autorização      | 4 perfis fixos; sem capabilities; escopo por perfil no service                                               | §3.2; §7; §8; §9; §14; §15; §16              | ADR-0006; ADR-0017; ADR-0025; #15; #18; #20                  |
-| Identidade do solicitante | `X-Requester-Identity` com nome+e-mail; `401`; verify por `POST .../public/verify`                           | §3.9; §9.7; §13.8                            | ADR-0023; convenção §15.3; #19; #23                          |
-| Multipart e MIME          | `400` para MIME inválido em requests/pendências; `413`/`415` em avatar/assets                                | §3.7; §7.7; §8.5; §9.12; §13.7               | Convenção §9; #17; #18                                       |
-| Anexos                    | Sem download; limite de 3 anexos só no frontend                                                              | §9.13; §13.9                                 | #19; #23                                                     |
-| Prazo e atraso            | `desiredDeadline` e métrica `overdueRequests` tratados como atraso                                           | §9; §14.3; §15                               | ADR-0024; #23; #25                                           |
-| Prioridade                | `requests.priority_id` e avaliação convivem; faixas na tabela `priorities`, sem CRUD por API                 | §9; §12; §14                                 | ADR-0016; #22; #24                                           |
-| Mapeamento                | Rotas sob `/queue`; `PUT` faz merge e `id` seleciona o alvo                                                  | §11                                          | ADR-0001; #21                                                |
-| Auditoria                 | `audit_id` numérico, `action_type` composto, 6 entidades efetivas, envelope legado                           | §16                                          | ADR-0020; #26                                                |
-| Notas internas            | Cursor por `(created_at, id)`, `unseenCount` global, eventos normalizados na leitura                         | §17                                          | #27                                                          |
-| Formulário                | Catálogo estático de 33 chaves; sem `GET /forms`; `fieldKey` pontilhado                                      | §6                                           | ADR-0012; ADR-0019; ADR-0022; #16                            |
-| Portal-config             | `id` numérico e status por nome no payload público; assets como 8 variantes                                  | §7                                           | ADR-0015; ADR-0018; ADR-0021                                 |
+| Tema                      | O que o legado faz                                                                                           | Onde aparece                                    | Ponteiro                                                     |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------ | ----------------------------------------------- | ------------------------------------------------------------ |
+| Base path                 | Rotas na raiz, sem `/api/v1`                                                                                 | §3.1; todas as seções                           | Convenção §1; #19; #24                                       |
+| Envelope de erro          | `{ status, statusCode, message }`, `code` opcional, sem `requestId`                                          | §3.3; todas as seções                           | ADR-0005; convenções §2, §12; #19; #23                       |
+| Validação                 | Mistura `400` (mensagem agregada) e `422` (`fields` como objeto)                                             | §3.4; §5.3; §9.12; §10.4                        | Convenção §3 (C2); #19                                       |
+| Paginação                 | Sem convenção única; auditoria usa `{ items, total, page, limit }`; fila usa envelope próprio                | §3.6; §14.4; §16.3                              | Convenção §4; #18; #24; #26                                  |
+| Ids                       | Números em auditoria, fila, triagem, priorização, status e portal-config; `id` de sessão como string decimal | §3.2; §5.3; §7; §10.3; §12.3; §14.4; §16.3; §17 | ADR-0003; ADR-0021; convenção §15.1; #17; #20; #22; #24; #26 |
+| Status no wire            | Nome ou id numérico; `key` não existe                                                                        | §9; §10; §11; §14; §15; §16                     | ADR-0021; convenções §15.1; #19; #20; #21; #24               |
+| Perfis e autorização      | 4 perfis fixos; sem capabilities; escopo por perfil no service                                               | §3.2; §7; §8; §9; §14; §15; §16                 | ADR-0006; ADR-0017; ADR-0025; #15; #18; #20                  |
+| Identidade do solicitante | `X-Requester-Identity` com nome+e-mail; `401`; verify por `POST .../public/verify`                           | §3.9; §9.7; §13.8                               | ADR-0023; convenção §15.3; #19; #23                          |
+| Multipart e MIME          | `400` para MIME inválido em requests/pendências; `413`/`415` em avatar/assets                                | §3.7; §7.7; §8.5; §9.12; §13.7                  | Convenção §9; #17; #18                                       |
+| Anexos                    | Sem download; limite de 3 anexos só no frontend                                                              | §9.13; §13.9                                    | #19; #23                                                     |
+| Prazo e atraso            | `desiredDeadline` e métrica `overdueRequests` tratados como atraso                                           | §9; §14.3; §15                                  | ADR-0024; #23; #25                                           |
+| Prioridade                | `requests.priority_id` e avaliação convivem; faixas na tabela `priorities`, sem CRUD por API                 | §9; §12; §14                                    | ADR-0016; #22; #24                                           |
+| Mapeamento                | Rotas sob `/queue`; `PUT` faz merge e `id` seleciona o alvo                                                  | §11                                             | ADR-0001; #21                                                |
+| Auditoria                 | `audit_id` numérico, `action_type` composto, 6 entidades efetivas, envelope legado                           | §16                                             | ADR-0020; #26                                                |
+| Notas internas            | Cursor por `(created_at, id)`, `unseenCount` global, eventos normalizados na leitura                         | §17                                             | #27                                                          |
+| Formulário                | Catálogo estático de 33 chaves; sem `GET /forms`; `fieldKey` pontilhado                                      | §6                                              | ADR-0012; ADR-0019; ADR-0022; #16                            |
+| Portal-config             | `id` numérico e status por nome no payload público; assets como 8 variantes                                  | §7                                              | ADR-0015; ADR-0018; ADR-0021                                 |
