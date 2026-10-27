@@ -5699,3 +5699,332 @@ Drift observado:
 
 - `GET /queue/metrics` (#45)
 - `GET /queue` (#46)
+
+## 15. reports
+
+Relatórios gerenciais: o painel agregado e a exportação CSV da fila. Nenhuma das duas rotas aplica
+escopo por perfil além do guard de perfil — Gestor e Administrador veem o conjunto inteiro.
+
+### 15.1 Fontes
+
+| Ref | Caminho                                                                             | Uso                                        |
+| --- | ----------------------------------------------------------------------------------- | ------------------------------------------ |
+| F1  | `src/modules/reports/reports.router.ts`                                             | montagem e guards                          |
+| F1  | `src/modules/reports/reports.controller.ts`                                         | borda HTTP, validação, headers do CSV      |
+| F1  | `src/modules/reports/reports.schema.ts`                                             | `dashboardQuerySchema`                     |
+| F1  | `src/modules/reports/reports.service.ts`                                            | composição do payload, formatação do CSV   |
+| F1  | `src/modules/reports/reports.repository.ts`                                         | SQL dos agregados e das linhas exportadas  |
+| F1  | `src/modules/DTOs/reports/Dashboard.dto.ts`                                         | `DashboardQuery`, `DashboardResponse`      |
+| F1  | `src/modules/DTOs/reports/QueueExport.dto.ts`                                       | `QueueExportRow`, `QueueCsvExport`         |
+| F1  | `src/modules/queue/queue.schemas.ts`                                                | `queueFilterQuerySchema`, reusado pelo CSV |
+| F1  | `src/modules/queue/queue.filters.ts`                                                | semântica dos filtros do CSV               |
+| F1  | `src/shared/types/systemTheme.ts`                                                   | `STATUS_TONES` / `StatusTone`              |
+| F1  | `docs/dashboard-metrics-contract.md`                                                | contrato do dashboard                      |
+| F1  | `docs/queue-csv-export-contract.md`                                                 | contrato da exportação                     |
+| F2  | `src/lib/api/dashboard.api.ts`                                                      | cliente do dashboard                       |
+| F2  | `src/lib/api/report.api.ts`                                                         | cliente do CSV                             |
+| F2  | `src/lib/types/dashboard.ts`, `src/lib/types/metrics.ts`, `src/lib/types/report.ts` | tipos                                      |
+
+### 15.2 Rotas
+
+| #   | Método | Path                    | Autenticação/autorização             | Handler                    | Sucesso        | Erros              |
+| --- | ------ | ----------------------- | ------------------------------------ | -------------------------- | -------------- | ------------------ |
+| 47  | GET    | `/reports/dashboard`    | sessão + `Gestor` ou `Administrador` | `getDashboardController`   | 200 JSON       | 400, 401, 403, 500 |
+| 48  | GET    | `/reports/requests.csv` | sessão + `Gestor` ou `Administrador` | `exportQueueCsvController` | 200 `text/csv` | 400, 401, 403, 500 |
+
+Evidência: `F1 src/modules/reports/reports.router.ts:8-20`; montagem em `F1 src/router.ts:30`.
+
+`Analista` e `Solicitante` recebem `403 "Acesso restrito ao perfil Gestor ou Administrador"`
+(`F1 src/shared/middleware/requireRole.ts:21-22`), coerente com o registro do contrato do CSV
+(`F1 docs/queue-csv-export-contract.md:8-10`).
+
+### 15.3 GET /reports/dashboard
+
+#### Request — query
+
+Validada por `dashboardQuerySchema`, que é `.strict()`
+(`F1 src/modules/reports/reports.schema.ts:7-21`; chamada em
+`F1 src/modules/reports/reports.controller.ts:9-13`). Param desconhecido → 400.
+
+| Param        | Tipo aceito                                     | Regra                         | Mensagem literal                                                                                    | Evidência                                       |
+| ------------ | ----------------------------------------------- | ----------------------------- | --------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| `from`       | data `AAAA-MM-DD`                               | data inicial de abertura      | `"Data inválida — use o formato AAAA-MM-DD."`                                                       | `F1 src/modules/reports/reports.schema.ts:4,9`  |
+| `to`         | data `AAAA-MM-DD`                               | data final, inclusiva         | idem                                                                                                | `F1 src/modules/reports/reports.schema.ts:4,10` |
+| `situation`  | `open` \| `closed` \| `overdue` \| `unassigned` | recorte operacional           | Zod (inglês): `"Invalid option: expected one of \"open\"\|\"closed\"\|\"overdue\"\|\"unassigned\""` | `F1 src/modules/reports/reports.schema.ts:11`   |
+| `statusId`   | inteiro positivo                                | id numérico do status         | Zod: `"Deve ser um número."`                                                                        | `F1 src/modules/reports/reports.schema.ts:5,12` |
+| `categoryId` | inteiro positivo                                | id numérico da categoria      | idem                                                                                                | `F1 src/modules/reports/reports.schema.ts:5,13` |
+| `priorityId` | inteiro positivo \| `unassigned`                | `unassigned` = sem prioridade | Zod (inglês): `"Invalid input"`                                                                     | `F1 src/modules/reports/reports.schema.ts:14`   |
+
+- `from > to` → 400 com `"A data inicial não pode ser posterior à data final."`, no path `from`
+  (`F1 src/modules/reports/reports.schema.ts:17-20`).
+- Sem `from`/`to`, o recorte temporal não é aplicado
+  (`F1 src/modules/reports/reports.repository.ts:68-78`).
+- Os ids são `coerce`, então `statusId=7` e `statusId="7"` são aceitos
+  (`F1 src/modules/reports/reports.schema.ts:5`).
+
+Semântica do recorte (`F1 src/modules/reports/reports.repository.ts:68-107`):
+
+| Filtro                    | SQL                                                                                                             |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `from`                    | `r.created_at >= (:from::date AT TIME ZONE 'America/Sao_Paulo')`                                                |
+| `to`                      | `r.created_at < ((:to::date + INTERVAL '1 day') AT TIME ZONE 'America/Sao_Paulo')`                              |
+| `situation=open`          | `s.is_terminal = false`                                                                                         |
+| `situation=closed`        | `s.is_terminal = true`                                                                                          |
+| `situation=overdue`       | `s.is_terminal = false` **e** `r.desired_deadline < (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date` |
+| `situation=unassigned`    | `s.is_terminal = false` **e** `r.professional_id IS NULL`                                                       |
+| `statusId`                | `r.status_id = :statusId`                                                                                       |
+| `categoryId`              | `r.category_id = :categoryId`                                                                                   |
+| `priorityId="unassigned"` | `r.priority_id IS NULL`                                                                                         |
+| `priorityId` numérico     | `r.priority_id = :priorityId`                                                                                   |
+
+**Desatualizado no legado:** `F1 docs/dashboard-metrics-contract.md:32-35` define `open`/`closed`
+por `statuses.closes_request`. O código lê `statuses.is_terminal`
+(`F1 src/modules/reports/reports.repository.ts:81-83,116-117,146`), e a coluna `closes_request` foi
+**removida** de `statuses` pelo fechamento do motor de status v4
+(`F1 migrations/requester_request/20260926000000_complete_status_transition_v4.js:296`); o nome
+aparece hoje apenas no `down()` dessa migration
+(`F1 migrations/requester_request/20260926000000_complete_status_transition_v4.js:320-322`). O campo
+exposto continua se chamando `closesRequest` e carrega `is_terminal`
+(`F1 src/modules/reports/reports.service.ts:91`).
+
+#### Response 200
+
+```json
+{
+  "filters": {
+    "from": "2026-07-01",
+    "to": null,
+    "situation": null,
+    "statusId": null,
+    "categoryId": null,
+    "priorityId": null
+  },
+  "filterOptions": {
+    "statuses": [{ "id": 1, "name": "Solicitação enviada" }],
+    "categories": [{ "id": 1, "name": "Automação" }],
+    "priorities": [{ "id": 1, "label": "Baixa" }]
+  },
+  "summary": { "total": 20, "open": 18, "closed": 2, "overdue": 0, "unassigned": 5 },
+  "byStatus": [
+    {
+      "id": 1,
+      "name": "Solicitação enviada",
+      "count": 1,
+      "tone": "info",
+      "closesRequest": false
+    }
+  ],
+  "byPriority": [{ "id": null, "label": "Não priorizada", "count": 14 }],
+  "byCategory": [{ "id": 1, "name": "Automação", "count": 3 }],
+  "openedOverTime": [{ "period": "2026-07", "count": 8 }]
+}
+```
+
+| Bloco                        | Campos                                                            | Regra                                                                                                                       | Evidência                                                                                                                                           |
+| ---------------------------- | ----------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `filters`                    | `from`, `to`, `situation`, `statusId`, `categoryId`, `priorityId` | eco dos filtros aplicados; ausente → `null`                                                                                 | `F1 src/modules/reports/reports.service.ts:57-64`                                                                                                   |
+| `filterOptions.statuses[]`   | `{ id: number, name: string }`                                    | `statuses` com `is_active = true`, ordem `order_number`                                                                     | `F1 src/modules/reports/reports.repository.ts:203-206`                                                                                              |
+| `filterOptions.categories[]` | `{ id: number, name: string }`                                    | `categories` com `status = 'active'`, ordem `display_order`                                                                 | `F1 src/modules/reports/reports.repository.ts:207-210`                                                                                              |
+| `filterOptions.priorities[]` | `{ id: number, label: string }`                                   | todas as prioridades, ordem `min_score`                                                                                     | `F1 src/modules/reports/reports.repository.ts:211-213`                                                                                              |
+| `summary`                    | `total`, `open`, `closed`, `overdue`, `unassigned`                | `COUNT(*)` com `FILTER` sobre o mesmo recorte                                                                               | `F1 src/modules/reports/reports.repository.ts:112-131`                                                                                              |
+| `byStatus[]`                 | `{ id, name, count, tone, closesRequest }`                        | `GROUP BY status`, ordem `order_number`; `tone` ∈ `error\|success\|info\|warning\|neutral`; `closesRequest` = `is_terminal` | `F1 src/modules/reports/reports.repository.ts:137-154`; `F1 src/modules/reports/reports.service.ts:86-92`; `F1 src/shared/types/systemTheme.ts:1-3` |
+| `byPriority[]`               | `{ id: number \| null, label, count }`                            | LEFT JOIN `priorities`; sem prioridade → `id: null` e `label: "Não priorizada"`; ordem `min_score` com nulos por último     | `F1 src/modules/reports/reports.repository.ts:156-169`                                                                                              |
+| `byCategory[]`               | `{ id, name, count }`                                             | INNER JOIN `categories`, ordem `display_order`                                                                              | `F1 src/modules/reports/reports.repository.ts:171-183`                                                                                              |
+| `openedOverTime[]`           | `{ period: "YYYY-MM", count }`                                    | mês de `created_at` no fuso `America/Sao_Paulo`, ordem ascendente                                                           | `F1 src/modules/reports/reports.repository.ts:9-12,185-199`                                                                                         |
+
+Regras de composição:
+
+- Todos os agregados de `summary` e das séries recebem os **mesmos** filtros
+  (`F1 src/modules/reports/reports.repository.ts:133,152,167,181,197`);
+  `filterOptions` **não** recebe filtro nenhum (`F1 src/modules/reports/reports.service.ts:53`;
+  `F1 src/modules/reports/reports.repository.ts:201-217`).
+- As séries não são preenchidas com zero: `byStatus`/`byCategory`/`byPriority`/`openedOverTime` só
+  têm linha para grupo com pelo menos uma solicitação no recorte (é o resultado de `GROUP BY`).
+- `closed`/`open` usam `is_terminal`, e não a lista de status terminais da fila; os dois critérios
+  podem divergir se um status for terminal em `is_terminal` e não estiver em `TERMINAL_STATUSES`
+  (`F1 src/shared/types/requests.ts:42-43`).
+- `overdue` do dashboard converte o dia para `America/Sao_Paulo`; o de
+  `GET /queue/metrics` usa `CURRENT_DATE` do processo (§14.3).
+- `situation=overdue` e `summary.overdue` compartilham a mesma definição "não terminal e prazo
+  anterior a hoje" (`F1 src/modules/reports/reports.repository.ts:84-89,118-124`).
+
+#### Erros
+
+| Status | Condição                                | Mensagem                                                                                                  | Evidência                                            |
+| ------ | --------------------------------------- | --------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| 400    | query fora do schema                    | agregada por `formatZodIssues(..., "query")`                                                              | `F1 src/modules/reports/reports.controller.ts:11-13` |
+| 400    | intervalo invertido                     | `"Campos inválidos: from — A data inicial não pode ser posterior à data final."`                          | `F1 src/modules/reports/reports.schema.ts:17-20`     |
+| 400    | data fora de `AAAA-MM-DD`               | `"Data inválida — use o formato AAAA-MM-DD."`                                                             | `F1 src/modules/reports/reports.schema.ts:4`         |
+| 400    | param desconhecido                      | 400 pelo `.strict()`                                                                                      | `F1 src/modules/reports/reports.schema.ts:16`        |
+| 401    | sem sessão / sessão inválida            | `"Token não fornecido"` / `"Token inválido ou expirado"`                                                  | `F1 src/shared/middleware/auth.ts:27-45`             |
+| 403    | perfil não autorizado ou senha pendente | `"Acesso restrito ao perfil Gestor ou Administrador"` / `"Troca de senha obrigatória antes de continuar"` | `F1 src/shared/middleware/requireRole.ts:11-22`      |
+
+#### Transporte
+
+JSON `200`, sem `Cache-Control` próprio. Datas puras trafegam como `AAAA-MM-DD` (eco dos filtros) e
+`period` como `AAAA-MM`; não há timestamp no payload.
+
+### 15.4 GET /reports/requests.csv
+
+#### Request — query
+
+Validada por `queueFilterQuerySchema` — o schema de filtros da fila **sem** paginação, `.strict()`
+(`F1 src/modules/reports/reports.controller.ts:19-23`; `F1 src/modules/queue/queue.schemas.ts:37-44`).
+
+| Param        | Tipo aceito                                           | Regra                                    | Mensagem literal                                     | Evidência                                     |
+| ------------ | ----------------------------------------------------- | ---------------------------------------- | ---------------------------------------------------- | --------------------------------------------- |
+| `search`     | string ≤ 254                                          | protocolo, nome ou e-mail do solicitante | `"Máximo de 254 caracteres."`                        | `F1 src/modules/queue/queue.schemas.ts:6`     |
+| `status`     | string 1..100                                         | nome exato do status                     | `"Status inválido."` / `"Máximo de 100 caracteres."` | `F1 src/modules/queue/queue.schemas.ts:7-12`  |
+| `priority`   | `Baixa` \| `Média` \| `Alta` \| `Crítica` \| `nenhum` | `nenhum` = prioridade nula               | `"Prioridade inválida."`                             | `F1 src/modules/queue/queue.schemas.ts:13-15` |
+| `assigneeId` | UUID \| dígitos \| `unassigned`                       | responsável de triagem                   | `"Identificador do responsável inválido."`           | `F1 src/modules/queue/queue.schemas.ts:16-22` |
+| `unassigned` | `true` \| `false` \| `1` \| `0`                       | compatibilidade com "sem responsável"    | `"Valor inválido para \"unassigned\"."`              | `F1 src/modules/queue/queue.schemas.ts:23-26` |
+
+- `page`/`pageSize` **não** fazem parte do schema e, por `.strict()`, a presença deles gera 400
+  (`F1 src/modules/queue/queue.schemas.ts:38-40`; `F1 docs/queue-csv-export-contract.md:11-12`).
+- `unassigned=true` com `assigneeId` diferente de `unassigned` → 400
+  `"\"unassigned\" e \"assigneeId\" não podem ser combinados."`
+  (`F1 src/modules/queue/queue.schemas.ts:29-35,41-44`).
+- Os filtros usam exatamente `applyQueueFilters`, o mesmo da fila
+  (`F1 src/modules/reports/reports.repository.ts:274`; `F1 src/modules/queue/queue.filters.ts:13-50`).
+- **Não** há escopo por Analista no CSV: `applyQueueFilters` é chamado sem `scopedUserId`
+  (`F1 src/modules/reports/reports.repository.ts:274`), e a rota já é restrita a Gestor/Administrador.
+
+#### Response 200 — headers
+
+```http
+200 OK
+Content-Type: text/csv; charset=utf-8
+Content-Disposition: attachment; filename="solicitacoes-2026-10-27.csv"
+Cache-Control: no-store
+X-Content-Type-Options: nosniff
+```
+
+Evidência: `F1 src/modules/reports/reports.controller.ts:27-35`.
+
+- `Cache-Control` é `no-store` (sem `private`).
+- O nome do arquivo é `solicitacoes-AAAA-MM-DD.csv`, com a data de **hoje** em `America/Sao_Paulo`
+  (`F1 src/modules/reports/reports.service.ts:38-43,169`).
+- O corpo é a string CSV entregue por `res.send`; `Content-Length` não é definido pela aplicação
+  (`F1 src/modules/reports/reports.controller.ts:35`).
+
+#### Response 200 — conteúdo
+
+- UTF-8 com BOM (`\uFEFF`), linhas terminadas em CRLF (`\r\n`), inclusive a última
+  (`F1 src/modules/reports/reports.service.ts:166-168`).
+- Delimitador `;` (`F1 src/modules/reports/reports.service.ts:159,164`).
+- **Todos** os campos saem entre aspas duplas, inclusive o cabeçalho; aspas internas são duplicadas
+  (RFC 4180) (`F1 src/modules/reports/reports.service.ts:136-141,164`).
+- Valor iniciado por `=`, `+`, `-` ou `@` (após espaços opcionais) recebe `'` na frente, para
+  neutralizar fórmula de planilha (`F1 src/modules/reports/reports.service.ts:136-141`).
+- Sem paginação: todas as linhas que casam os filtros, ordenadas por `requests.created_at DESC`,
+  sem desempate (`F1 src/modules/reports/reports.repository.ts:272`).
+
+Colunas, na ordem (`F1 src/modules/reports/reports.service.ts:13-26,143-160`):
+
+| #   | Cabeçalho                    | Origem                                                                               | Formato                                   |
+| --- | ---------------------------- | ------------------------------------------------------------------------------------ | ----------------------------------------- |
+| 1   | `Protocolo`                  | `requests.protocol`                                                                  | texto                                     |
+| 2   | `Data de Abertura`           | `requests.created_at`                                                                | `dd/mm/aaaa HH:MM` em `America/Sao_Paulo` |
+| 3   | `Área`                       | `requesters.area`                                                                    | texto ou vazio                            |
+| 4   | `Processo`                   | `requests.process_name`                                                              | texto                                     |
+| 5   | `Categoria`                  | `categories.name` (INNER JOIN)                                                       | texto                                     |
+| 6   | `Status`                     | `statuses.name`                                                                      | texto                                     |
+| 7   | `Prioridade`                 | `priorities.level`                                                                   | texto ou vazio                            |
+| 8   | `Responsável`                | `users.full_name` do responsável de triagem                                          | texto ou vazio                            |
+| 9   | `Data de Mapeamento`         | último `mappings.scheduled_for`                                                      | `dd/mm/aaaa HH:MM` ou vazio               |
+| 10  | `Data da Última Atualização` | `COALESCE(requests.updated_at, requests.created_at)`                                 | `dd/mm/aaaa HH:MM`                        |
+| 11  | `Resultado da Triagem`       | `requests.internal_notes` (JSON)                                                     | texto ou vazio                            |
+| 12  | `Data de Conclusão`          | último `audit_history.occurred_at` de `request.status_change` para o status terminal | `dd/mm/aaaa HH:MM` ou vazio               |
+
+Regras de composição:
+
+- Formatação de data/hora usa `Intl.DateTimeFormat("pt-BR")` com hora 24h e remoção da vírgula:
+  `"27/10/2026, 09:30"` → `"27/10/2026 09:30"` (`F1 src/modules/reports/reports.service.ts:28-36,110-115`).
+- Valor `null`/`undefined` vira célula vazia `""`; data inválida também
+  (`F1 src/modules/reports/reports.service.ts:111,138`).
+- **Data de Mapeamento**: `LEFT JOIN LATERAL` sobre `mappings` com
+  `ORDER BY m.is_concluded ASC, m.created_at DESC LIMIT 1` — prioriza mapeamento não concluído e,
+  entre iguais, o mais recente (`F1 src/modules/reports/reports.repository.ts:232-242`).
+- **Data de Conclusão**: `LEFT JOIN LATERAL` sobre `audit_history` que exige
+  `status.is_terminal = TRUE`, `entity_type = 'request'`, `entity_id = requests.protocol`,
+  `action_type = 'request.status_change'` e `new_value = status.name`; sem evento confiável a célula
+  fica vazia (`F1 src/modules/reports/reports.repository.ts:243-257`). A comparação é pelo **nome**
+  do status, não por id (`F1 src/modules/reports/reports.repository.ts:252`).
+
+  **Desatualizado no legado:** `F1 docs/queue-csv-export-contract.md:57-59` descreve o status
+  terminal como `closes_request = true`; o código usa `status.is_terminal` e a coluna
+  `closes_request` não existe mais no schema (§15.3).
+
+- **Resultado da Triagem**: lê `requests.internal_notes` e faz `JSON.parse`; usa
+  `__triage.result` quando existe o objeto aninhado, senão o `result` de topo; qualquer falha de
+  parse, tipo inesperado ou `result` não textual devolve célula vazia
+  (`F1 src/modules/reports/reports.service.ts:117-134`). A coluna é declarada legada e fora do
+  contrato de observações (`F1 docs/internal-notes-contract.md:9`).
+- Linhas são montadas por concatenação de arrays fixos: um registro sem `category` não é exportado,
+  porque o join com `categories` é INNER (`F1 src/modules/reports/reports.repository.ts:224`).
+
+#### Erros
+
+| Status | Condição                                                         | Mensagem                                                                                                    | Evidência                                                                                        |
+| ------ | ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| 400    | filtro inválido, param desconhecido, `page`/`pageSize` presentes | agregada por `formatZodIssues(..., "query")`, e.g. `"Campos inválidos: query — Unrecognized key: \"page\""` | `F1 src/modules/reports/reports.controller.ts:21-23`; `F1 src/modules/queue/queue.schemas.ts:40` |
+| 401    | sem sessão / sessão inválida                                     | `"Token não fornecido"` / `"Token inválido ou expirado"`                                                    | `F1 src/shared/middleware/auth.ts:27-45`                                                         |
+| 403    | perfil não autorizado                                            | `"Acesso restrito ao perfil Gestor ou Administrador"`                                                       | `F1 src/shared/middleware/requireRole.ts:21-22`                                                  |
+| 500    | falha inesperada ao gerar o arquivo                              | `"Erro interno do servidor"`                                                                                | `F1 src/shared/middleware/errorHandler.ts:32-45`                                                 |
+
+O `.strict()` não distingue "param desconhecido" de "filtro inválido": ambos saem com 400 e mensagem
+do formatter; não há como o cliente saber qual chave foi rejeitada além do texto.
+
+### 15.5 Visão do consumidor (F2) e drift
+
+Dashboard (`F2 src/lib/api/dashboard.api.ts:7-28`):
+
+- envia `from`, `to`, `situation`, `statusId`, `categoryId`, `priorityId` apenas quando truthy,
+  sempre como string (`F2 src/lib/api/dashboard.api.ts:16-22`); `DashboardQuery` do F2 declara os
+  três ids como `string` (`F2 src/lib/types/dashboard.ts:4-11`), enquanto o backend devolve os ecos
+  como número (`F1 src/modules/reports/reports.service.ts:61-63`).
+- o tipo de resposta do F2 espelha o payload campo a campo, inclusive `tone`
+  (`F2 src/lib/types/dashboard.ts:1-70`).
+- `metrics.ts` do F2 (`MetricItem`, `MetricTone`) é só apresentação da tela e não tem
+  correspondência no wire (`F2 src/lib/types/metrics.ts:1-11`).
+
+CSV (`F2 src/lib/api/report.api.ts:27-39`):
+
+- monta só `search`, `status`, `priority` e `assigneeId` (`F2 src/lib/api/report.api.ts:9-19`):
+  **não** envia `unassigned` — o filtro "sem responsável" do consumidor é o sentinela
+  `assigneeId="unassigned"` de `QueueFilterQuery` (`F2 src/lib/types/queue.ts:20-25`).
+- usa `apiFetch` (resposta crua, não JSON) e devolve `{ blob, filename }`
+  (`F2 src/lib/types/report.ts:1-4`); o nome vem de `Content-Disposition` por regex
+  `filename="([^"]+)"`, com fallback `"solicitacoes.csv"`
+  (`F2 src/lib/api/report.api.ts:7,21-25`).
+- o download depende de o header estar exposto por CORS
+  (`F1 src/app.ts:11-19`; `F1 src/configs.ts:16-19`).
+- `exportQueueCsv` do F2 traduz `403` para `"Seu perfil não possui permissão para exportar a fila."`
+  e os demais erros para `"Não foi possível exportar a fila centralizada."`
+  (`F2 src/lib/services/report.service.ts:6-27`) — a mensagem literal do backend não é exibida.
+
+### 15.6 Confronto com `docs/04-API-Conventions.md`
+
+- **Divergente (legado vigente):** paths sem `/api/v1` — convenção §1.
+- **Divergente (legado vigente):** `GET /reports/requests.csv` é listagem **não paginada** e não tem
+  linha na tabela de exceções — §4.3 exige linha para qualquer listagem sem paginação.
+- **Divergente (legado vigente):** referências a status e categoria no wire por **id numérico**
+  (`statusId`, `categoryId`, `priorityId`) — §15.1, ADR-0003 e ADR-0021 determinam UUID/`key` e
+  proíbem id numérico de status no wire.
+- **Compatível:** erro de validação em `400` com mensagem agregada (§3) e envelope de erro legado
+  (§2.1); `201`/`204` não se aplicam (ambas as rotas são leitura, §15.4).
+- **Compatível:** datas puras do dashboard em `yyyy-mm-dd` (§10); o CSV usa formato de apresentação
+  `dd/mm/aaaa`, que não é payload JSON e não é regido por §10.
+- **Registrado (sem convenção correspondente):** o CSV coloca `requests.internal_notes` (coluna
+  legada) no relatório como "Resultado da Triagem"
+  (`F1 src/modules/reports/reports.service.ts:155`), enquanto o contrato de observações declara a
+  coluna fora de escopo (`F1 docs/internal-notes-contract.md:9`). Nenhuma convenção transversal trata
+  o uso dessa coluna; o estado vigente é este.
+- Sem conflito registrado: `text/csv` não é tratado pela §9 (que cobre JSON e multipart).
+- Sem conflito registrado: `Cache-Control: no-store` e `X-Content-Type-Options: nosniff` no CSV não
+  são previstos nem proibidos pelas convenções.
+
+**Cobertura da seção:** 2 de 2 rotas do inventário.
+
+- `GET /reports/dashboard` (#47)
+- `GET /reports/requests.csv` (#48)
