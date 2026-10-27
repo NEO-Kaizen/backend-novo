@@ -585,7 +585,7 @@ Um domínio **nunca** importa o repositório, o service ou o controller de outro
 
 ```ts
 // src/domains/queue/queue.service.ts
-import type { RequestReader } from "../requests/requests.port.js";
+import type { RequestReader } from "../requests/requests.port.ts";
 
 export class QueueService {
   constructor(private readonly requests: RequestReader) {}
@@ -810,7 +810,10 @@ export function createErrorHandler(dependencies: {
         });
       } catch (recordError) {
         // A recusa aconteceu; falhar ao gravá-la não bloqueia a resposta.
-        dependencies.logger.error({ err: recordError, requestId: req.id }, "attempt not recorded");
+        dependencies.logger.error(
+          { err: recordError, correlationId: req.id },
+          "attempt not recorded",
+        );
       }
     }
 
@@ -1392,7 +1395,13 @@ export function createApp(container: Container): Express {
   app.use(requestIdMiddleware);
   app.use(express.json({ limit: "1mb" }));
   app.use(cookieParser());
-  app.use(cors({ origin: container.config.cors.origins, credentials: true }));
+  app.use(
+    cors({
+      origin: container.config.cors.origins,
+      credentials: true,
+      exposedHeaders: ["Content-Disposition", "x-request-id"],
+    }),
+  );
 
   app.use("/api/v1/auth", container.modules.auth.router);
   app.use("/api/v1/requests", container.modules.requests.router);
@@ -1482,15 +1491,15 @@ export interface Logger {
 }
 ```
 
-| Regra                                                                              | Motivo                                 |
-| ---------------------------------------------------------------------------------- | -------------------------------------- |
-| Log estruturado em JSON, com nível e campos estáveis                               | Parseável                              |
-| **Request id** em todo log, aceito de `x-request-id` apenas se for UUID válido     | Correlação entre requisição e erro     |
-| Campos, não concatenação: `logger.info({ requestId, userId }, "request loaded")`   | Busca por campo funciona               |
-| Redação de `authorization`, `cookie`, `set-cookie`, `password`, `token` e `secret` | Segredo não vaza em log                |
-| PII não entra em log                                                               | Dado pessoal não é log                 |
-| A causa de um erro é logada **uma vez**, na borda                                  | Camada interna não faz log-and-rethrow |
-| Método, rota, status e duração em todo log de requisição                           | Métrica de saúde                       |
+| Regra                                                                                                | Motivo                                 |
+| ---------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| Log estruturado em JSON, com nível e campos estáveis                                                 | Parseável                              |
+| **Correlation id** (`correlationId`) em todo log, aceito de `x-request-id` apenas se for UUID válido | Correlação entre requisição e erro     |
+| Campos, não concatenação: `logger.info({ correlationId, userId }, "request loaded")`                 | Busca por campo funciona               |
+| Redação de `authorization`, `cookie`, `set-cookie`, `password`, `token` e `secret`                   | Segredo não vaza em log                |
+| PII não entra em log                                                                                 | Dado pessoal não é log                 |
+| A causa de um erro é logada **uma vez**, na borda                                                    | Camada interna não faz log-and-rethrow |
+| Método, rota, status e duração em todo log de requisição                                             | Métrica de saúde                       |
 
 **O log é rastro de tentativa, não de fato.** Uma transação que faz _rollback_ pode deixar um log dizendo que o status mudou, sem auditoria correspondente. Por isso o log de sucesso sai **depois** do commit, e para saber o que de fato aconteceu se olha a **auditoria** — ver [§ 9.4](#94-auditoria-e-log-o-que-cada-um-garante).
 

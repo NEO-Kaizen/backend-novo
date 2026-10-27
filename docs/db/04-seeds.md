@@ -29,7 +29,7 @@ A ordem respeita as FKs do [§ 4](../03-Data-Model.md#4-integridade-referencial-
 
 `code_counters` não é semeado: o contador começa vazio e a primeira emissão consome o valor 1. `pending_batches` e `pending_items` também não são semeados: dependem de uma solicitação. `permissions` e `profile_permissions` só entram quando o RBAC configurável chegar.
 
-A ordem entre domínios não é garantida pelo Knex por padrão: ele ordena os arquivos pelo caminho completo, o que agrupa por diretório. A configuração do `knexfile.ts` que garante a ordem da tabela acima está em [`05-operations.md` § Ordem dos seeds](./05-operations.md#ordem-dos-seeds).
+A ordem entre domínios não é garantida pelo Knex por padrão: ele ordena os arquivos pelo caminho completo, o que agrupa por diretório. A configuração do `knexfile.ts` que garante a ordem entre os domínios está em [`05-operations.md` § Ordem dos seeds](./05-operations.md#ordem-dos-seeds); dentro do domínio, o seed segue a ordem da tabela acima.
 
 ## Idempotência
 
@@ -52,7 +52,7 @@ Os valores estão no [Apêndice D](../03-Data-Model.md#25-apêndice-d--seed-de-r
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Perfis              | Cinco nomes; só o `Analista` nasce com `is_assignable_triage` e `is_assignable_mapping` em `true` ([§ 7.6](../03-Data-Model.md#76-atribuibilidade)).                                             |
 | Admin Root          | Conta ativa, perfil `Admin Root`, credencial com `must_change_password = true`; e-mail e senha vêm de `ADMIN_ROOT_EMAIL` e `ADMIN_ROOT_PASSWORD` ([§ 25.3](../03-Data-Model.md#253-admin-root)). |
-| Aparências e portal | Dois temas (`Claro`, `Escuro`) com tokens preenchidos e assets nulos; `portal_settings` com `PUBLIC`, `MAAT`, `MAAT`, apontando os dois slots.                                                   |
+| Aparências e portal | Duas Aparências (`Claro`, `Escuro`) com tokens preenchidos e assets nulos; `portal_settings` com `PUBLIC`, `MAAT`, `MAAT`, apontando os dois slots.                                              |
 | Categorias          | Dez ativas, `display_order` 1–10, `form_id` para o formulário `solicitacao`.                                                                                                                     |
 | Status              | Dezessete do v4: 7 core, 2 terminais, 1 restrito (`priorizado`, que exige `request:status_override`).                                                                                            |
 | Critérios           | Dez ativos, peso 10, `code` na chave do contrato (`operationalImpact`, …).                                                                                                                       |
@@ -67,7 +67,7 @@ Os valores estão no [Apêndice D](../03-Data-Model.md#25-apêndice-d--seed-de-r
 Os valores foram extraídos do workspace legado — os caminhos abaixo são relativos à raiz deste repositório, não a esta pasta — com esta precedência:
 
 1. **`docs/03-Data-Model.md`** — o modelo novo decide.
-2. **`../frontend/src/lib/config/portal-defaults.ts`** — o contrato v4 de status, categorias, temas e rótulos de critério.
+2. **`../frontend/src/lib/config/portal-defaults.ts`** — o contrato v4 de status, categorias, Aparências e rótulos de critério.
 3. **`../backend/seeds/requester_request/002_criteria.js` e `003_priorities.js`** — os valores de referência do legado.
 4. **`../backend/migrations/requester_request/20260924000000_*` e `20260926000000_*`** — a matriz de status v4.
 5. **`../tirador-pedidos-NEO/docs/produto/`** — as decisões de produto.
@@ -81,7 +81,7 @@ Conflitos encontrados e a escolha registrada:
 | Status `nao_elegivel`          | Seed original `is_final = true`; v4 `is_terminal = false`      | Só `concluido`/`cancelado` são terminais                      | **`false`**, decisão v4                                 |
 | Quantidade de status           | 17 no v4/frontend; 19 nas migrations antigas (18/19)           | 17                                                            | **17**                                                  |
 | Reexecução do seed             | `.ignore()` em categorias; `.merge()` em critérios/prioridades | Configuração editável no lugar                                | **Create-if-absent**                                    |
-| Aparências no seed             | Legado começava vazio; frontend tem defaults                   | Pode começar vazio                                            | **Dois temas com tokens; assets nulos**                 |
+| Aparências no seed             | Legado começava vazio; frontend tem defaults                   | Pode começar vazio                                            | **Duas Aparências com tokens; assets nulos**            |
 | `logo_use_primary_color`       | Coluna `false`; sync do legado grava `true`                    | Default `false`                                               | **`true` no seed**                                      |
 | `Admin Root`                   | Não existe no legado                                           | Existe só no seed                                             | **Env vars** (`ADMIN_ROOT_EMAIL`/`ADMIN_ROOT_PASSWORD`) |
 | `display_order` das categorias | Backfill = `category_id` (1–10)                                | Inteiro                                                       | **1–10**                                                |
@@ -136,4 +136,4 @@ Reexecutar o seed não restaura valores editados. Para voltar ao estado de refer
 
 ## Decisões de seed
 
-Não há decisão de seed em aberto: `Admin Root` usa as variáveis de ambiente e a terminalidade segue o v4. As pendências do modelo continuam em [§ 21](../03-Data-Model.md#21-pendências).
+Não há decisão de **valor** de seed em aberto: `Admin Root` usa as variáveis de ambiente, a terminalidade segue o v4 e a ordem e a idempotência estão em [Ordem](#ordem) e [Idempotência](#idempotência). A implementação e as decisões ainda abertas (DB1, DB2, DB4 e DB5) seguem na [#28](https://github.com/NEO-Kaizen/backend-novo/issues/28). As pendências do modelo continuam em [§ 21](../03-Data-Model.md#21-pendências).

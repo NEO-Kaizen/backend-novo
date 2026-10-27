@@ -57,7 +57,7 @@ knexfile.ts                     # lista os diretórios por domínio
 
 ### Ordem dos seeds
 
-O Knex ordena os seeds pelo caminho completo por padrão, e isso agrupa por diretório — não pela ordem de dependência. Para respeitar a ordem do [`04-seeds.md`](./04-seeds.md), o `knexfile.ts` deve listar `seeds.directory` na ordem das dependências e usar `sortDirsSeparately: true`, **ou** um seed orquestrador deve chamar os seeds de domínio na ordem. Sem uma dessas duas coisas, `users` pode rodar antes de `profiles`, e a FK de `users.profile_id` falha; `categories`/`form_blocks` podem rodar antes de `forms`.
+O Knex ordena os seeds pelo caminho completo por padrão, e isso agrupa por diretório — não pela ordem de dependência. Como há um seed por domínio ([`04-seeds.md`](./04-seeds.md)), a ordem entre domínios precisa ser explícita: o `knexfile.ts` deve listar `seeds.directory` na ordem das dependências — `users` → `auth` → `forms` → `portal-config` → `prioritization` — e usar `sortDirsSeparately: true`, **ou** um seed orquestrador deve chamar os seeds de domínio nessa ordem. Dentro do domínio, o próprio seed insere as tabelas na ordem das FKs: `profiles` antes de `users`, `themes` antes de `portal_settings` e `forms` antes de `form_blocks`/`form_fields`. Sem essa ordem, a FK `users.profile_id` falha; e sem `forms` antes de `portal-config`, falha `categories.form_id`.
 
 ### Semântica de atraso
 
@@ -138,19 +138,19 @@ A estratégia concreta (in-memory, arquivo temporário, container) está **em ab
 
 ## Diagnóstico
 
-| Sintoma                                                       | Causa provável                                 | O que fazer                                                                                                                   |
-| ------------------------------------------------------------- | ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| Migration falha ao criar FK                                   | Tabela referenciada ainda não existe           | Confira a ordem em [§ 4](../03-Data-Model.md#4-integridade-referencial-e-ordem-de-criação) e o timestamp da migration         |
-| Seed falha em `users.profile_id`                              | `profiles` não rodou antes                     | Ordene `seeds.directory` ou use o seed orquestrador (ver acima)                                                               |
-| Seed duplica linha                                            | A busca pela chave natural não foi usada       | Implemente create-if-absent; não use id fixo nem `merge`                                                                      |
-| `ENUM`/`ARRAY`/`jsonb` funciona no Postgres e quebra no MySQL | Tipo nativo fora do `Dialect`                  | Use coluna com `ck_`, tabela filha e `dialect.jsonType()`                                                                     |
-| Índice funcional `LOWER(name)` quebra no MySQL                | `LOWER()` em índice não é portátil             | Use coluna normalizada mantida pela aplicação (`normalized_name`)                                                             |
-| `forUpdate` não bloqueia                                      | SQLite não suporta row lock                    | Consulte `dialect.supportsRowLocks()` e degrade                                                                               |
-| Upsert com merge falha                                        | Engine não suporta merge no alvo               | Consulte `dialect.supportsUpsertMerge()` e faça insert + update                                                               |
-| Migration parcialmente aplicada                               | Falha no meio do batch                         | Verifique `knex_migrations`; recupere conforme a engine, em banco descartável ou com backup                                   |
-| Protocolo duplicado                                           | Leitura por protocolo com `.first()`           | Use a sondagem `LIMIT 2` que falha explicitamente ([§ 8.1](../03-Data-Model.md#81-requests))                                  |
-| Predicado de cor hexadecimal quebra em uma engine             | `INSTR`/regex fora do `Dialect`                | Use `dialect.hexColorCheck(column)`; o predicado é por engine ([02-Architecture § 10.2](../02-Architecture.md#102-o-dialect)) |
-| Auditoria aceita `UPDATE`/`DELETE`                            | Guarda só na aplicação, sem trigger/privilégio | Use `dialect.auditAppendOnlyGuard()` e a credencial de runtime sem escrita ([§ 15.1](../03-Data-Model.md#151-audit_entries))  |
+| Sintoma                                                       | Causa provável                                         | O que fazer                                                                                                                   |
+| ------------------------------------------------------------- | ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
+| Migration falha ao criar FK                                   | Tabela referenciada ainda não existe                   | Confira a ordem em [§ 4](../03-Data-Model.md#4-integridade-referencial-e-ordem-de-criação) e o timestamp da migration         |
+| Seed falha em `users.profile_id`                              | O seed do domínio `users` não inseriu `profiles` antes | Insira `profiles` antes de `users` no seed do domínio                                                                         |
+| Seed duplica linha                                            | A busca pela chave natural não foi usada               | Implemente create-if-absent; não use id fixo nem `merge`                                                                      |
+| `ENUM`/`ARRAY`/`jsonb` funciona no Postgres e quebra no MySQL | Tipo nativo fora do `Dialect`                          | Use coluna com `ck_`, tabela filha e `dialect.jsonType()`                                                                     |
+| Índice funcional `LOWER(name)` quebra no MySQL                | `LOWER()` em índice não é portátil                     | Use coluna normalizada mantida pela aplicação (`normalized_name`)                                                             |
+| `forUpdate` não bloqueia                                      | SQLite não suporta row lock                            | Consulte `dialect.supportsRowLocks()` e degrade                                                                               |
+| Upsert com merge falha                                        | Engine não suporta merge no alvo                       | Consulte `dialect.supportsUpsertMerge()` e faça insert + update                                                               |
+| Migration parcialmente aplicada                               | Falha no meio do batch                                 | Verifique `knex_migrations`; recupere conforme a engine, em banco descartável ou com backup                                   |
+| Protocolo duplicado                                           | Leitura por protocolo com `.first()`                   | Use a sondagem `LIMIT 2` que falha explicitamente ([§ 8.1](../03-Data-Model.md#81-requests))                                  |
+| Predicado de cor hexadecimal quebra em uma engine             | `INSTR`/regex fora do `Dialect`                        | Use `dialect.hexColorCheck(column)`; o predicado é por engine ([02-Architecture § 10.2](../02-Architecture.md#102-o-dialect)) |
+| Auditoria aceita `UPDATE`/`DELETE`                            | Guarda só na aplicação, sem trigger/privilégio         | Use `dialect.auditAppendOnlyGuard()` e a credencial de runtime sem escrita ([§ 15.1](../03-Data-Model.md#151-audit_entries))  |
 
 ## Segurança, acesso e retenção
 
