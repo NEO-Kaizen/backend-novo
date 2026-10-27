@@ -42,7 +42,7 @@ divergência exige emenda aqui e emenda ao ADR correspondente.
 | 19  | Header do solicitante          | decidido | Aceitar `X-Requester-Email` e `X-Requester-Identity` por uma release; depois só Email; o header não autentica                                                                                 | C10; ADR-0023                                                                                                                                  | Backend + FE    |
 | 20  | Códigos de sucesso             | decidido | 200 leitura/atualização; 201 criação; 204 sem corpo                                                                                                                                           | F1 (`docs/solicitations-api-requests-0_4.md` §1 — 201; `docs/audit-history-contract.md` §1–§3 — 200; `docs/internal-observations.md` §7 — 204) | Backend         |
 | 21  | Envelope de auditoria (legado) | decidido | `{ items, total, page, limit }`; item com `audit_id` numérico, `entity_type_label` e `action_type`; mantido até a migração                                                                    | `02-Architecture.md` §22.1; F1 (`docs/audit-history-contract.md`); F2 (`src/lib/types/audit.ts`)                                               | Backend + FE    |
-| 22  | Multipart — limites por rota   | decidido | Limites por rota e total em §9; nenhum outro limite é válido                                                                                                                                  | F1; este §9                                                                                                                                    | Backend         |
+| 22  | Multipart — limites por rota   | decidido | Limites por rota, por arquivo e total de arquivos em §9; nenhum outro limite é válido                                                                                                         | F1; este §9                                                                                                                                    | Backend         |
 
 ### 0.2 Decisões abertas
 
@@ -145,13 +145,14 @@ divergência exige emenda aqui e emenda ao ADR correspondente.
 
 - **Regra global:** todo endpoint de listagem usa default **20**, máximo **100** e clamp de página. O valor de cada endpoint é a regra global; não há uma tabela por endpoint repetindo o mesmo número.
 - **Emenda ao critério de aceite da #30:** o default 20, o máximo 100 e o clamp são globais; este registro de exceções atende ao requisito “por endpoint” e não há tabela repetindo os mesmos valores.
-- **Listagem não paginada:** também é exceção e só existe com uma linha nesta tabela, citada pela spec; sem linha, a listagem é paginada. A linha traz o endpoint em `Endpoint / grupo` e `—` em `Default`, `Máximo` e `Clamp`.
+- **Listagem não paginada:** também é exceção e só existe com uma linha nesta tabela, citada pela spec; sem linha, a listagem é paginada. A linha traz o endpoint em `Endpoint / grupo` e `—` em `Default`, `Máximo` e `Clamp`; `—` significa “sem paginação”, não “sem limite”: a spec declara o `LIMIT` interno da consulta.
 - A tabela abaixo é o **registro de exceções**. Um endpoint com default, máximo ou clamp diferente só existe se estiver aqui; a spec de domínio lista seus endpoints e marca cada um como “global” ou cita a linha da exceção.
 
-| Endpoint / grupo                                                 | Default      | Máximo | Clamp                          | Dono         | Destino            | Prazo/gatilho                                                                                                               |
-| ---------------------------------------------------------------- | ------------ | ------ | ------------------------------ | ------------ | ------------------ | --------------------------------------------------------------------------------------------------------------------------- |
-| Linha do tempo (`GET /api/v1/requests/:protocol/internal-notes`) | 20 (`limit`) | 50     | keyset (`cursor`/`nextCursor`) | Backend      | Spec de `requests` | Antes de congelar a spec de `requests` (F1, `docs/internal-observations.md` §4 — exceção keyset; §7 — default 20/máximo 50) |
-| Auditoria (legado)                                               | 20 (`limit`) | 100    | não no legado                  | Backend + FE | Spec de auditoria  | Antes de congelar a spec de auditoria                                                                                       |
+| Endpoint / grupo                                                 | Default      | Máximo | Clamp                          | Dono         | Destino                 | Prazo/gatilho                                                                                                               |
+| ---------------------------------------------------------------- | ------------ | ------ | ------------------------------ | ------------ | ----------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| Linha do tempo (`GET /api/v1/requests/:protocol/internal-notes`) | 20 (`limit`) | 50     | keyset (`cursor`/`nextCursor`) | Backend      | Spec de `requests`      | Antes de congelar a spec de `requests` (F1, `docs/internal-observations.md` §4 — exceção keyset; §7 — default 20/máximo 50) |
+| Auditoria (legado)                                               | 20 (`limit`) | 100    | não no legado                  | Backend + FE | Spec de auditoria       | Antes de congelar a spec de auditoria                                                                                       |
+| Pendências (`GET /api/v1/requests/:protocol/pending-items`)      | —            | —      | —                              | Backend      | Spec de `pending-items` | Antes de congelar a spec de `pending-items` (F1, `docs/contract-pendencias_03.md` §4 — sem envelope paginado)               |
 
 Os valores 20/100 da auditoria são os globais; a exceção é o parâmetro `limit` e a ausência de `totalPages`.
 
@@ -233,14 +234,15 @@ Os valores 20/100 da auditoria são os globais; a exceção é o parâmetro `lim
 
 **Limites por rota:**
 
-| Rota                                                                       | Arquivos | Limite por arquivo                                        | Total máximo | MIME                                         |
-| -------------------------------------------------------------------------- | -------- | --------------------------------------------------------- | ------------ | -------------------------------------------- |
-| `POST /api/v1/requests` (anexos)                                           | 5        | 10 MiB                                                    | 50 MiB       | PDF, DOCX, XLSX, PNG, JPEG                   |
-| `POST /api/v1/requests/:protocol/pending-items/:pendingItemId/attachments` | 1        | 10 MiB                                                    | 10 MiB       | PDF, DOCX, XLSX, PNG, JPEG                   |
-| `PUT /api/v1/users/me` (avatar)                                            | 1        | 2 MiB                                                     | 2 MiB        | JPEG, PNG                                    |
-| `PATCH /api/v1/portal-config/assets`                                       | 8        | favicon 1 MiB; logo e avatar 2 MiB; imagem de login 5 MiB | 20 MiB       | conforme a chave (PNG, SVG, ICO, JPEG, WebP) |
+| Rota                                                                       | Arquivos | Limite por arquivo                                        | Total de arquivos | MIME                                         |
+| -------------------------------------------------------------------------- | -------- | --------------------------------------------------------- | ----------------- | -------------------------------------------- |
+| `POST /api/v1/requests` (anexos)                                           | 5        | 10 MiB                                                    | 50 MiB            | PDF, DOCX, XLSX, PNG, JPEG                   |
+| `POST /api/v1/requests/:protocol/pending-items/:pendingItemId/attachments` | 1        | 10 MiB                                                    | 10 MiB            | PDF, DOCX, XLSX, PNG, JPEG                   |
+| `PUT /api/v1/users/me` (avatar)                                            | 1        | 2 MiB                                                     | 2 MiB             | JPEG, PNG                                    |
+| `PATCH /api/v1/portal-config/assets`                                       | 8        | favicon 1 MiB; logo e avatar 2 MiB; imagem de login 5 MiB | 20 MiB            | conforme a chave (PNG, SVG, ICO, JPEG, WebP) |
 
-- O total é a soma dos máximos da rota; o multer limita a contagem e o tamanho de cada arquivo.
+- O **Total de arquivos** é a soma dos máximos por arquivo e não é validado como um limite único: o multer limita a contagem e o tamanho de cada arquivo; em assets, o `fileSize` global é 5 MiB e o limite por chave (`validateAssetSizes`) roda depois do multer. O 413 vem do arquivo que exceder o seu limite, não da soma.
+- A parte JSON (`payload`/`assets`) tem limite próprio de 2 MiB e não entra no total de arquivos; com todos os máximos, a requisição pode chegar a 52 MiB em requests (2 + 50) e 22 MiB em assets (2 + 20).
 - JSON body: 1 MiB por default (`JSON_BODY_MAX_BYTES`, aplicado em `express.json`); quando a rota tiver parte JSON no multipart (`payload` ou `assets`), o limite da parte é 2 MiB.
 - **Harmonização registrada:** o legado de requests/pendências devolvia 400 para tamanho e o de requests para MIME; a convenção nova usa **413** para tamanho e **415** para MIME. O FE lê `message`, então a mudança de status não quebra a renderização.
 - Rotas multipart: requests (anexos), pendências (anexos), avatar do usuário e assets do portal.
@@ -337,7 +339,7 @@ Uma spec de domínio só vira `frozen` se todas as caixas abaixo estiverem marca
 - [ ] Paginação: cada endpoint de listagem listado e marcado como “global” ou com a exceção de §4.3; “não paginado” só com linha em §4.3.
 - [ ] Erros: códigos do catálogo + códigos de domínio registrados em `error-codes.ts` (a implementar).
 - [ ] Validação: campos, limites e mensagens pt-BR.
-- [ ] Multipart: rota, quantidade, tamanho, MIME e 400/413/415 coerentes com §9.
+- [ ] Multipart: rota, quantidade, tamanho por arquivo, total de arquivos, MIME e 400/413/415 coerentes com §9.
 - [ ] Concorrência: operações com `targetStatusKey` e `expectedStatusKey` listadas e corpo do 409.
 - [ ] Idempotência: endpoints classificados pela tabela de §8.2.
 - [ ] Datas: tipo (timestamp vs data pura) por campo, com o tipo único do dialeto.

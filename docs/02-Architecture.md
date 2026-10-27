@@ -861,7 +861,10 @@ export function createErrorHandler(dependencies: {
         });
       } catch (recordError) {
         // A recusa aconteceu; falhar ao gravá-la não bloqueia a resposta.
-        dependencies.logger.error({ err: recordError, requestId: req.id }, "attempt not recorded");
+        dependencies.logger.error(
+          { err: recordError, correlationId: req.id },
+          "attempt not recorded",
+        );
       }
     }
 
@@ -1126,7 +1129,7 @@ async executeChangeStatus(input: ChangeStatusInput): Promise<void> {
 }
 ```
 
-A **leitura** fica dentro da transação: a checagem de concorrência otimista (`expectedStatusId` → 409) só vale se read e write estiverem no mesmo escopo.
+A **leitura** fica dentro da transação: a checagem de concorrência otimista (`targetStatusKey`/`expectedStatusKey` no wire) só vale se read e write estiverem no mesmo escopo. O legado envia `targetStatus` numérico, sem precondição; a divergência de `expectedStatusKey` é que devolve 409.
 
 Ver [ADR-0001](./adr/0001-layered-architecture-per-domain.md) para as alternativas descartadas.
 
@@ -1562,15 +1565,15 @@ export interface Logger {
 }
 ```
 
-| Regra                                                                              | Motivo                                 |
-| ---------------------------------------------------------------------------------- | -------------------------------------- |
-| Log estruturado em JSON, com nível e campos estáveis                               | Parseável                              |
-| **Request id** em todo log, aceito de `x-request-id` apenas se for UUID válido     | Correlação entre requisição e erro     |
-| Campos, não concatenação: `logger.info({ requestId, userId }, "request loaded")`   | Busca por campo funciona               |
-| Redação de `authorization`, `cookie`, `set-cookie`, `password`, `token` e `secret` | Segredo não vaza em log                |
-| PII não entra em log                                                               | Dado pessoal não é log                 |
-| A causa de um erro é logada **uma vez**, na borda                                  | Camada interna não faz log-and-rethrow |
-| Método, rota, status e duração em todo log de requisição                           | Métrica de saúde                       |
+| Regra                                                                                                | Motivo                                 |
+| ---------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| Log estruturado em JSON, com nível e campos estáveis                                                 | Parseável                              |
+| **Correlation id** (`correlationId`) em todo log, aceito de `x-request-id` apenas se for UUID válido | Correlação entre requisição e erro     |
+| Campos, não concatenação: `logger.info({ correlationId, userId }, "request loaded")`                 | Busca por campo funciona               |
+| Redação de `authorization`, `cookie`, `set-cookie`, `password`, `token` e `secret`                   | Segredo não vaza em log                |
+| PII não entra em log                                                                                 | Dado pessoal não é log                 |
+| A causa de um erro é logada **uma vez**, na borda                                                    | Camada interna não faz log-and-rethrow |
+| Método, rota, status e duração em todo log de requisição                                             | Métrica de saúde                       |
 
 O nível mínimo vem do ambiente: `development` e `production` registram a partir de `info`; `test` não registra. Não há `LOG_LEVEL` no schema — o ambiente já decide o ruído aceitável.
 
@@ -1702,9 +1705,9 @@ O banco nasce vazio, então não há dado a migrar; há **consumidores** a migra
 | Contrato                                                          | Hoje                                                                                               | Com o schema novo                                                                                                                                       | Estratégia                                                             |
 | ----------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
 | `GET /portal-config`                                              | `categories[].id` e `statuses[].id` são `number`; o status de núcleo é reconhecido por id numérico | Ids UUID; o status ganha `key` estável e o frontend deixa de usar `CORE_STATUS_IDS` numérico                                                            | Frontend aceita id string e passa a usar `key`; depois o backend troca |
-| `PATCH /requests/:protocol/status`                                | `targetStatus` é `number`                                                                          | Id UUID, ou a `key` do status                                                                                                                           | Preferir `key`; o frontend troca na mesma release                      |
+| `PATCH /requests/:protocol/status`                                | `targetStatus` é `number`                                                                          | `targetStatusKey` (destino) + `expectedStatusKey` (precondição)                                                                                         | Usar `key` (sem id numérico); o frontend troca na mesma release        |
 | `GET /reports/dashboard`                                          | Ids de status, categoria e prioridade são `number`                                                 | Ids UUID                                                                                                                                                | Atualizar tipos e filtros do frontend                                  |
-| `GET /audit-history`                                              | `audit_id` é `number`; `action_type` é composto                                                    | `audit_id` UUID; `action` separado da entidade                                                                                                          | Atualizar tipos e rótulos; o vocabulário muda                          |
+| `GET /audit-history`                                              | `audit_id` é `number`; `action_type` é composto                                                    | `id` UUID (recomendado; a spec de auditoria confirma); `action` separado da entidade                                                                    | Atualizar tipos e rótulos; o vocabulário muda                          |
 | `GET /auth/me`, `GET /users`                                      | Quatro perfis                                                                                      | Cinco perfis, com `Admin Root`                                                                                                                          | Atualizar as uniões de perfil do frontend                              |
 | `POST /requests`                                                  | Categoria em `demand.category`                                                                     | **Sem mudança agora**; passa a `category` no topo quando o formulário configurável entrar ([`03-Data-Model.md` § 21](./03-Data-Model.md#21-pendências)) | Coordenar na release do formulário configurável                        |
 | `queue.overdueRequests`, `dashboard.overdue`, `situation=overdue` | Derivados de `operational.desiredDeadline`                                                         | Indefinidos até a regra de SLA ([ADR-0024](./adr/0024-requested-deadline-is-not-sla.md))                                                                | Não publicar atraso derivado do prazo desejado                         |

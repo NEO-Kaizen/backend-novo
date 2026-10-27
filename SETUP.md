@@ -109,17 +109,20 @@ gh extension install github/gh-stack
 
 ## 3. Rodar o backend
 
+Instale as dependências e valide o build antes de subir o processo compilado:
+
 ```bash
 npm ci
 cp .env.example .env   # gera o .env de desenvolvimento
-npm run dev
 npm run check
 npm run build
 npm start:prod
 curl -i localhost:3000/health
 ```
 
-`npm run dev` usa `--watch` sobre `src/server.ts`; `npm start:prod` executa `dist/server.js`. Os scripts carregam `.env` com `--env-file-if-exists`. As variáveis obrigatórias do schema (`docs/02-Architecture.md` § 16) precisam existir — no `.env` em dev ou no ambiente em produção; sem elas o processo encerra no boot com a lista do que falta. Os valores de `.env.example` são apenas de desenvolvimento e devem ser trocados em qualquer ambiente compartilhado.
+Para desenvolver, rode `npm run dev` em um terminal próprio: ele usa `--watch` sobre `src/server.ts` e **não retorna** — as demais sequências não avançam enquanto ele estiver ativo.
+
+`npm start:prod` executa `dist/server.js`. Os scripts carregam `.env` com `--env-file-if-exists`. As variáveis obrigatórias do schema (`docs/02-Architecture.md` § 16) precisam existir — no `.env` em dev ou no ambiente em produção; sem elas o processo encerra no boot com a lista do que falta. Os valores de `.env.example` são apenas de desenvolvimento e devem ser trocados em qualquer ambiente compartilhado.
 
 `/health` responde 200 sem autenticação e não consulta o banco; a conexão com o Postgres só abre na primeira query.
 
