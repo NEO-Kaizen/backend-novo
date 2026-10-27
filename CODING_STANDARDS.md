@@ -103,6 +103,7 @@ const [user, orders] = await Promise.all([
 - Não engula erro. Se recuperar, registre o motivo e o que foi feito.
 - Logue a causa uma vez, na borda; não faça log-and-rethrow em cada camada.
 - Resposta de erro: `{ error: { code, message, requestId } }`. `code` é estável em `snake_case` e não é traduzido; `message` é em português e só é exposta quando `expose` é true — o resto vira `internal_error` com mensagem genérica.
+- No corpo do erro, `requestId` é o id HTTP (emenda ao C11 em `docs/04-API-Conventions.md` §12); no log estruturado, o id HTTP é `correlationId`. Fora do envelope, `requestId` é o id da solicitação de negócio.
 - Nunca devolva stack, SQL, path, nome de tabela ou versão interna.
 - Use exceção para condição excepcional; validação de entrada retorna 400, não lança erro genérico.
 
@@ -134,6 +135,7 @@ export class AppError extends Error {
 - `params`, `query`, `body` e headers relevantes passam por schema (Zod ou equivalente).
 - Use `strictObject` para rejeitar campos desconhecidos e limite strings, arrays, números e profundidade.
 - `safeParse` → 400 `validation_error` com detalhes por campo; `Content-Type` errado → 415.
+- Mensagens de validação vêm de um catálogo pt-BR por campo, tipado pelo schema (`satisfies Record<keyof z.infer<...>, string>`); `unrecognized_keys` (path vazio) e corpo não-objeto têm mensagem própria. Não use a mensagem default do Zod (inglês) nem um texto genérico para todos os campos.
 - Normalize antes de comparar. Valide formato; não “sanitize” substituindo caracteres — encode na saída.
 - Não faça mass assignment: mapeie os campos validados explicitamente para o input do domínio.
 - SQL sempre parametrizado (`$1`, `?`); nunca interpole valor em string.
@@ -147,13 +149,39 @@ const CreateUser = z.strictObject({
   name: z.string().min(1).max(120),
 });
 
+type CreateUserField = keyof z.infer<typeof CreateUser>;
+
+// Catálogo pt-BR: `satisfies` exige uma mensagem para cada campo do schema.
+const fieldMessages = {
+  email: "Informe um e-mail válido.",
+  name: "Informe o nome.",
+} satisfies Record<CreateUserField, string>;
+
+const toFieldError = (issue: z.ZodIssue): { path: string; message: string } => {
+  const path = issue.path.join(".");
+  if (issue.code === "unrecognized_keys") {
+    return { path, message: "Campo não permitido." };
+  }
+  if (path === "") {
+    return { path, message: "Corpo da requisição inválido." };
+  }
+  return { path, message: fieldMessages[path as CreateUserField] ?? "Valor inválido." };
+};
+
 const parsed = CreateUser.safeParse(req.body);
 if (!parsed.success) {
   return res.status(400).json({
-    error: { code: "validation_error", details: parsed.error.issues },
+    error: {
+      code: "validation_error",
+      message: "Dados inválidos.",
+      requestId: req.id,
+      fields: parsed.error.issues.map(toFieldError),
+    },
   });
 }
 ```
+
+`strictObject` emite `unrecognized_keys` com `path: []`; o helper trata esse caso e o catálogo `satisfies` falha no type-check se um campo do schema ficar sem mensagem.
 
 ## 7. Express
 
@@ -210,8 +238,9 @@ const errorHandler: ErrorRequestHandler = (err, req, res, next) => {
 **Sempre** use o logger da aplicação; `console.log` não é logging de produção.
 
 - Log estruturado (JSON), com nível e campos estáveis.
-- Request ID: aceite `x-request-id` só se for UUID válido; senão gere um; devolva no header.
-- Logue método, rota, status, duração e request ID. Não logue body por default.
+- Header `x-request-id`: aceite só se for UUID válido; senão gere um; devolva no header.
+- Logue método, rota, status, duração e correlation ID (`correlationId`). Não logue body por default.
+- `correlationId` é o mesmo id HTTP do header `x-request-id`; no corpo do erro ele mantém o nome `requestId` por compatibilidade (ver §5).
 - Redija `authorization`, `cookie`, `set-cookie`, `password`, `token` e `secret`.
 - Não logue PII.
 - Logue a causa do erro uma vez, na borda; não faça log-and-rethrow.
@@ -260,7 +289,7 @@ describe("POST /api/v1/users", () => {
 - [ ] Erros tipados com `cause`; sem swallow; sem stack/PII na resposta.
 - [ ] Entrada validada; SQL parametrizado; autorização no servidor.
 - [ ] Sem segredo/PII em código, log ou fixture; sem `eval`/`exec` com input.
-- [ ] Logs estruturados, com request ID e redaction.
+- [ ] Logs estruturados, com `correlationId` e redaction.
 - [ ] Testes cobrem comportamento e caminhos de erro; determinísticos e isolados.
 - [ ] Sem N+1, query sem limite ou payload sem paginação.
 - [ ] Comentários explicam o porquê; sem código morto.
