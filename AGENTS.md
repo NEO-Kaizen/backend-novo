@@ -30,5 +30,3 @@ A política versionada fica em `opencode.jsonc` (raiz) e vale para todo o projet
 - `git push`, `rm`, `mv`, `chmod`, `npm install`, `npm ci` e `npm i` pedem confirmação.
 - Acesso fora do projeto pede confirmação.
 - O tool `grep` não é coberto pelas regras de `read`; não use `grep` para procurar em `.env`.
-
-Ao aprovar, prefira **Allow once** a **Allow always**; aprovações salvas são regras `allow` do projeto e nunca sobrepõem um `deny`.
