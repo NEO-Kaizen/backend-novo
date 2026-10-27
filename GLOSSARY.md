@@ -2,7 +2,7 @@
 
 Vocabulário do domínio do portal MAAT, que registra e acompanha demandas operacionais. Este glossário descreve **o que os termos significam** — não onde eles ficam no código, nem como são implementados.
 
-**Regra de leitura:** quando um termo aparece aqui em itálico, ele é o termo canônico do domínio. Os sinônimos listados em *Evitar* não devem ser usados em documentos, conversas de produto, nomes de campo, coluna, constraint ou chave de permissão. Os identificadores técnicos seguem a convenção de nomenclatura em inglês do modelo de dados: são convenção, não vocabulário.
+**Regra de leitura:** quando um termo aparece aqui em itálico, ele é o termo canônico do domínio. Os sinônimos listados em _Evitar_ não devem ser usados em documentos, conversas de produto, nomes de campo, coluna, constraint ou chave de permissão. Os identificadores técnicos seguem a convenção de nomenclatura em inglês do modelo de dados: são convenção, não vocabulário.
 
 ## Solicitação e acompanhamento
 
@@ -101,11 +101,11 @@ Sequência unificada dos acontecimentos de uma solicitação: a auditoria e as n
 _Evitar_: histórico, feed, atividade.
 
 **Auditoria**:
-Registro imutável do que foi criado ou alterado no sistema, com autor, momento e valor anterior e novo. O conjunto dos registros de uma solicitação é a *trilha de alteração*.
+Registro imutável do que foi criado ou alterado no sistema, com autor, momento e valor anterior e novo. O conjunto dos registros de uma solicitação é a _trilha de alteração_.
 _Evitar_: log, histórico, trilha de mudanças.
 
 **Tentativa**:
-Registro imutável de uma ação que foi recusada — por falta de permissão ou por regra de negócio. Preservado mesmo quando a ação não aconteceu. A *recusa* é o ato; a *tentativa* é o registro dele. O conjunto é a *trilha de tentativas*.
+Registro imutável de uma ação que foi recusada — por falta de permissão ou por regra de negócio. Preservado mesmo quando a ação não aconteceu. A _recusa_ é o ato; a _tentativa_ é o registro dele. O conjunto é a _trilha de tentativas_.
 _Evitar_: erro, negação, log.
 
 ## Acesso
@@ -119,23 +119,23 @@ Limite de uma permissão sobre as linhas. Uma permissão é `none` (global) ou `
 _Evitar_: abrangência, alcance, visibilidade.
 
 **Custódia**:
-Vínculo entre um usuário e uma solicitação que o autoriza a agir sobre ela. A regra geral é o *Responsável* corrente (`requests.responsible_id`); para as permissões de mapeamento, o responsável do mapeamento corrente também conta. Os snapshots de triagem e de mapeamento não concedem acesso.
+Vínculo entre um usuário e uma solicitação que o autoriza a agir sobre ela. A regra geral é o _Responsável_ corrente (`requests.responsible_id`); para as permissões de mapeamento, o responsável do mapeamento corrente também conta. Os snapshots de triagem e de mapeamento não concedem acesso.
 _Evitar_: posse (posse é do solicitante), dono, ownership.
 
 **Atribuibilidade (atribuível)**:
-Propriedade do perfil cujos usuários podem ser escolhidos como *Responsável* e conseguem trabalhar na solicitação. O predicado é derivado das permissões de leitura e escrita da etapa; a participação no pool é uma flag explícita. Não se confunde com a permissão de atribuir.
+Propriedade do perfil cujos usuários podem ser escolhidos como _Responsável_ e conseguem trabalhar na solicitação. O predicado é derivado das permissões de leitura e escrita da etapa; a participação no pool é uma flag explícita. Não se confunde com a permissão de atribuir.
 _Evitar_: elegível, selecionável, disponível.
 
 **Perfil**:
-Conjunto de permissões atribuído a um usuário. Hoje são cinco perfis fixos: *Solicitante*, *Analista*, *Gestor*, *Administrador* e *Admin Root*. O *Solicitante* descreve um ator externo e não ocupa a hierarquia interna. O RBAC configurável permitirá perfis customizados, compostos das mesmas permissões.
+Conjunto de permissões atribuído a um usuário. Hoje são cinco perfis fixos: _Solicitante_, _Analista_, _Gestor_, _Administrador_ e _Admin Root_. O _Solicitante_ descreve um ator externo e não ocupa a hierarquia interna. O RBAC configurável permitirá perfis customizados, compostos das mesmas permissões.
 _Evitar_: papel, cargo, função, role.
 
 **Admin Root**:
-Perfil raiz do sistema, com todas as permissões e capacidade de gerir os demais *Administradores*. Não é criado por auto-registro.
+Perfil raiz do sistema, com todas as permissões e capacidade de gerir os demais _Administradores_. Não é criado por auto-registro.
 _Evitar_: super-admin, root, administrador mestre.
 
 **Responsável**:
-Pessoa designada para conduzir a triagem ou o mapeamento de uma solicitação. O vínculo com a solicitação é a *Custódia*; a propriedade do perfil de poder receber essa designação é a *Atribuibilidade*.
+Pessoa designada para conduzir a triagem ou o mapeamento de uma solicitação. O vínculo com a solicitação é a _Custódia_; a propriedade do perfil de poder receber essa designação é a _Atribuibilidade_.
 _Evitar_: analista (é o perfil, não o vínculo), dono, responsável técnico.
 
 **Modo de acesso**:

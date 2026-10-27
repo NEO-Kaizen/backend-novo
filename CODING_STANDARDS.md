@@ -2,7 +2,7 @@
 
 Este documento define como escrever código de aplicação neste repositório. Ele cobre nomes, tipos, funções, erros, validação, Express, segurança, logging, testes e comentários.
 
-**Contexto:** Node.js 24+, ESM, TypeScript 7 e Express 5. Versões exatas, configuração de build/lint, estrutura de diretórios, CI e operação não são definidos aqui; os arquivos e decisões próprios são a fonte de verdade quando existirem.
+**Contexto:** Node.js 24+, ESM, TypeScript 7 (alvo) com `~6.0.3` direto por enquanto, e Express 5. Gerenciador de pacotes npm, linter (ESLint flat config) e formatter (Prettier) estão definidos em `package.json`, `tsconfig.json`, `eslint.config.js`, `.prettierrc` e `.github/workflows/ci.yml`. Versões exatas, estrutura de diretórios, CI e operação são a fonte de verdade nesses arquivos.
 
 ## Como aplicar
 
@@ -48,7 +48,7 @@ const flag = user.status === "active";
 **Sempre** use ESM. Não use `require`, `module.exports`, `__dirname` ou `__filename` em código novo.
 
 - Prefixo `node:` em builtins (`node:fs/promises`, `node:crypto`).
-- Extensão `.js` em imports relativos (`./user.js`); o TypeScript resolve para o `.ts` correspondente.
+- Extensão `.ts` em imports relativos (`./user.ts`); o TypeScript reescreve para `.js` na emissão (`rewriteRelativeImportExtensions`).
 - `import type` / `export type` para tipos.
 - Exports nomeados; use default export só quando a ferramenta exigir.
 - `import.meta.dirname` / `import.meta.filename` no lugar de `__dirname` / `__filename`.
@@ -58,7 +58,7 @@ const flag = user.status === "active";
 
 ```ts
 import { readFile } from "node:fs/promises";
-import type { User } from "./user.js";
+import type { User } from "./user.ts";
 ```
 
 ## 3. Tipos
@@ -87,10 +87,7 @@ import type { User } from "./user.js";
 - Evite `await` em loop para I/O independente; paralelize com limite.
 
 ```ts
-const [user, orders] = await Promise.all([
-  users.findById(id),
-  orders.listByUser(id),
-]);
+const [user, orders] = await Promise.all([users.findById(id), orders.listByUser(id)]);
 ```
 
 ## 5. Erros
@@ -198,7 +195,10 @@ if (!parsed.success) {
 - Use `res.status(...).json(...)`; não responda duas vezes.
 
 ```ts
-const getUser: RequestHandler<{ id: string }, UserDto, never, never, AppLocals> = async (req, res) => {
+const getUser: RequestHandler<{ id: string }, UserDto, never, never, AppLocals> = async (
+  req,
+  res,
+) => {
   const user = await users.findById(req.params.id);
   res.status(200).json(user);
 };

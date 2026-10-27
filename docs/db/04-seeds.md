@@ -12,20 +12,20 @@ O seed de referência é diferente de uma migration: migration muda **estrutura*
 
 A ordem respeita as FKs do [§ 4](../03-Data-Model.md#4-integridade-referencial-e-ordem-de-criação):
 
-| # | Grupo | Tabela | Chave natural | Depende de |
-| --- | --- | --- | --- | --- |
-| 1 | Perfis | `profiles` | `name` | — |
-| 2 | Admin Root | `users` | `email` | `profiles` |
-| 3 | Credencial do Admin Root | `credentials` | `user_id` | `users` |
-| 4 | Formulário | `forms` | `key` | — |
-| 5 | Blocos | `form_blocks` | (`form_id`, `key`) | `forms` |
-| 6 | Campos | `form_fields` | (`form_id`, `key`) | `forms`, `form_blocks` |
-| 7 | Aparências | `themes` | `name` | — |
-| 8 | Configuração do portal | `portal_settings` | singleton | `themes` |
-| 9 | Categorias | `categories` | `normalized_name` | `forms` |
-| 10 | Status | `statuses` | `key` | — |
-| 11 | Critérios | `criteria` | `code` | — |
-| 12 | Faixas de prioridade | `priorities` | `level` | — |
+| #   | Grupo                    | Tabela            | Chave natural      | Depende de             |
+| --- | ------------------------ | ----------------- | ------------------ | ---------------------- |
+| 1   | Perfis                   | `profiles`        | `name`             | —                      |
+| 2   | Admin Root               | `users`           | `email`            | `profiles`             |
+| 3   | Credencial do Admin Root | `credentials`     | `user_id`          | `users`                |
+| 4   | Formulário               | `forms`           | `key`              | —                      |
+| 5   | Blocos                   | `form_blocks`     | (`form_id`, `key`) | `forms`                |
+| 6   | Campos                   | `form_fields`     | (`form_id`, `key`) | `forms`, `form_blocks` |
+| 7   | Aparências               | `themes`          | `name`             | —                      |
+| 8   | Configuração do portal   | `portal_settings` | singleton          | `themes`               |
+| 9   | Categorias               | `categories`      | `normalized_name`  | `forms`                |
+| 10  | Status                   | `statuses`        | `key`              | —                      |
+| 11  | Critérios                | `criteria`        | `code`             | —                      |
+| 12  | Faixas de prioridade     | `priorities`      | `level`            | —                      |
 
 `code_counters` não é semeado: o contador começa vazio e a primeira emissão consome o valor 1. `pending_batches` e `pending_items` também não são semeados: dependem de uma solicitação. `permissions` e `profile_permissions` só entram quando o RBAC configurável chegar.
 
@@ -48,17 +48,17 @@ Regras:
 
 Os valores estão no [Apêndice D](../03-Data-Model.md#25-apêndice-d--seed-de-referência); aqui fica o que o runbook precisa saber.
 
-| Grupo | Regra |
-| --- | --- |
-| Perfis | Cinco nomes; só o `Analista` nasce com `is_assignable_triage` e `is_assignable_mapping` em `true` ([§ 7.6](../03-Data-Model.md#76-atribuibilidade)). |
-| Admin Root | Conta ativa, perfil `Admin Root`, credencial com `must_change_password = true`; e-mail e senha vêm de `ADMIN_ROOT_EMAIL` e `ADMIN_ROOT_PASSWORD` ([§ 25.3](../03-Data-Model.md#253-admin-root)). |
-| Aparências e portal | Duas Aparências (`Claro`, `Escuro`) com tokens preenchidos e assets nulos; `portal_settings` com `PUBLIC`, `MAAT`, `MAAT`, apontando os dois slots. |
-| Categorias | Dez ativas, `display_order` 1–10, `form_id` para o formulário `solicitacao`. |
-| Status | Dezessete do v4: 7 core, 2 terminais, 1 restrito (`priorizado`, que exige `request:status_override`). |
-| Critérios | Dez ativos, peso 10, `code` na chave do contrato (`operationalImpact`, …). |
-| Prioridades | Quatro faixas contíguas de 10,0 a 50,0; `default_weight` é referência e não entra no cálculo. |
-| Formulário | Quatro blocos e 32 campos do Apêndice A; a categoria é coluna, não campo, e viaja em `demand.category`. |
-| Pendências | `pending_batches`/`pending_items` **não** são semeados: dependem de uma solicitação. |
+| Grupo               | Regra                                                                                                                                                                                            |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Perfis              | Cinco nomes; só o `Analista` nasce com `is_assignable_triage` e `is_assignable_mapping` em `true` ([§ 7.6](../03-Data-Model.md#76-atribuibilidade)).                                             |
+| Admin Root          | Conta ativa, perfil `Admin Root`, credencial com `must_change_password = true`; e-mail e senha vêm de `ADMIN_ROOT_EMAIL` e `ADMIN_ROOT_PASSWORD` ([§ 25.3](../03-Data-Model.md#253-admin-root)). |
+| Aparências e portal | Duas Aparências (`Claro`, `Escuro`) com tokens preenchidos e assets nulos; `portal_settings` com `PUBLIC`, `MAAT`, `MAAT`, apontando os dois slots.                                              |
+| Categorias          | Dez ativas, `display_order` 1–10, `form_id` para o formulário `solicitacao`.                                                                                                                     |
+| Status              | Dezessete do v4: 7 core, 2 terminais, 1 restrito (`priorizado`, que exige `request:status_override`).                                                                                            |
+| Critérios           | Dez ativos, peso 10, `code` na chave do contrato (`operationalImpact`, …).                                                                                                                       |
+| Prioridades         | Quatro faixas contíguas de 10,0 a 50,0; `default_weight` é referência e não entra no cálculo.                                                                                                    |
+| Formulário          | Quatro blocos e 32 campos do Apêndice A; a categoria é coluna, não campo, e viaja em `demand.category`.                                                                                          |
+| Pendências          | `pending_batches`/`pending_items` **não** são semeados: dependem de uma solicitação.                                                                                                             |
 
 `form_answers.value_lookup` é projeção derivada da resposta de e-mail, mantida na escrita e na correção; não é semeada.
 
@@ -74,18 +74,18 @@ Os valores foram extraídos do workspace legado — os caminhos abaixo são rela
 
 Conflitos encontrados e a escolha registrada:
 
-| Conflito | Legado | Modelo novo | Escolha |
-| --- | --- | --- | --- |
-| Peso dos critérios | Backend `10`; frontend `1.0` | Inteiro 0–10 | **10** |
-| Código dos critérios | Português (`impacto_operacional`) com ponte para inglês | `code` é a chave do contrato | **Inglês** (`operationalImpact`) |
-| Status `nao_elegivel` | Seed original `is_final = true`; v4 `is_terminal = false` | Só `concluido`/`cancelado` são terminais | **`false`**, decisão v4 |
-| Quantidade de status | 17 no v4/frontend; 19 nas migrations antigas (18/19) | 17 | **17** |
-| Reexecução do seed | `.ignore()` em categorias; `.merge()` em critérios/prioridades | Configuração editável no lugar | **Create-if-absent** |
-| Aparências no seed | Legado começava vazio; frontend tem defaults | Pode começar vazio | **Duas Aparências com tokens; assets nulos** |
-| `logo_use_primary_color` | Coluna `false`; sync do legado grava `true` | Default `false` | **`true` no seed** |
-| `Admin Root` | Não existe no legado | Existe só no seed | **Env vars** (`ADMIN_ROOT_EMAIL`/`ADMIN_ROOT_PASSWORD`) |
-| `display_order` das categorias | Backfill = `category_id` (1–10) | Inteiro | **1–10** |
-| `statuses.is_restricted` | “status protegido” misturava visibilidade e autorização | Exige `request:status_override`; `priorizado` continua `true` | **Flag + chave**, não perfil fixo |
+| Conflito                       | Legado                                                         | Modelo novo                                                   | Escolha                                                 |
+| ------------------------------ | -------------------------------------------------------------- | ------------------------------------------------------------- | ------------------------------------------------------- |
+| Peso dos critérios             | Backend `10`; frontend `1.0`                                   | Inteiro 0–10                                                  | **10**                                                  |
+| Código dos critérios           | Português (`impacto_operacional`) com ponte para inglês        | `code` é a chave do contrato                                  | **Inglês** (`operationalImpact`)                        |
+| Status `nao_elegivel`          | Seed original `is_final = true`; v4 `is_terminal = false`      | Só `concluido`/`cancelado` são terminais                      | **`false`**, decisão v4                                 |
+| Quantidade de status           | 17 no v4/frontend; 19 nas migrations antigas (18/19)           | 17                                                            | **17**                                                  |
+| Reexecução do seed             | `.ignore()` em categorias; `.merge()` em critérios/prioridades | Configuração editável no lugar                                | **Create-if-absent**                                    |
+| Aparências no seed             | Legado começava vazio; frontend tem defaults                   | Pode começar vazio                                            | **Duas Aparências com tokens; assets nulos**            |
+| `logo_use_primary_color`       | Coluna `false`; sync do legado grava `true`                    | Default `false`                                               | **`true` no seed**                                      |
+| `Admin Root`                   | Não existe no legado                                           | Existe só no seed                                             | **Env vars** (`ADMIN_ROOT_EMAIL`/`ADMIN_ROOT_PASSWORD`) |
+| `display_order` das categorias | Backfill = `category_id` (1–10)                                | Inteiro                                                       | **1–10**                                                |
+| `statuses.is_restricted`       | “status protegido” misturava visibilidade e autorização        | Exige `request:status_override`; `priorizado` continua `true` | **Flag + chave**, não perfil fixo                       |
 
 ## Validação depois do seed
 

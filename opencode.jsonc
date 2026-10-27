@@ -7,10 +7,10 @@
         "url": "https://mcp.context7.com/mcp",
         "oauth": false,
         "headers": {
-          "Authorization": "Bearer {file:.context7API}"
-        }
-      }
-    }
+          "Authorization": "Bearer {file:.context7API}",
+        },
+      },
+    },
   },
   "permissions": [
     // Base: qualquer comando de shell pede confirmação, salvo as exceções abaixo.
@@ -54,6 +54,6 @@
     { "action": "shell", "resource": "*context7API*", "effect": "deny" },
 
     // Fora do projeto: sempre confirmar.
-    { "action": "external_directory", "resource": "*", "effect": "ask" }
-  ]
+    { "action": "external_directory", "resource": "*", "effect": "ask" },
+  ],
 }

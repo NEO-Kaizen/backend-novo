@@ -17,7 +17,7 @@ Documentos relacionados:
 
 ## 1. O produto
 
-O MAAT é um portal de *formulário* de solicitações. O fluxo principal é:
+O MAAT é um portal de _formulário_ de solicitações. O fluxo principal é:
 
 ```text
 Solicitante preenche o formulário
@@ -39,19 +39,19 @@ O backend novo é a peça desse fluxo que hoje está instável: ele concentra au
 
 O backend legado (`NEO-Kaizen/backend`) funciona, mas carrega problemas estruturais que não se corrigem sem reescrever a organização do código:
 
-| Problema | Consequência | Onde foi resolvido |
-| --- | --- | --- |
-| Conexão de banco importada como singleton de módulo | Banco travado no Postgres; nada testável sem banco real | [ADR-0002](./adr/0002-manual-dependency-injection.md) |
-| Nenhuma injeção de dependência | Dependências implícitas, acoplamento invisível, ausência de fakes | [ADR-0002](./adr/0002-manual-dependency-injection.md) |
-| Serviço de 1.330 linhas misturando seis casos de uso | Mudança arriscada, revisão inviável | [ADR-0001](./adr/0001-layered-architecture-per-domain.md) |
-| Transações abertas em serviços **e** repositórios | Escopo de transação indefinido, risco de escrita parcial | [ADR-0001](./adr/0001-layered-architecture-per-domain.md) |
-| Domínios importando repositórios de outros domínios | Fronteiras entre áreas dissolvidas, ciclos entre módulos | [ADR-0001](./adr/0001-layered-architecture-per-domain.md), [ADR-0007](./adr/0007-event-driven-audit.md) |
-| Regras de autorização duplicadas em vários arquivos | Regra divergente por área, correção parcial | [ADR-0006](./adr/0006-static-profile-authorization.md) |
-| SQL específico de Postgres espalhado pelos repositórios | Troca de engine inviável | [ADR-0003](./adr/0003-knex-dialect-portability.md) |
-| `console.log` como logging | Sem correlação, sem redação de dados sensíveis | [02-Architecture § 17](./02-Architecture.md#17-log) |
-| Zero testes automatizados | Nenhuma rede de segurança para uma reescrita | [ADR-0002](./adr/0002-manual-dependency-injection.md) |
-| Schema espalhado em três pastas de migration, sem dono | Modelagem sem responsabilidade clara | [ADR-0004](./adr/0004-domain-owned-schema-and-migrations.md) |
-| Protocolo lido com `.first()`, sem dono verificado no modo público | Risco de exibir dados de outra solicitação | [ADR-0008](./adr/0008-protocol-without-collision-risk.md) |
+| Problema                                                           | Consequência                                                      | Onde foi resolvido                                                                                      |
+| ------------------------------------------------------------------ | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| Conexão de banco importada como singleton de módulo                | Banco travado no Postgres; nada testável sem banco real           | [ADR-0002](./adr/0002-manual-dependency-injection.md)                                                   |
+| Nenhuma injeção de dependência                                     | Dependências implícitas, acoplamento invisível, ausência de fakes | [ADR-0002](./adr/0002-manual-dependency-injection.md)                                                   |
+| Serviço de 1.330 linhas misturando seis casos de uso               | Mudança arriscada, revisão inviável                               | [ADR-0001](./adr/0001-layered-architecture-per-domain.md)                                               |
+| Transações abertas em serviços **e** repositórios                  | Escopo de transação indefinido, risco de escrita parcial          | [ADR-0001](./adr/0001-layered-architecture-per-domain.md)                                               |
+| Domínios importando repositórios de outros domínios                | Fronteiras entre áreas dissolvidas, ciclos entre módulos          | [ADR-0001](./adr/0001-layered-architecture-per-domain.md), [ADR-0007](./adr/0007-event-driven-audit.md) |
+| Regras de autorização duplicadas em vários arquivos                | Regra divergente por área, correção parcial                       | [ADR-0006](./adr/0006-static-profile-authorization.md)                                                  |
+| SQL específico de Postgres espalhado pelos repositórios            | Troca de engine inviável                                          | [ADR-0003](./adr/0003-knex-dialect-portability.md)                                                      |
+| `console.log` como logging                                         | Sem correlação, sem redação de dados sensíveis                    | [02-Architecture § 17](./02-Architecture.md#17-log)                                                     |
+| Zero testes automatizados                                          | Nenhuma rede de segurança para uma reescrita                      | [ADR-0002](./adr/0002-manual-dependency-injection.md)                                                   |
+| Schema espalhado em três pastas de migration, sem dono             | Modelagem sem responsabilidade clara                              | [ADR-0004](./adr/0004-domain-owned-schema-and-migrations.md)                                            |
+| Protocolo lido com `.first()`, sem dono verificado no modo público | Risco de exibir dados de outra solicitação                        | [ADR-0008](./adr/0008-protocol-without-collision-risk.md)                                               |
 
 A lista completa de anti‑padrões que esta arquitetura existe para não repetir está em [02-Architecture § 20](./02-Architecture.md#20-anti-padrões).
 
@@ -82,18 +82,18 @@ A reescrita não é uma reimplementação linha a linha. O legado é a **fonte d
 
 ## 4. Stack
 
-| Item | Escolha | Origem |
-| --- | --- | --- |
-| Runtime | Node.js 24+ | `CODING_STANDARDS.md` |
-| Módulos | ESM | `CODING_STANDARDS.md` |
-| Linguagem | TypeScript 7, modo estrito | `CODING_STANDARDS.md` |
-| HTTP | Express 5 | `CODING_STANDARDS.md` |
-| Persistência | Knex como query builder, sem ORM | [ADR-0003](./adr/0003-knex-dialect-portability.md) |
-| Validação | Zod na borda | [02-Architecture § 13](./02-Architecture.md#13-validação-e-a-borda) |
-| Autorização | Matriz de capabilities em código, com escopo e atribuibilidade | [ADR-0025](./adr/0025-authorization-capability-scope.md) |
-| Auditoria | Alteração orientada a evento; tentativa gravada na borda | [ADR-0007](./adr/0007-event-driven-audit.md) |
+| Item         | Escolha                                                        | Origem                                                              |
+| ------------ | -------------------------------------------------------------- | ------------------------------------------------------------------- |
+| Runtime      | Node.js 24+                                                    | `CODING_STANDARDS.md`                                               |
+| Módulos      | ESM                                                            | `CODING_STANDARDS.md`                                               |
+| Linguagem    | TypeScript ~6.0.3 (alvo 7), modo estrito                       | `CODING_STANDARDS.md`                                               |
+| HTTP         | Express 5                                                      | `CODING_STANDARDS.md`                                               |
+| Persistência | Knex como query builder, sem ORM                               | [ADR-0003](./adr/0003-knex-dialect-portability.md)                  |
+| Validação    | Zod na borda                                                   | [02-Architecture § 13](./02-Architecture.md#13-validação-e-a-borda) |
+| Autorização  | Matriz de capabilities em código, com escopo e atribuibilidade | [ADR-0025](./adr/0025-authorization-capability-scope.md)            |
+| Auditoria    | Alteração orientada a evento; tentativa gravada na borda       | [ADR-0007](./adr/0007-event-driven-audit.md)                        |
 
-> Ferramentas de apoio (gerenciador de pacotes, linter, formatter, runner de testes) ainda não foram decididas e não são tratadas aqui.
+> Ferramentas de apoio: npm (lockfile v3), ESLint (flat config) e Prettier estão definidas em `package.json`, `eslint.config.js` e `.prettierrc`; o runner de testes segue em aberto (issue própria).
 
 ---
 
@@ -136,10 +136,10 @@ As convenções transversais da API v1 estão em [`04-API-Conventions.md`](./04-
 
 Decisões já tomadas e follow-up que dependem de outro time:
 
-| Item | Estado | Onde |
-| --- | --- | --- |
-| RBAC configurável | Decidido: matriz em código com 26 chaves, escopo `none`/`owner` (`own`/`all`) e atribuibilidade explícita; perfis customizados são trabalho futuro, desenhados no Apêndice C | [ADR-0025](./adr/0025-authorization-capability-scope.md) |
-| Envelope de erro | Decidido: manter o legado por ora; migração exige mudança coordenada no frontend | [ADR-0005](./adr/0005-legacy-error-envelope-temporary.md) |
-| Perfis: cinco ou quatro | Decidido: cinco no backend; os contratos publicados ainda listam quatro | [ADR-0006](./adr/0006-static-profile-authorization.md) |
-| Remodelagem do banco | Decidido: cada domínio é dono do seu schema; as migrações do legado são referência de dados, não de estrutura | [ADR-0004](./adr/0004-domain-owned-schema-and-migrations.md) |
-| Entropia do prefixo do protocolo | Decidido: 40 bits mantidos; a máscara é configurável e a defesa contra enumeração é de borda — rate limit do endpoint público e conferência do e-mail do solicitante | [ADR-0008](./adr/0008-protocol-without-collision-risk.md) |
+| Item                             | Estado                                                                                                                                                                       | Onde                                                         |
+| -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| RBAC configurável                | Decidido: matriz em código com 26 chaves, escopo `none`/`owner` (`own`/`all`) e atribuibilidade explícita; perfis customizados são trabalho futuro, desenhados no Apêndice C | [ADR-0025](./adr/0025-authorization-capability-scope.md)     |
+| Envelope de erro                 | Decidido: manter o legado por ora; migração exige mudança coordenada no frontend                                                                                             | [ADR-0005](./adr/0005-legacy-error-envelope-temporary.md)    |
+| Perfis: cinco ou quatro          | Decidido: cinco no backend; os contratos publicados ainda listam quatro                                                                                                      | [ADR-0006](./adr/0006-static-profile-authorization.md)       |
+| Remodelagem do banco             | Decidido: cada domínio é dono do seu schema; as migrações do legado são referência de dados, não de estrutura                                                                | [ADR-0004](./adr/0004-domain-owned-schema-and-migrations.md) |
+| Entropia do prefixo do protocolo | Decidido: 40 bits mantidos; a máscara é configurável e a defesa contra enumeração é de borda — rate limit do endpoint público e conferência do e-mail do solicitante         | [ADR-0008](./adr/0008-protocol-without-collision-risk.md)    |

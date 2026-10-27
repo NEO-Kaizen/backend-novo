@@ -22,7 +22,7 @@ One file per **concept**, not per issue. Multiple issues requesting the same thi
 
 The file should be written in a relaxed, readable style, more like a short design document than a database entry. Use paragraphs, code samples, and examples to make the reasoning clear and useful to someone encountering it for the first time.
 
-```markdown
+````markdown
 # Modo escuro
 
 Este projeto não oferece suporte a modo escuro nem a temas configuráveis pelo usuário.
@@ -47,13 +47,13 @@ interface ThemeConfig {
   fonts: FontStack;
 }
 ```
+````
 
 ## Solicitações anteriores
 
 - #42: "Adicionar suporte a modo escuro"
 - #87: "Tema noturno para acessibilidade"
 - #134: "Opção de tema escuro"
-```
 
 ### Naming the file
 
@@ -85,7 +85,7 @@ The maintainer may:
 
 ## When to write to `.out-of-scope/`
 
-Only when an **enhancement** (not a bug) is *rejected* as `wontfix`. This applies to enhancement PRs exactly as it does to issues: a rejected PR is recorded here so the same request doesn't return as fresh code.
+Only when an **enhancement** (not a bug) is _rejected_ as `wontfix`. This applies to enhancement PRs exactly as it does to issues: a rejected PR is recorded here so the same request doesn't return as fresh code.
 
 Do **not** write here when something is closed as `wontfix` because it's **already implemented**. That's a built feature, not a rejected one; recording it would poison the dedup checks with false rejections. Instead, the closing comment points to where the feature already lives.
 

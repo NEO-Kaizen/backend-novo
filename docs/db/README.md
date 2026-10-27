@@ -4,14 +4,14 @@ Esta pasta reúne a documentação **derivada** e **operacional** do banco. A es
 
 ## Mapa
 
-| Arquivo | O que é | Normativo? | Para quem |
-| --- | --- | --- | --- |
-| [`01-vocabulary.md`](./01-vocabulary.md) | Índice termo → tabela | Não | Quem está lendo o glossário ou o modelo |
-| [`02-reference.md`](./02-reference.md) | Referência do Schema: colunas, tipos, nulabilidade, defaults, constraints, índices e FKs | Não — derivado à mão | Quem implementa ou revisa uma tabela |
-| [`03-erd.md`](./03-erd.md) | Mapa completo e diagramas por domínio, com atributos | Não | Quem precisa enxergar as relações |
-| [`schema.dbml`](./schema.dbml) | Schema legível por ferramenta (dbdiagram.io, dbdocs.io) | Não | Quem quer abrir o modelo visualmente |
-| [`04-seeds.md`](./04-seeds.md) | Inventário, ordem e idempotência dos seeds | Não — operacional | Quem implementa ou executa o seed |
-| [`05-operations.md`](./05-operations.md) | Configuração, migrations, seeds, reset, testes e verificação | Não — operacional | Quem opera o banco em desenvolvimento ou produção |
+| Arquivo                                  | O que é                                                                                  | Normativo?           | Para quem                                         |
+| ---------------------------------------- | ---------------------------------------------------------------------------------------- | -------------------- | ------------------------------------------------- |
+| [`01-vocabulary.md`](./01-vocabulary.md) | Índice termo → tabela                                                                    | Não                  | Quem está lendo o glossário ou o modelo           |
+| [`02-reference.md`](./02-reference.md)   | Referência do Schema: colunas, tipos, nulabilidade, defaults, constraints, índices e FKs | Não — derivado à mão | Quem implementa ou revisa uma tabela              |
+| [`03-erd.md`](./03-erd.md)               | Mapa completo e diagramas por domínio, com atributos                                     | Não                  | Quem precisa enxergar as relações                 |
+| [`schema.dbml`](./schema.dbml)           | Schema legível por ferramenta (dbdiagram.io, dbdocs.io)                                  | Não                  | Quem quer abrir o modelo visualmente              |
+| [`04-seeds.md`](./04-seeds.md)           | Inventário, ordem e idempotência dos seeds                                               | Não — operacional    | Quem implementa ou executa o seed                 |
+| [`05-operations.md`](./05-operations.md) | Configuração, migrations, seeds, reset, testes e verificação                             | Não — operacional    | Quem opera o banco em desenvolvimento ou produção |
 
 Os valores do seed de referência estão no [Apêndice D](../03-Data-Model.md#25-apêndice-d--seed-de-referência) da especificação. Este conjunto de arquivos não repete a especificação inteira: ele organiza o acesso a ela.
 
@@ -53,11 +53,11 @@ Use antes de abrir ou aprovar um PR que toque o schema:
 
 Os números do checklist são reprodutíveis a partir da raiz do repositório:
 
-```bash
+````bash
 grep -c '^Table ' docs/db/schema.dbml                              # 29 tabelas
 grep -cE '^Ref:|ref:' docs/db/schema.dbml                          # 55 FKs
 awk '/^```mermaid/ { inblock=1; next } inblock && /^```/ { exit } inblock && /--/' docs/db/03-erd.md | wc -l  # 55 arestas
-```
+````
 
 O `awk` conta só o mapa completo, o primeiro bloco Mermaid de [`03-erd.md`](./03-erd.md); os diagramas por domínio repetem arestas.
 

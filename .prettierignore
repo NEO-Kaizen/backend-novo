@@ -1,0 +1,11 @@
+# Package Managers
+package-lock.json
+
+# Build output
+dist/
+
+# Coverage
+coverage/
+
+# Runtime uploads
+uploads/

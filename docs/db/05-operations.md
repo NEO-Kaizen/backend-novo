@@ -6,11 +6,11 @@
 
 O schema é portátil entre **PostgreSQL**, **MySQL** e **SQLite**, atrás da porta `Dialect` ([ADR-0003](../adr/0003-knex-dialect-portability.md), [02-Architecture § 10.2](../02-Architecture.md#102-o-dialect)):
 
-| Engine | Uso previsto | Observações |
-| --- | --- | --- |
-| PostgreSQL | Desenvolvimento compartilhado e produção | Engine de referência do legado |
-| MySQL | Portabilidade verificável | Sem `ENUM`, sem `ARRAY`, sem índice funcional e sem `jsonb_typeof` |
-| SQLite | Testes rápidos e ambiente local | Não bloqueia linha (`forUpdate`), `returning` e upsert variam |
+| Engine     | Uso previsto                             | Observações                                                        |
+| ---------- | ---------------------------------------- | ------------------------------------------------------------------ |
+| PostgreSQL | Desenvolvimento compartilhado e produção | Engine de referência do legado                                     |
+| MySQL      | Portabilidade verificável                | Sem `ENUM`, sem `ARRAY`, sem índice funcional e sem `jsonb_typeof` |
+| SQLite     | Testes rápidos e ambiente local          | Não bloqueia linha (`forUpdate`), `returning` e upsert variam      |
 
 A regra de portabilidade é a de [§ 10.3](../02-Architecture.md#103-regras-de-portabilidade): `raw()` fora do `Dialect` (via `db` ou `client`) é proibido, o repositório usa só o query builder, e tipo de UUID, JSON, timestamp e booleano vêm do `Dialect`.
 
@@ -65,7 +65,7 @@ O Knex ordena os seeds pelo caminho completo por padrão, e isso agrupa por dire
 
 ## Fluxo local
 
-Os comandos abaixo são a **interface prevista**, não scripts existentes. Os nomes finais dos scripts npm entram com o scaffolding.
+Os comandos abaixo são a interface prevista: `knexfile.ts`, `migrations/` e `seeds/` nascem no scaffolding. No Node 24 o type stripping é nativo, então o `--knexfile knexfile.ts` não exige o flag `--experimental-strip-types` nem um loader — a verificação dessa premissa está em [Type stripping do `knexfile.ts`](#type-stripping-do-knexfilets).
 
 1. **Criar o banco** (exemplo; o nome é o de `DATABASE.NAME`):
 
@@ -96,6 +96,28 @@ Os comandos abaixo são a **interface prevista**, não scripts existentes. Os no
    ```
 
 5. **Verificar** as contagens do [`04-seeds.md`](./04-seeds.md) e o checklist de paridade do [`README.md`](./README.md).
+
+### Type stripping do `knexfile.ts`
+
+A interface acima depende de o CLI do Knex carregar um arquivo `.ts`, e isso foi verificado no Node 24 sem loader. Com um `knexfile.ts` mínimo e `knex` instalado:
+
+```bash
+npx knex migrate:list --knexfile knexfile.ts
+```
+
+Saída em Node 24.15.0 com `knex` 3.3.0:
+
+```text
+Failed to load external module ts-node/register
+Failed to load external module typescript-node/register
+Failed to load external module typescript-register
+Failed to load external module typescript-require
+Failed to load external module sucrase/register/ts
+Failed to load external module @babel/register
+Error: ENOENT: no such file or directory, scandir '.../migrations'
+```
+
+As seis linhas `Failed to load external module` são o CLI sondando registradores opcionais (`ts-node`, `sucrase`, `@babel/register`); elas aparecem sempre e não impedem nada. O `ENOENT` em `migrations/` é a prova de que o `.ts` foi carregado e executado: um erro de sintaxe apareceria antes, e a falha restante é só o diretório que ainda não existe. Quando `migrations/` existir, o comando lista as migrations em vez de falhar.
 
 ### Rollback
 
@@ -138,19 +160,19 @@ A estratégia concreta (in-memory, arquivo temporário, container) está **em ab
 
 ## Diagnóstico
 
-| Sintoma | Causa provável | O que fazer |
-| --- | --- | --- |
-| Migration falha ao criar FK | Tabela referenciada ainda não existe | Confira a ordem em [§ 4](../03-Data-Model.md#4-integridade-referencial-e-ordem-de-criação) e o timestamp da migration |
-| Seed falha em `users.profile_id` | O seed do domínio `users` não inseriu `profiles` antes | Insira `profiles` antes de `users` no seed do domínio |
-| Seed duplica linha | A busca pela chave natural não foi usada | Implemente create-if-absent; não use id fixo nem `merge` |
-| `ENUM`/`ARRAY`/`jsonb` funciona no Postgres e quebra no MySQL | Tipo nativo fora do `Dialect` | Use coluna com `ck_`, tabela filha e `dialect.jsonType()` |
-| Índice funcional `LOWER(name)` quebra no MySQL | `LOWER()` em índice não é portátil | Use coluna normalizada mantida pela aplicação (`normalized_name`) |
-| `forUpdate` não bloqueia | SQLite não suporta row lock | Consulte `dialect.supportsRowLocks()` e degrade |
-| Upsert com merge falha | Engine não suporta merge no alvo | Consulte `dialect.supportsUpsertMerge()` e faça insert + update |
-| Migration parcialmente aplicada | Falha no meio do batch | Verifique `knex_migrations`; recupere conforme a engine, em banco descartável ou com backup |
-| Protocolo duplicado | Leitura por protocolo com `.first()` | Use a sondagem `LIMIT 2` que falha explicitamente ([§ 8.1](../03-Data-Model.md#81-requests)) |
-| Predicado de cor hexadecimal quebra em uma engine | `INSTR`/regex fora do `Dialect` | Use `dialect.hexColorCheck(column)`; o predicado é por engine ([02-Architecture § 10.2](../02-Architecture.md#102-o-dialect)) |
-| Auditoria aceita `UPDATE`/`DELETE` | Guarda só na aplicação, sem trigger/privilégio | Use `dialect.auditAppendOnlyGuard()` e a credencial de runtime sem escrita ([§ 15.1](../03-Data-Model.md#151-audit_entries)) |
+| Sintoma                                                       | Causa provável                                         | O que fazer                                                                                                                   |
+| ------------------------------------------------------------- | ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
+| Migration falha ao criar FK                                   | Tabela referenciada ainda não existe                   | Confira a ordem em [§ 4](../03-Data-Model.md#4-integridade-referencial-e-ordem-de-criação) e o timestamp da migration         |
+| Seed falha em `users.profile_id`                              | O seed do domínio `users` não inseriu `profiles` antes | Insira `profiles` antes de `users` no seed do domínio                                                                         |
+| Seed duplica linha                                            | A busca pela chave natural não foi usada               | Implemente create-if-absent; não use id fixo nem `merge`                                                                      |
+| `ENUM`/`ARRAY`/`jsonb` funciona no Postgres e quebra no MySQL | Tipo nativo fora do `Dialect`                          | Use coluna com `ck_`, tabela filha e `dialect.jsonType()`                                                                     |
+| Índice funcional `LOWER(name)` quebra no MySQL                | `LOWER()` em índice não é portátil                     | Use coluna normalizada mantida pela aplicação (`normalized_name`)                                                             |
+| `forUpdate` não bloqueia                                      | SQLite não suporta row lock                            | Consulte `dialect.supportsRowLocks()` e degrade                                                                               |
+| Upsert com merge falha                                        | Engine não suporta merge no alvo                       | Consulte `dialect.supportsUpsertMerge()` e faça insert + update                                                               |
+| Migration parcialmente aplicada                               | Falha no meio do batch                                 | Verifique `knex_migrations`; recupere conforme a engine, em banco descartável ou com backup                                   |
+| Protocolo duplicado                                           | Leitura por protocolo com `.first()`                   | Use a sondagem `LIMIT 2` que falha explicitamente ([§ 8.1](../03-Data-Model.md#81-requests))                                  |
+| Predicado de cor hexadecimal quebra em uma engine             | `INSTR`/regex fora do `Dialect`                        | Use `dialect.hexColorCheck(column)`; o predicado é por engine ([02-Architecture § 10.2](../02-Architecture.md#102-o-dialect)) |
+| Auditoria aceita `UPDATE`/`DELETE`                            | Guarda só na aplicação, sem trigger/privilégio         | Use `dialect.auditAppendOnlyGuard()` e a credencial de runtime sem escrita ([§ 15.1](../03-Data-Model.md#151-audit_entries))  |
 
 ## Segurança, acesso e retenção
 

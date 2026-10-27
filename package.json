@@ -1,0 +1,41 @@
+{
+  "name": "backend-novo",
+  "version": "0.0.0",
+  "description": "Backend do fluxo MAAT",
+  "main": "dist/server.js",
+  "type": "module",
+  "scripts": {
+    "dev": "node --env-file-if-exists=.env --watch src/server.ts",
+    "start": "node --env-file-if-exists=.env src/server.ts",
+    "build": "tsc",
+    "start:prod": "node --env-file-if-exists=.env dist/server.js",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "check": "npm run typecheck && npm run lint && npm run format:check",
+    "test": "echo \"No tests configured yet\""
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "dependencies": {
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "knex": "^3.3.0",
+    "pg": "^8.23.0",
+    "zod": "^4.5.4"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/express": "^5.0.6",
+    "@types/node": "^24",
+    "eslint": "^10.8.1",
+    "eslint-config-prettier": "^10.1.8",
+    "globals": "^17.9.0",
+    "prettier": "3.9.6",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.66.0"
+  }
+}
