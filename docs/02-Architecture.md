@@ -313,7 +313,7 @@ export abstract class BaseService {
 }
 ```
 
-A base recebe **exatamente o que usa**. O service de domínio não herda o objeto inteiro do módulo: ele declara o próprio tipo, que estende `ServiceDependencies` — ou `UseCaseDependencies`, definido em [§ 8.2](#82-fábrica-de-módulo), quando aplica autorização — e acrescenta o repositório e o que mais o caso de uso precisa, nunca a porta `Database`.
+A base declara **exatamente o que usa**. O service de domínio não tipa o construtor com o objeto inteiro do módulo: ele declara o próprio tipo, que estende `ServiceDependencies` — ou `UseCaseDependencies`, definido em [§ 8.2](#82-fábrica-de-módulo), quando aplica autorização — e acrescenta o repositório e o que mais o caso de uso precisa, nunca a porta `Database`. O objeto que a fábrica monta por spread pode continuar mais largo em runtime; o que o compilador garante é o tipo que o construtor declara ([ADR-0027](./adr/0027-service-dependencies-are-capability-slices.md)).
 
 ```ts
 // src/domains/requests/requests.service.ts
@@ -325,13 +325,22 @@ export interface RequestServiceDependencies extends UseCaseDependencies {
 }
 
 export class RequestService extends BaseService {
-  constructor(private readonly dependencies: RequestServiceDependencies) {
+  private readonly repository: RequestRepository;
+  private readonly counter: Counter;
+  private readonly protocol: ProtocolGenerator;
+  private readonly portalConfig: PortalConfigReader;
+
+  constructor(dependencies: RequestServiceDependencies) {
     super(dependencies);
+    this.repository = dependencies.repository;
+    this.counter = dependencies.counter;
+    this.protocol = dependencies.protocol;
+    this.portalConfig = dependencies.portalConfig;
   }
 }
 ```
 
-A fábrica do módulo monta esse recorte e retém a porta `Database` consigo ([§ 8.2](#82-fábrica-de-módulo)). `this.dependencies.database` não compila: o service não recebe a porta do banco, então não pode montar SQL fora do repositório. O limite da garantia em runtime está no [ADR-0027](./adr/0027-service-dependencies-are-capability-slices.md).
+A fábrica do módulo monta esse recorte e entrega a porta `Database` apenas ao repositório ([§ 8.2](#82-fábrica-de-módulo)). `this.dependencies.database` não compila: o service não recebe a porta do banco, então não pode montar SQL fora do repositório.
 
 A distinção é o **nome do método**:
 
@@ -685,8 +694,11 @@ export interface AuditServiceDependencies extends UseCaseDependencies {
 }
 
 export class AuditService extends BaseService {
-  constructor(private readonly dependencies: AuditServiceDependencies) {
+  private readonly repository: AuditRepository;
+
+  constructor(dependencies: AuditServiceDependencies) {
     super(dependencies);
+    this.repository = dependencies.repository;
   }
 
   /** Leitura da trilha: aplica `audit:read` e custódia ([§ 14.5](#145-compatibilidade-com-o-frontend-atual)), com o envelope de paginação ([§ 10.6](#106-paginação)). */
@@ -1532,7 +1544,7 @@ container → core + platform + domains
 | `core` **nunca** importa de `domains` ou `platform` | O kernel não conhece ninguém |
 | `domains` **nunca** importa de `platform` | A implementação concreta do adapter entra pelo container |
 | Um domínio **nunca** importa repositório, service ou controller de outro domínio | Fronteira entre áreas |
-| Um service **nunca** recebe a porta `Database` | A fábrica cria o repositório e retém o banco ([§ 8.2](#82-fábrica-de-módulo)); sem a capacidade, o service não monta SQL fora do repositório |
+| Um service **nunca** recebe a porta `Database` | A fábrica passa o banco ao repositório, não ao service ([§ 8.2](#82-fábrica-de-módulo)); sem a capacidade, o service não monta SQL fora do repositório |
 | `platform` **nunca** importa de `domains` | Inclusive o *error handler*: ele recebe a porta `AttemptRecorder`, não o domínio |
 | `app.ts` e `server.ts` **nunca** criam dependência | Eles consomem o `Container` |
 
@@ -1606,7 +1618,7 @@ As pendências de **schema** estão no [`03-Data-Model.md` § 21](./03-Data-Mode
 | Contratos publicados: ids numéricos e 4 perfis | O frontend atual descarta id que não seja número em categorias e status | Release coordenada; ver § 22.1 |
 | Suíte de testes automatizados | Rede de segurança ausente para a reescrita | Ferramentas de teste decididas |
 | Credencial de runtime e de migração | O append-only por privilégio exige duas credenciais no Postgres/MySQL; hoje o schema de ambiente tem uma | Implementação do deploy |
-| Contrato da API de auditoria | A rota é montada; o formato de resposta não está acordado. O `Page<AuditEntry>` de [§ 8.2](#82-fábrica-de-módulo) é o contrato do service; a tradução para o formato da rota é do controller ([§ 6](#6-responsabilidades-de-camada)) | Formalização do domínio de auditoria |
+| Contrato da API de auditoria | A rota é montada; o formato de resposta não está acordado. O `Page<AuditEntry>` de [§ 9.3](#93-auditoria-de-alteração-por-eventos) é o contrato do service; a tradução para o formato da rota é do controller ([§ 6](#6-responsabilidades-de-camada)) | Formalização do domínio de auditoria |
 | RBAC configurável | Desenho no Apêndice C; o Apêndice B continua sendo o contrato | Frontend consumir `permissions` |
 
 ### 22.1 Contratos afetados pelo schema
