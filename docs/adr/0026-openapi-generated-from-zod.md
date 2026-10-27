@@ -10,27 +10,27 @@ Decidimos adotar **OpenAPI 3.1.0 gerado a partir dos schemas Zod**, com metadado
 
 ## Decisões
 
-| Decisão               | Escolha                                                                                                          |
-| --------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| Versão OpenAPI        | 3.1.0                                                                                                            |
-| Gerador               | `zod-openapi` 6.x (sem monkey patch; `.meta()`)                                                                  |
-| UI                    | Scalar self-hosted (fallback `swagger-ui-express` se assets locais forem obrigatórios)                           |
-| Fonte de verdade      | Zod + metadados de rota                                                                                          |
-| Artefato              | `openapi/openapi.json`, commitado e versionado                                                                   |
-| Versionamento         | `/api/v1` para todos os endpoints                                                                                |
-| Autenticação          | `sessionCookie` (`apiKey`, `in: cookie`, `name: session_id`), não `bearerAuth`                                   |
-| Header do solicitante | `X-Requester-Email` (aceitar `X-Requester-Identity` por uma release — janela de compatibilidade)                 |
-| Envelope de erro      | Legado `{ status, statusCode, message }` + `code` (ADR-0005); `requestId`/`fields` em `04-API-Conventions.md` §2 |
-| Paginação             | `{ data, page, pageSize, total, totalPages }`                                                                    |
-| Exposição             | Não-produção por padrão; produção só com opt-in                                                                  |
-| Validação de resposta | Testes de contrato (sem runtime em produção)                                                                     |
-| Drift de rotas        | `app.router` (Express 5)                                                                                         |
-| Breaking change       | Exige label e plano de `/api/v2`; `oasdiff breaking` quando o workflow existir                                   |
-| Depreciação           | `deprecated: true`, remoção só em v2                                                                             |
+| Decisão               | Escolha                                                                                                                                                                                                              |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Versão OpenAPI        | 3.1.0                                                                                                                                                                                                                |
+| Gerador               | `zod-openapi` 6.x (sem monkey patch; `.meta()`), condicionado ao spike da §Validação pendente                                                                                                                        |
+| UI                    | Scalar self-hosted (fallback `swagger-ui-express` se assets locais forem obrigatórios)                                                                                                                               |
+| Fonte de verdade      | Zod + metadados de rota                                                                                                                                                                                              |
+| Artefato              | `openapi/openapi.json`, commitado e versionado                                                                                                                                                                       |
+| Versionamento         | `/api/v1` para todos os endpoints                                                                                                                                                                                    |
+| Autenticação          | `sessionCookie` (`apiKey`, `in: cookie`, `name: session_id`), não `bearerAuth`                                                                                                                                       |
+| Header do solicitante | `X-Requester-Email` (aceitar `X-Requester-Identity` por uma release — janela de compatibilidade)                                                                                                                     |
+| Envelope de erro      | Legado `{ status, statusCode, message }` + `code` (ADR-0005); `requestId`/`fields` em `04-API-Conventions.md` §2; variantes `ValidationError`, `LegacyValidationError` e `ConflictError` em `04-HTTP-Contract.md` §6 |
+| Paginação             | `{ data, page, pageSize, total, totalPages }`                                                                                                                                                                        |
+| Exposição             | Não-produção por padrão; produção só com opt-in                                                                                                                                                                      |
+| Validação de resposta | Testes de contrato (sem runtime em produção)                                                                                                                                                                         |
+| Drift de rotas        | `app.router` (Express 5)                                                                                                                                                                                             |
+| Breaking change       | Exige label e plano de `/api/v2`; `oasdiff breaking` quando o workflow existir                                                                                                                                       |
+| Depreciação           | `deprecated: true`, remoção só em v2                                                                                                                                                                                 |
 
 ## Validação pendente
 
-A decisão de adotar OpenAPI 3.1 gerado está aceita; a escolha do gerador fica condicionada à validação abaixo. O spike de compatibilidade ainda não foi executado. Antes da adoção do gerador, validar `zod-openapi` 6.x com TypeScript 7 (alvo; `~6.0.3` no `package.json`), `nodenext`, Node 24, `z.iso.datetime()`/`z.iso.date()` e `z.file()`; registrar aqui o comando, as versões e a saída.
+A decisão de adotar OpenAPI 3.1 gerado está aceita; a escolha do gerador fica condicionada à validação abaixo. O spike de compatibilidade ainda não foi executado. Antes da adoção do gerador, validar `zod-openapi` 6.x contra a stack instalada (`~6.0.3` no `package.json`), `nodenext`, Node 24, `z.iso.datetime()`/`z.iso.date()` e `z.file()`; registrar aqui o comando, as versões e a saída. Quando o TypeScript 7 for adotado, repetir o spike.
 
 ## Alternativas consideradas
 
@@ -44,8 +44,8 @@ A decisão de adotar OpenAPI 3.1 gerado está aceita; a escolha do gerador fica 
 
 - A fonte de verdade passa a ser Zod + metadados de rota. O OpenAPI é o único artefato versionado do contrato HTTP; as regras de negócio ficam nos docs normativos e nas specs de domínio.
 - Cada domínio expõe `*.schema.ts` e `*.openapi.ts`, sem importar `platform`.
-- `src/docs/openapi.ts` compõe o documento; `src/docs/components.ts` define `ErrorEnvelope`, `PaginatedResponse` e os `securitySchemes`.
-- `src/platform/http/docs-router.ts` serve `/api/v1/openapi.json` e `/api/v1/docs`; o `container.ts` monta o router e o `app.ts` o registra.
+- Serão criados `src/docs/openapi.ts`, que comporá o documento, e `src/docs/components.ts`, que será a única definição de `ErrorEnvelope`, `ValidationError`, `LegacyValidationError`, `ConflictError`, `PaginatedResponse` e `securitySchemes`.
+- `src/platform/http/docs-router.ts` servirá `/api/v1/openapi.json` e `/api/v1/docs`; o `container.ts` montará o router e o `app.ts` o registrará.
 - O artefato `openapi/openapi.json` é commitado; quando o script existir, `npm run docs:check` regenera e falha se estiver desatualizado.
 - Exemplos não podem conter PII; operações públicas declaram `security: []`.
 - `POST /requests` documenta multipart (`payload` + `attachments`) e `415`; limites e MIME seguem `04-API-Conventions.md` §9.
@@ -54,4 +54,4 @@ A decisão de adotar OpenAPI 3.1 gerado está aceita; a escolha do gerador fica 
 
 ## Gatilho da migração
 
-A adoção do envelope alvo `{ error: { code, message, requestId } }` segue o gatilho do ADR-0005 (migração coordenada com o frontend). Até lá, o envelope legado é o contrato vigente e `code`/`requestId` são aditivos. A fonte única das convenções é `docs/04-API-Conventions.md`. A tabela completa de convenções e os critérios de revisão de spec estão nesse documento. O OpenAPI documenta o vigente, não o alvo. Ver ADR-0005 (envelope) e ADR-0023 (header do solicitante).
+A adoção do envelope alvo `{ error: { code, message, requestId } }` segue o gatilho do ADR-0005 (migração coordenada com o frontend). Até lá, o envelope legado é o contrato vigente e `code`/`requestId` são aditivos. A variante `LegacyValidationError` (`422`/objeto) será removida quando a migração C2 (`04-API-Conventions.md` §3) concluir. A fonte única das convenções é `docs/04-API-Conventions.md`. A tabela completa de convenções e os critérios de revisão de spec estão nesse documento. O OpenAPI documenta o vigente, não o alvo. Ver ADR-0005 (envelope) e ADR-0023 (header do solicitante).
