@@ -24,9 +24,9 @@ Layout single-context: `GLOSSARY.md` na raiz e `docs/adr/`. Consulte `docs/agent
 
 A política versionada fica em `opencode.jsonc` (raiz) e vale para todo o projeto. Ela usa o formato V2 (`permissions` com `action`/`resource`/`effect`), onde a última regra que casa vence.
 
-- As regras de `read` e `edit` negam `.env` e `.env.*`; `.env.example*` é liberado via `read`/`edit`.
-- Comandos de shell que mencionam `.env*` são negados; para ler ou editar `.env.example`, use as ferramentas `read`/`edit`, não o shell.
-- Comandos de shell pedem confirmação, exceto inspeção Git (`git status`, `git diff`, `git log`, `git show`) e `npm run *` (exceto `npm run env`).
+- As regras de `read` e `edit` negam `*.env` e `*.env.*`; `*.env.example*` é liberado via `read`/`edit`.
+- Comandos de shell que mencionam `.env*` são negados, inclusive `git diff .env.example`; para ler ou editar `.env.example`, use as ferramentas `read`/`edit`, não o shell.
+- Comandos de shell pedem confirmação, exceto inspeção Git (`git status`, `git diff`, `git log`, `git show`) e `npm run *`; scripts com `env` no nome pedem confirmação.
 - `git push`, `rm`, `mv`, `chmod`, `npm install`, `npm ci` e `npm i` pedem confirmação.
 - Acesso fora do projeto pede confirmação.
 - O tool `grep` não é coberto pelas regras de `read`; não use `grep` para procurar em `.env`.

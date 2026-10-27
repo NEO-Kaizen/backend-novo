@@ -12,7 +12,7 @@
 
     // Scripts versionados e revisados no package.json.
     { "action": "shell", "resource": "npm run *", "effect": "allow" },
-    { "action": "shell", "resource": "npm run env *", "effect": "ask" },
+    { "action": "shell", "resource": "npm run *env*", "effect": "ask" },
 
     // Comandos destrutivos ou que alteram o remoto.
     { "action": "shell", "resource": "git push *", "effect": "ask" },

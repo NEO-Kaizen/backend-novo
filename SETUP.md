@@ -119,7 +119,7 @@ O OpenCode começa com uma política base que permite `*`; as regras deste proje
 | `shell` | `*` | `ask` |
 | `shell` | `git status *`, `git diff *`, `git log *`, `git show *` | `allow` |
 | `shell` | `npm run *` | `allow` |
-| `shell` | `npm run env *` | `ask` |
+| `shell` | `npm run *env*` | `ask` |
 | `shell` | `git push *`, `rm *`, `mv *`, `chmod *`, `npm install *`, `npm ci *`, `npm i *` | `ask` |
 | `read` | `*.env`, `*.env.*` | `deny` |
 | `read` | `*.env.example*` | `allow` |
@@ -130,9 +130,9 @@ O OpenCode começa com uma política base que permite `*`; as regras deste proje
 
 As regras de `.env` ficam por último de propósito: como a última regra que casa vence, elas precisam vir depois das permissões de Git e de `npm run` para que `git diff .env` ou `rm .env` continuem negados.
 
-Não há allow de shell para `.env.example`: o padrão cobre a string inteira do comando, então `cat .env.example .env` casaria a allow e leria o `.env`. Para o exemplo, use `read`/`edit`.
+Não há allow de shell para `.env.example`: o padrão cobre a string inteira do comando, então `cat .env.example .env` casaria a allow e leria o `.env`. Para o exemplo, use `read`/`edit`; comandos Git que citam o caminho também são negados, então use `git diff` sem o caminho ou `git add -A` (com confirmação).
 
-`npm run *` é liberado porque os scripts são versionados e revisados no `package.json`; um script pode executar comandos arbitrários, então trate mudanças em `package.json` como mudanças de código. `npm run env` é exceção e pede confirmação, porque imprime o ambiente do processo.
+`npm run *` é liberado porque os scripts são versionados e revisados no `package.json`; um script pode executar comandos arbitrários, então trate mudanças em `package.json` como mudanças de código. Scripts cujo nome contém `env` pedem confirmação, porque podem imprimir o ambiente do processo.
 
 O `.gitignore` também exclui `*.env` e `*.env.*` (mantendo `*.env.example*`) para evitar commits acidentais e para que o `grep` não os varra em buscas amplas.
 
@@ -169,7 +169,12 @@ opencode api delete /api/permission/saved/<id>
 2. Crie `.env` e `.env.example` temporários (não os commite) e, na TUI, peça para o agente ler `.env` (deve ser negado) e `.env.example` (deve ser liberado via `read`).
 3. Peça `git status` (sem prompt), `rm` (com prompt) e `cat .env.example` (deve ser negado; use `read` para o exemplo).
 4. Peça para ler um caminho fora do projeto (com prompt).
-5. Para repetir a matriz sem chamar modelo, avalie as regras com `POST /api/session/{id}/permission`; casos combinados como `cat .env.example .env` devem retornar `deny`.
+5. Para repetir a matriz sem chamar modelo, avalie as regras com `POST /api/session/{id}/permission`; casos combinados como `cat .env.example .env` devem retornar `deny`:
+
+   ```bash
+   opencode api post /api/session/<session-id>/permission \
+     --data '{"action":"read","resources":[".env"],"agent":"build"}'
+   ```
 
 ## Problemas comuns
 
