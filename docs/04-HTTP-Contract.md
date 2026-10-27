@@ -10,7 +10,7 @@ Hierarquia:
 
 1. **Schemas Zod + metadados de rota** (código) — fonte única.
 2. **OpenAPI 3.1.0** (`openapi/openapi.json`) — artefato versionado; gerado e publicado quando o pipeline existir.
-3. **Specs narrativas de domínio** (`docs/_template.md`) — explicam regras que o OpenAPI não expressa; não são contrato de máquina.
+3. **Specs narrativas de domínio** (template em `docs/_template.md`) — explicam regras que o OpenAPI não expressa; não são contrato de máquina.
 
 Documentos normativos (`04-API-Conventions.md`, `02-Architecture.md`, `03-Data-Model.md`) complementam regras que o OpenAPI não expressa, mas não são contrato de máquina.
 
