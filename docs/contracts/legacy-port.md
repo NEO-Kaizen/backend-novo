@@ -3066,3 +3066,1052 @@ Drift anotado, sem decisão:
 - `PUT /users/:id`
 - `PATCH /users/:id/status`
 - `POST /users/:id/reset-password`
+
+## 9. requests
+
+As 10 rotas do domínio `requests` do inventário (§4, #23–#32) são servidas pelo `requestsRoutes`,
+montado em `/requests` (`F1 src/router.ts:24`; `F1 src/modules/requests/requests.router.ts:20`).
+O núcleo das regras de negócio — incluindo autorização por custódia e montagem dos DTOs — vive em
+um único arquivo de 1.330 linhas, `F1 src/modules/requests/requests.service.ts`; o router só declara
+rotas e guards.
+
+Três guards definem o acesso e aparecem em quase todas as rotas:
+
+| Guard                                 | Efeito                                                                                                                                                       | Evidência                                      |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------- |
+| `requireAccessMode()`                 | lê `system_settings.solicitation_mode` a cada request; em `PUBLIC` libera sem sessão, em `AUTHENTICATED` delega ao `authMiddleware` e grava `req.accessMode` | `F1 src/shared/middleware/accessMode.ts:19-41` |
+| `authMiddleware` + `requireRole(...)` | cookie de sessão válido e perfil na lista; mensagem `"Acesso restrito ao perfil <perfis unidos por ' ou '>"`                                                 | `F1 src/shared/middleware/requireRole.ts:9-23` |
+| `requesterDualAuth`                   | cookie `session_id` **ou** header `X-Requester-Identity: {"name","email"}`; sem cookie e sem header válido → `401`                                           | `F1 src/shared/middleware/dualAuth.ts:19-40`   |
+
+**Divergente (legado vigente):** o router não tem prefixo `/api/v1` — convenção §1 de
+`docs/04-API-Conventions.md`.
+
+**Rota ausente do código:** `GET /requests/:protocol/attachments/:id/download` **não está
+registrada** em `F1 src/modules/requests/requests.router.ts` e não existe em
+`F1 src/`; o download de anexos é descrito como pendência/endpoint futuro na documentação do
+legado (`F1 docs/solicitations-api-requests-0_4.md` §Observações; `F1 docs/requests-internal-query-contract.md` §Limitações) e o próprio código fixa
+`downloadUrl` vazio e `canDownload: false` (`F1 src/modules/requests/requests.service.ts:363-369,550-558`).
+Ela não entra na contagem de 10 rotas.
+
+### 9.1 Fontes
+
+| Ref | Caminho                                                  | Uso nesta seção                                                                      |
+| --- | -------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| F1  | `src/modules/requests/requests.router.ts`                | registro das 10 rotas, guards e ordem                                                |
+| F1  | `src/modules/requests/requests.controller.ts`            | parsing de path/query/multipart, tradução de erro, status de sucesso                 |
+| F1  | `src/modules/requests/requests.schema.ts`                | schemas Zod de query, criação, atualização interna, atribuição e status              |
+| F1  | `src/modules/requests/requests.service.ts`               | regras de negócio, autorização por custódia, montagem dos DTOs                       |
+| F1  | `src/modules/requests/requests.repository.ts`            | SQL, paginação, protocolo, elenco de responsáveis                                    |
+| F1  | `src/modules/requests/statusTransition.ts`               | transição de status, precondição e retorno público                                   |
+| F1  | `src/modules/DTOs/requests/RequestRequests.dto.ts`       | payloads e resposta de status                                                        |
+| F1  | `src/modules/DTOs/requests/RequestResponse.dto.ts`       | `RequestDetail`, `CreateRequestResponse`, `AssigneeSummary`, `AssignRequestResponse` |
+| F1  | `src/modules/DTOs/requests/RequestInternalDetail.dto.ts` | DTO da consulta interna                                                              |
+| F1  | `src/modules/DTOs/requests/RequestTracking.dto.ts`       | DTO bimodal do acompanhamento                                                        |
+| F1  | `src/shared/types/requests.ts`                           | status, prioridades, blocos, `YesNoDetail`, linhas de atribuição                     |
+| F1  | `src/shared/middleware/{accessMode,dualAuth,upload}.ts`  | modo do portal, credencial dual, multipart                                           |
+| F1  | `docs/solicitations-api-requests-0_4.md`                 | contrato do fluxo do solicitante (POST, listagem, detalhe público)                   |
+| F1  | `docs/requests-internal-query-contract.md`               | contrato da consulta interna                                                         |
+| F1  | `docs/contract-assign-action.md`                         | contrato de `PATCH .../internal/assignee`                                            |
+| F1  | `docs/requests-assignment-contract.md`                   | contrato de `GET /requests/assignees` e `PATCH .../assignee`                         |
+| F1  | `docs/contract-pendencias_03.md` §3, §7                  | gate do `verify` e DTO do acompanhamento                                             |
+| F2  | `src/lib/api/request.api.ts`                             | criação, listagem, detalhe, interno, atribuição                                      |
+| F2  | `src/lib/api/requester-tracking.api.ts`                  | acompanhamento público e autenticado                                                 |
+| F2  | `src/lib/api/status.api.ts`                              | troca de status                                                                      |
+| F2  | `src/lib/types/request.ts`                               | tipos do consumidor                                                                  |
+| F2  | `src/lib/types/requester-tracking.ts`                    | tipos do acompanhamento                                                              |
+
+### 9.2 Rotas
+
+| #   | Método | Path                                    | Autenticação/autorização                                                           | Handler                          | Sucesso                                   | Erros                             | Evidência                                          |
+| --- | ------ | --------------------------------------- | ---------------------------------------------------------------------------------- | -------------------------------- | ----------------------------------------- | --------------------------------- | -------------------------------------------------- |
+| 23  | GET    | `/requests`                             | modo do portal: `PUBLIC` sem sessão; `AUTHENTICATED` exige sessão                  | `getRequestsByEmail`             | `200` `PaginatedResponse<RequestSummary>` | 400, 401, 403, 500                | `F1 src/modules/requests/requests.router.ts:24`    |
+| 24  | GET    | `/requests/assignees`                   | sessão + Analista, Gestor, Administrador                                           | `getAssignees`                   | `200` `AssigneeSummary[]`                 | 401, 403, 500                     | `F1 src/modules/requests/requests.router.ts:27-32` |
+| 25  | PATCH  | `/requests/:protocol/internal/assignee` | sessão + Analista, Administrador; custódia no service                              | `patchInternalAssignee`          | `200` `RequestInternalDetailDTO`          | 400, 401, 403, 404, 500           | `F1 src/modules/requests/requests.router.ts:38-43` |
+| 26  | PATCH  | `/requests/:protocol/assignee`          | sessão + Analista, Administrador; custódia no service                              | `patchAssignee`                  | `200` `AssignRequestResponse`             | 400, 401, 403, 404, 500           | `F1 src/modules/requests/requests.router.ts:45-50` |
+| 27  | GET    | `/requests/:protocol/tracking`          | dual: sessão **ou** `X-Requester-Identity`                                         | `getTracking`                    | `200` `{ mode, details }`                 | 400, 401, 403, 404, 500           | `F1 src/modules/requests/requests.router.ts:55`    |
+| 28  | PATCH  | `/requests/:protocol/status`            | sessão + Analista, Gestor, Administrador; custódia no service                      | `patchRequestStatus`             | `200` `UpdateStatusResponse`              | 400, 401, 403, 404, 409, 422, 500 | `F1 src/modules/requests/requests.router.ts:60-65` |
+| 29  | GET    | `/requests/:protocol`                   | modo do portal: `PUBLIC` sem sessão; `AUTHENTICATED` exige sessão e posse          | `getRequestsByProtocol`          | `200` `RequestDetail`                     | 400, 401, 403, 404, 500           | `F1 src/modules/requests/requests.router.ts:67`    |
+| 30  | GET    | `/requests/:protocol/internal`          | sessão + Analista, Gestor, Administrador; escopo do Analista no service            | `getInternalRequestByProtocol`   | `200` `RequestInternalDetailDTO`          | 401, 403, 404, 500                | `F1 src/modules/requests/requests.router.ts:68-75` |
+| 31  | PATCH  | `/requests/:protocol/internal`          | sessão + Analista, Gestor, Administrador; Analista restrito ao próprio responsável | `patchInternalRequestByProtocol` | `200` `RequestInternalDetailDTO`          | 401, 403, 404, 422, 500           | `F1 src/modules/requests/requests.router.ts:79-84` |
+| 32  | POST   | `/requests`                             | modo do portal; multipart                                                          | `postRequest`                    | `201` `CreateRequestResponse`             | 400, 401, 403, 500                | `F1 src/modules/requests/requests.router.ts:88`    |
+
+Notas de ordenação e montagem:
+
+- `GET /requests/assignees` é declarado **antes** de `GET /:protocol` (`F1 src/modules/requests/requests.router.ts:27-32,67`) para não ser capturado como protocolo;
+  `GET /:protocol/tracking` idem (`F1 src/modules/requests/requests.router.ts:52-55`).
+- `POST /requests` aplica `requireAccessMode()` **antes** de `uploadFields`, para não processar
+  multipart de uma requisição que já seria rejeitada (`F1 src/modules/requests/requests.router.ts:86-88`).
+- `GET /requests` e `GET /requests/:protocol` compartilham o mesmo guard de modo; `POST /requests`
+  também. As demais rotas usam `authMiddleware` + `requireRole`.
+
+### 9.3 GET /requests
+
+**Request**
+
+- Path: `/requests` (`F1 src/modules/requests/requests.router.ts:24`).
+- Guard `requireAccessMode()`: `req.accessMode` recebe o modo lido do banco
+  (`F1 src/shared/middleware/accessMode.ts:26-32`).
+- Modo `PUBLIC` — query (`F1 src/modules/requests/requests.schema.ts:152-166`):
+
+  | Parâmetro  | Obrigatório | Regra                                                                 | Mensagem de erro                                               |
+  | ---------- | ----------- | --------------------------------------------------------------------- | -------------------------------------------------------------- |
+  | `email`    | sim         | e-mail válido, máx. 254                                               | `"Informe um e-mail válido."` / `"Máximo de 254 caracteres."`  |
+  | `status`   | não         | texto, máx. 100; precisa existir em `statuses` com `is_public = true` | `"Status inválido."`                                           |
+  | `page`     | não         | inteiro > 0, default `1`                                              | `"Deve ser um número inteiro."` / `"Deve ser maior que zero."` |
+  | `pageSize` | não         | inteiro > 0, máx. 10, default `10`                                    | `"Máximo de 10 itens por página."`                             |
+
+  Sem `email`, o controller responde antes de validar o resto:
+  `"Parâmetro obrigatório ausente: email"` (`F1 src/modules/requests/requests.controller.ts:173-175`).
+
+- Modo `AUTHENTICATED` — o e-mail vem do cadastro do usuário da sessão, não da query
+  (`F1 src/modules/requests/requests.service.ts:145-149`). A presença de `email` em qualquer
+  forma (`?email=` inclusive) é recusada antes do parse (`F1 src/modules/requests/requests.controller.ts:154-157`). O schema aceito é o mesmo sem `email`
+  (`F1 src/modules/requests/requests.schema.ts:168-173`).
+- Chaves desconhecidas na query são descartadas pelo `z.object` (strip padrão, documentado em
+  `F1 src/modules/requests/requests.schema.ts:139-140`); `search` não faz parte do schema e
+  portanto é aceito e ignorado.
+
+**Desatualizado no legado:** `F1 docs/solicitations-api-requests-0_4.md` §2 documenta o parâmetro
+`search` (match parcial em processo/solicitante/e-mail) e diz que `pageSize` não tem teto neste
+contrato; o schema vigente não tem `search` e limita `pageSize` a 10
+(`F1 src/modules/requests/requests.schema.ts:152-166`).
+
+**Response 2xx** — `200` com `PaginatedResponse<RequestSummary>`
+(`F1 src/modules/requests/requests.repository.ts:405-419`):
+
+| Campo                  | Tipo                | Origem/observação                                                                                                                                                |
+| ---------------------- | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `data[].protocol`      | string              | `requests.protocol`                                                                                                                                              |
+| `data[].createdAt`     | string ISO-8601 UTC | `requests.created_at`                                                                                                                                            |
+| `data[].processName`   | string              | `requests.process_name`                                                                                                                                          |
+| `data[].priority`      | string \| null      | `priorities.level`                                                                                                                                               |
+| `data[].status`        | string              | status público calculado por SQL: nome do status atual se `is_public`; senão o de `last_public_status_id` se `is_public`; senão o nome do status `status_id = 1` |
+| `data[].assignee`      | string \| null      | `users.full_name` do responsável da triagem                                                                                                                      |
+| `data[].requesterName` | string              | `requesters.full_name`                                                                                                                                           |
+| `page`                 | number              | eco da query (default 1)                                                                                                                                         |
+| `pageSize`             | number              | eco da query (default 10)                                                                                                                                        |
+| `total`                | number              | contagem com os mesmos filtros                                                                                                                                   |
+| `totalPages`           | number              | `0` quando `total = 0`; senão `ceil(total / pageSize)`                                                                                                           |
+
+O SQL do status público está em `F1 src/modules/requests/requests.repository.ts:353-354`; a
+ordenação é `requests.created_at desc` (`F1 src/modules/requests/requests.repository.ts:401`).
+
+```json
+{
+  "data": [
+    {
+      "protocol": "MAAT-8K3P-9X2M",
+      "createdAt": "2026-08-25T14:03:11.000Z",
+      "processName": "Conferência de diárias",
+      "priority": null,
+      "status": "Em triagem",
+      "assignee": null,
+      "requesterName": "Pessoa Solicitante"
+    }
+  ],
+  "page": 1,
+  "pageSize": 10,
+  "total": 1,
+  "totalPages": 1
+}
+```
+
+Consulta vazia devolve `200` com `data: []`, `total: 0` e `totalPages: 0`
+(`F1 src/modules/requests/requests.repository.ts:418`).
+
+**Erros**
+
+| Status | `code` | Mensagem literal                                                                                       | Condição                                     | Evidência                                                                                               |
+| ------ | ------ | ------------------------------------------------------------------------------------------------------ | -------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| 400    | —      | `"O parâmetro 'email' não é aceito no modo autenticado."`                                              | `AUTHENTICATED` com `?email=` presente       | `F1 src/modules/requests/requests.controller.ts:154-157`                                                |
+| 400    | —      | `"Parâmetro obrigatório ausente: email"`                                                               | `PUBLIC` sem `email`                         | `F1 src/modules/requests/requests.controller.ts:173-175`                                                |
+| 400    | —      | mensagem agregada `"Campos inválidos: <path> — <mensagem>"` / `"Campos obrigatórios ausentes: <path>"` | `email`/`status`/`page`/`pageSize` inválidos | `F1 src/modules/requests/requests.controller.ts:159-181`; `F1 src/shared/validation/zodErrors.ts:57-91` |
+| 400    | —      | `"Status inválido."`                                                                                   | `status` não existe como status público      | `F1 src/modules/requests/requests.service.ts:157-159`                                                   |
+| 401    | —      | `"Token não fornecido"`                                                                                | `AUTHENTICATED` sem cookie                   | `F1 src/shared/middleware/auth.ts:27-45` (§3.2)                                                         |
+| 401    | —      | `"Token inválido ou expirado"`                                                                         | cookie inválido/expirado/usuário inativo     | `F1 src/shared/middleware/auth.ts:87-95` (§3.2)                                                         |
+| 403    | —      | `"Troca de senha obrigatória antes de continuar"`                                                      | sessão com `must_change_password`            | `F1 src/shared/middleware/auth.ts:49-61` (§3.2)                                                         |
+| 500    | —      | `"Erro interno do servidor"`                                                                           | falha não prevista                           | `F1 src/shared/middleware/errorHandler.ts:32-45`                                                        |
+
+**Transporte:** JSON; envelope de paginação sem `limit`/`total` aninhado; timestamps ISO-8601 UTC;
+cookie `session_id` só no modo `AUTHENTICATED`; datas puras não aparecem nesta rota.
+
+**Evidência:** `F1 src/modules/requests/requests.router.ts:24`; `F1 src/modules/requests/requests.controller.ts:152-186`; `F1 src/modules/requests/requests.service.ts:141-167`; `F1 src/modules/requests/requests.repository.ts:353-420`.
+
+### 9.4 GET /requests/assignees
+
+**Request**
+
+- Path: `/requests/assignees` (`F1 src/modules/requests/requests.router.ts:27-32`).
+- Sem path param, sem query e sem paginação (`F1 src/modules/requests/requests.controller.ts:188-190`).
+- Auth: `authMiddleware` + `requireRole("Analista", "Gestor", "Administrador")`.
+
+**Response 2xx** — `200` com lista direta de `AssigneeSummary`, ordenada por `name` asc
+(`F1 src/modules/requests/requests.repository.ts:643-658`):
+
+| Campo      | Tipo           | Origem                                 |
+| ---------- | -------------- | -------------------------------------- |
+| `id`       | string (UUID)  | `details_professional.professional_id` |
+| `name`     | string         | `users.full_name`                      |
+| `email`    | string         | `users.email`                          |
+| `jobTitle` | string \| null | `details_professional.job_title`       |
+| `capacity` | number         | `details_professional.capacity`        |
+
+Critério de elegibilidade aplicado no SQL: `details_professional.status = 'active'`,
+`users.is_active = true` e `profiles.name` em `ASSIGNABLE_PROFILES`
+(`F1 src/modules/requests/requests.repository.ts:640-658`).
+
+`ASSIGNABLE_PROFILES` contém **apenas** `"analista"` (`F1 src/modules/requests/requests.repository.ts:641`).
+
+```json
+[
+  {
+    "id": "0f6f2b7a-6d1c-4c1e-9d0a-2b6b4f6e1a11",
+    "name": "Pessoa Responsável",
+    "email": "pessoa.responsavel@example.com",
+    "jobTitle": "Mapeamento de Processos",
+    "capacity": 6
+  }
+]
+```
+
+**Erros**
+
+| Status | `code` | Mensagem literal                                                  | Condição               | Evidência                                        |
+| ------ | ------ | ----------------------------------------------------------------- | ---------------------- | ------------------------------------------------ |
+| 401    | —      | `"Token não fornecido"`                                           | sem cookie             | `F1 src/shared/middleware/auth.ts:27-45`         |
+| 401    | —      | `"Token inválido ou expirado"`                                    | sessão inválida        | `F1 src/shared/middleware/auth.ts:87-95`         |
+| 403    | —      | `"Acesso restrito ao perfil Analista ou Gestor ou Administrador"` | perfil `Solicitante`   | `F1 src/shared/middleware/requireRole.ts:21-22`  |
+| 403    | —      | `"Troca de senha obrigatória antes de continuar"`                 | `must_change_password` | `F1 src/shared/middleware/requireRole.ts:11-13`  |
+| 500    | —      | `"Erro interno do servidor"`                                      | falha não prevista     | `F1 src/shared/middleware/errorHandler.ts:32-45` |
+
+**Desatualizado no legado:** `F1 docs/requests-assignment-contract.md` §Modelo afirma que o
+responsável é elegível com perfil `analista` **ou** `gestor` (critério 3, linha 28 do documento),
+mas o código restringe a `analista` (`F1 src/modules/requests/requests.repository.ts:641`).
+
+**Divergente (legado vigente):** listagem não paginada sem linha na tabela de exceções — convenção
+§4.3 de `docs/04-API-Conventions.md` (a §4.3 só admite listagem não paginada com uma linha
+registrada, e não há linha para `/requests/assignees`).
+
+**Transporte:** JSON, array cru (sem envelope de paginação).
+
+**Evidência:** `F1 src/modules/requests/requests.router.ts:27-32`; `F1 src/modules/requests/requests.controller.ts:188-190`; `F1 src/modules/requests/requests.service.ts:821-823`; `F1 src/modules/requests/requests.repository.ts:640-658`.
+
+### 9.5 PATCH /requests/:protocol/internal/assignee
+
+**Request**
+
+- Path param `protocol` (`F1 src/modules/requests/requests.controller.ts:210-212`; guarda de
+  protocolo vazio em `F1 src/modules/requests/requests.controller.ts:73-81`).
+- Auth: `authMiddleware` + `requireRole("Analista", "Administrador")` — **Gestor não passa no
+  router** (`F1 src/modules/requests/requests.router.ts:38-43`).
+- Body JSON com **exatamente um** de `assigneeId` ou `mappingAssigneeId`
+  (`F1 src/modules/requests/requests.schema.ts:187-202`):
+
+  | Campo               | Tipo           | Regra                                                                                      |
+  | ------------------- | -------------- | ------------------------------------------------------------------------------------------ |
+  | `assigneeId`        | string \| null | `users.user_id` serializado como string (ex.: `"20"`), com `trim` não vazio; `null` remove |
+  | `mappingAssigneeId` | string \| null | idem, para o designado do mapeamento                                                       |
+
+  A presença dos dois ou de nenhum é rejeitada pelo `superRefine` com
+  `"Informe exatamente um de assigneeId ou mappingAssigneeId."` (`F1 src/modules/requests/requests.schema.ts:192-202`).
+  Chaves extras são descartadas (objeto sem `.strict()`, `F1 src/modules/requests/requests.schema.ts:187-191`).
+
+**Regras de escrita** (`F1 src/modules/requests/requests.service.ts:955-1136`):
+
+| Situação                                                                            | Efeito                                                                                                                                                     |
+| ----------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `assigneeId: null`                                                                  | limpa `requests.professional_id`; auditoria `request.unassign`                                                                                             |
+| `assigneeId: "<user_id>"`                                                           | resolve o candidato, grava `professional_id` e **limpa `requests.mapping_professional_id`** (exclusividade); auditoria `request.assign`/`request.reassign` |
+| `mappingAssigneeId: null`                                                           | limpa `requests.mapping_professional_id`; auditoria `request.unassign`                                                                                     |
+| `mappingAssigneeId: "<user_id>"`                                                    | grava `mapping_professional_id` e **limpa `requests.professional_id`**                                                                                     |
+| Atribuição de triagem com `status = "Em triagem"` e `screening_result = "elegivel"` | status avança para `"Aguardando mapeamento"` (RN-010) com auditoria `request.status_change` e `note = "RN-010"`                                            |
+
+A RN-010 só existe no ramo de triagem (`F1 src/modules/requests/requests.service.ts:1013-1061`);
+o ramo de mapeamento não verifica status (`F1 src/modules/requests/requests.service.ts:1064-1132`).
+Tudo é gravado na mesma transação da atribuição (`F1 src/modules/requests/requests.service.ts:1016-1062,1098-1131`).
+
+**Autorização:** `canAssignRequest` libera `Administrador` e libera o usuário que é responsável
+**da triagem ou do mapeamento** da solicitação; os demais recebem `403`
+(`F1 src/modules/requests/requests.service.ts:1141-1154`).
+
+**Response 2xx** — `200` com o DTO interno completo, idêntico ao de §9.10, relido após a escrita
+(`F1 src/modules/requests/requests.service.ts:1135`):
+
+```json
+{
+  "protocol": "MAAT-8K3P-9X2M",
+  "status": "Aguardando mapeamento",
+  "assignee": {
+    "id": "20",
+    "name": "Pessoa Responsável",
+    "email": "pessoa.responsavel@example.com"
+  },
+  "mappingAssignee": null,
+  "lastUpdate": "2026-09-18T10:30:00.000Z"
+}
+```
+
+(O exemplo mostra só os campos afetados; o corpo real tem todos os campos da tabela de §9.10.)
+
+**Erros**
+
+| Status | `code`                            | Mensagem literal                                                                          | Condição                                                               | Evidência                                                                                                                                                     |
+| ------ | --------------------------------- | ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 400    | —                                 | `"Campos inválidos: payload — Informe exatamente um de assigneeId ou mappingAssigneeId."` | os dois campos presentes ou nenhum                                     | `F1 src/modules/requests/requests.controller.ts:213-216`; `F1 src/modules/requests/requests.schema.ts:192-202`; `F1 src/shared/validation/zodErrors.ts:71-86` |
+| 400    | —                                 | `"Campos inválidos: assigneeId — analystId não pode ser vazio."`                          | valor string vazio/só espaços                                          | `F1 src/modules/requests/requests.schema.ts:185`                                                                                                              |
+| 400    | —                                 | `"Campos inválidos: mappingAssigneeId — analystId não pode ser vazio."`                   | idem no campo de mapeamento                                            | idem                                                                                                                                                          |
+| 400    | —                                 | `"Responsável inativo."`                                                                  | `details_professional.status != "active"` ou `users.is_active = false` | `F1 src/modules/requests/requests.service.ts:841-843`                                                                                                         |
+| 400    | —                                 | `"Perfil do responsável não permite atribuição."`                                         | perfil fora de `ASSIGNABLE_PROFILES`                                   | `F1 src/modules/requests/requests.service.ts:844-846`                                                                                                         |
+| 401    | —                                 | `"Token não fornecido"` / `"Token inválido ou expirado"`                                  | sem sessão/sessão inválida                                             | `F1 src/shared/middleware/auth.ts:27-45,87-95`                                                                                                                |
+| 403    | —                                 | `"Acesso restrito ao perfil Analista ou Administrador"`                                   | Gestor ou Solicitante                                                  | `F1 src/modules/requests/requests.router.ts:41`; `F1 src/shared/middleware/requireRole.ts:21-22`                                                              |
+| 403    | `"INSUFFICIENT_ROLE_PERMISSIONS"` | `"Ação restrita ao Administrador ou ao Analista responsável pela demanda."`               | não é Administrador nem responsável vigente                            | `F1 src/modules/requests/requests.service.ts:968-974`                                                                                                         |
+| 404    | —                                 | `"Analista não encontrado"`                                                               | `user_id` inexistente ou não numérico                                  | `F1 src/modules/requests/requests.service.ts:837-840`; `F1 src/modules/requests/requests.repository.ts:661-684`                                               |
+| 404    | —                                 | `"Solicitação não encontrada"`                                                            | protocolo inexistente                                                  | `F1 src/modules/requests/requests.service.ts:961-964`                                                                                                         |
+| 500    | —                                 | `"Erro interno do servidor"`                                                              | falha não prevista                                                     | `F1 src/shared/middleware/errorHandler.ts:32-45`                                                                                                              |
+
+Notas factuais:
+
+- As mensagens usam o rótulo `analystId` e `"Analista não encontrado"` embora o campo do contrato
+  seja `assigneeId` (`F1 src/modules/requests/requests.schema.ts:183-202`;
+  `F1 src/modules/requests/requests.service.ts:831-853`).
+- As guardas `"analystId vazio"` do service (`F1 src/modules/requests/requests.service.ts:834-836,1000-1002,1085-1087`) são defensivas: o schema
+  já rejeita string vazia.
+- A resposta é montada por `findInternalByProtocol(protocol)` **sem** o ator (`F1 src/modules/requests/requests.service.ts:1135`), portanto o escopo de leitura do Analista de
+  §9.10 não é reaplicado nessa resposta.
+
+**Transporte:** JSON; sem justificativa e sem corpo multipart; `updated_at`/`updated_by` são
+atualizados nas duas colunas de responsável (`F1 src/modules/requests/requests.repository.ts:748-772`).
+
+**Evidência:** `F1 src/modules/requests/requests.router.ts:34-43`; `F1 docs/contract-assign-action.md` §`PATCH /requests/{protocol}/internal/assignee`.
+
+### 9.6 PATCH /requests/:protocol/assignee
+
+**Request**
+
+- Path `/requests/:protocol/assignee` — alias legado mantido ao lado da rota `/internal/assignee`
+  (`F1 src/modules/requests/requests.router.ts:34-50`).
+- Auth: `authMiddleware` + `requireRole("Analista", "Administrador")`
+  (`F1 src/modules/requests/requests.router.ts:45-50`).
+- Body JSON `{ "professionalId": string | null }` (`F1 src/modules/requests/requests.schema.ts:175-179`):
+
+  | Campo            | Tipo                  | Regra                                                         |
+  | ---------------- | --------------------- | ------------------------------------------------------------- |
+  | `professionalId` | string (UUID) \| null | UUID de `details_professional.professional_id`; `null` remove |
+
+  O schema é `nullable().optional()` e usa `.passthrough()` (`F1 src/modules/requests/requests.schema.ts:175-179`): corpo `{}` também remove o responsável,
+  porque `undefined` é tratado como `null` (`F1 src/modules/requests/requests.service.ts:895-898`), e chaves extras não são recusadas.
+
+**Regras de escrita** (`F1 src/modules/requests/requests.service.ts:874-953`):
+
+- Resolve o responsável por `professional_id` (`F1 src/modules/requests/requests.service.ts:855-872`).
+- RN-010: se a solicitação está em `"Em triagem"` com `screening_result = "elegivel"` e há novo
+  responsável, o status avança para `"Aguardando mapeamento"` (`F1 src/modules/requests/requests.service.ts:913-916,932-945`).
+- Não há exclusividade com o mapeamento nesta rota: apenas `professional_id` é atualizado
+  (`F1 src/modules/requests/requests.repository.ts:748-759`).
+
+**Response 2xx** — `200` com `AssignRequestResponse` (`F1 src/modules/DTOs/requests/RequestResponse.dto.ts:44-49`):
+
+| Campo      | Tipo                          | Observação                                                                |
+| ---------- | ----------------------------- | ------------------------------------------------------------------------- |
+| `protocol` | string                        | protocolo da solicitação                                                  |
+| `assignee` | `{ id, name, email }` \| null | `id` é `users.user_id` serializado como string; `null` quando removido    |
+| `status`   | string                        | status após a operação; `"Aguardando mapeamento"` quando a RN-010 dispara |
+
+```json
+{
+  "protocol": "MAAT-8K3P-9X2M",
+  "assignee": {
+    "id": "20",
+    "name": "Pessoa Responsável",
+    "email": "pessoa.responsavel@example.com"
+  },
+  "status": "Aguardando mapeamento"
+}
+```
+
+**Erros**
+
+| Status | `code`                            | Mensagem literal                                                            | Condição                                  | Evidência                                                                                                  |
+| ------ | --------------------------------- | --------------------------------------------------------------------------- | ----------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| 400    | —                                 | `"Campos inválidos: professionalId — professionalId deve ser um UUID."`     | valor não é UUID nem `null`               | `F1 src/modules/requests/requests.schema.ts:177`; `F1 src/modules/requests/requests.controller.ts:195-198` |
+| 400    | —                                 | `"Responsável não encontrado."`                                             | UUID não existe em `details_professional` | `F1 src/modules/requests/requests.service.ts:859-863`                                                      |
+| 400    | —                                 | `"Responsável inativo."`                                                    | responsável ou usuário inativo            | `F1 src/modules/requests/requests.service.ts:864-866`                                                      |
+| 400    | —                                 | `"Perfil do responsável não permite atribuição."`                           | perfil fora de `ASSIGNABLE_PROFILES`      | `F1 src/modules/requests/requests.service.ts:867-869`                                                      |
+| 401    | —                                 | `"Token não fornecido"` / `"Token inválido ou expirado"`                    | sem sessão/sessão inválida                | `F1 src/shared/middleware/auth.ts:27-45,87-95`                                                             |
+| 403    | —                                 | `"Acesso restrito ao perfil Analista ou Administrador"`                     | Gestor ou Solicitante                     | `F1 src/modules/requests/requests.router.ts:48`                                                            |
+| 403    | `"INSUFFICIENT_ROLE_PERMISSIONS"` | `"Ação restrita ao Administrador ou ao Analista responsável pela demanda."` | sem custódia                              | `F1 src/modules/requests/requests.service.ts:887-893`                                                      |
+| 404    | —                                 | `"Solicitação não encontrada"`                                              | protocolo inexistente                     | `F1 src/modules/requests/requests.service.ts:880-883`                                                      |
+| 500    | —                                 | `"Erro interno do servidor"`                                                | falha não prevista                        | `F1 src/shared/middleware/errorHandler.ts:32-45`                                                           |
+
+**Desatualizado no legado:** `F1 docs/requests-assignment-contract.md` §2 exemplifica
+`assignee.id` com o UUID de `details_professional.professional_id`, mas o código devolve
+`users.user_id` como string (`F1 src/modules/requests/requests.service.ts:847-852,948-952`).
+
+**Transporte:** JSON; corpo pequeno; a auditoria registra `request.assign` /
+`request.reassign` / `request.unassign` com os ids de usuário (`F1 src/modules/requests/requests.service.ts:921-930`).
+
+**Evidência:** `F1 src/modules/requests/requests.router.ts:45-50`; `F1 src/modules/requests/requests.controller.ts:192-208`; `F1 src/modules/requests/requests.service.ts:855-953`.
+
+### 9.7 GET /requests/:protocol/tracking
+
+**Request**
+
+- Path param `protocol`.
+- Credencial decidida pelo middleware dual, **nesta ordem** (`F1 src/shared/middleware/dualAuth.ts:19-40`):
+  1. cookie `session_id` presente → `authMiddleware` (modo `authenticated`);
+  2. sem cookie → header `X-Requester-Identity` com JSON `{ "name": string, "email": string }`
+     (modo `public`);
+  3. sem cookie e sem header válido → `401 "Valide seus dados para acompanhar esta solicitação."`.
+- Cookie e header juntos: a sessão vence (`F1 src/shared/middleware/dualAuth.ts:20-25`).
+- O header só é parseado; a checagem de posse fica no service (`F1 src/shared/middleware/dualAuth.ts:27-38`).
+- O middleware grava `req.requesterVerifiedProtocol` (`F1 src/shared/middleware/dualAuth.ts:38`), mas **nenhum leitor** consome esse campo: o service não
+  exige que a chamada tenha passado pelo `POST /requests/:protocol/public/verify` (§13). O gate
+  descrito em `F1 docs/contract-pendencias_03.md` §7 é, portanto, apenas do consumidor.
+
+**Response 2xx** — `200` com união discriminada `{ mode, details }` (`F1 src/modules/DTOs/requests/RequestTracking.dto.ts:21,57-79`).
+
+Modo `public` — `PublicRequestDetails` (`F1 src/modules/requests/requests.service.ts:493-510`):
+
+| Campo                  | Tipo                                                                                    | Observação                                                                        |
+| ---------------------- | --------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `protocol`             | string                                                                                  |                                                                                   |
+| `status`               | string                                                                                  | status público; fallback `"Solicitação enviada"` quando a coluna calculada é nula |
+| `openedAt`             | string ISO-8601 UTC                                                                     | `requests.created_at`                                                             |
+| `lastUpdate`           | string ISO-8601 UTC                                                                     | `last_external_update_at`, senão `updated_at`, senão `openedAt`                   |
+| `lastTechnicalMessage` | string \| null                                                                          | último retorno público                                                            |
+| `meeting`              | `{ scheduledFor, link }` \| null                                                        | `null` sem `meeting_scheduled_for`                                                |
+| `requester`            | `RequesterBlock`                                                                        | nome, e-mail, área, departamento, gestor, contato adicional                       |
+| `demand`               | `DemandBlock`                                                                           | título, tipo, categoria, processo, descrição, problema, resultado, justificativa  |
+| `impacts`              | `{ mainRisks, clientImpact, operationalImpact, perceivedCriticality, desiredDeadline }` | `desiredDeadline` em `yyyy-mm-dd`                                                 |
+
+Modo `authenticated` — `RequesterRequestDetails` = base do modo público **sem `impacts`**, mais
+(`F1 src/modules/requests/requests.service.ts:512-561`):
+
+| Campo                 | Tipo              | Observação                                                                                                                                                                              |
+| --------------------- | ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `operational`         | objeto            | `impacts` + `processDescription`, `processSteps`, `systemsUsed`, `executionFrequency`, `volumetry`, `peopleInvolved`, `averageExecutionTime`, `monthlyEffortHours`, `hasManualControls` |
+| `complementary`       | objeto \| ausente | chave omitida quando nenhum dos 5 campos foi respondido                                                                                                                                 |
+| `schedulePreferences` | string[] \| null  | `yyyy-mm-ddThh:mm`, ordenado asc                                                                                                                                                        |
+| `mappingDate`         | string \| null    | parte-data de `meeting.scheduledFor` em America/Sao_Paulo                                                                                                                               |
+| `attachments`         | array             | `id`, `fileName`, `mimeType`, `sizeBytes`, `downloadUrl: ""`, `canDownload: false`                                                                                                      |
+
+```json
+{
+  "mode": "public",
+  "details": {
+    "protocol": "MAAT-8K3P-9X2M",
+    "status": "Em triagem",
+    "openedAt": "2026-08-25T14:03:11.000Z",
+    "lastUpdate": "2026-08-26T10:12:40.000Z",
+    "lastTechnicalMessage": null,
+    "meeting": null,
+    "requester": {
+      "fullName": "Pessoa Solicitante",
+      "corporateEmail": "pessoa.solicitante@example.com",
+      "area": "Financeiro",
+      "department": "Contabilidade",
+      "manager": "Gestor Exemplo",
+      "additionalContact": "(11) 90000-0000"
+    },
+    "demand": {
+      "title": "Conferência de diárias",
+      "requestType": "Automação",
+      "category": "Automação",
+      "processName": "Conferência de diárias",
+      "description": "Conferência manual em planilha.",
+      "problem": "Retrabalho por erro de digitação.",
+      "expectedResult": "Reduzir o tempo de conferência.",
+      "justification": "Consome cerca de 60 horas/mês."
+    },
+    "impacts": {
+      "mainRisks": "Erro de digitação em valores.",
+      "clientImpact": "Atraso no reembolso.",
+      "operationalImpact": "Alto",
+      "perceivedCriticality": "Alta",
+      "desiredDeadline": "2026-09-30"
+    }
+  }
+}
+```
+
+**Erros**
+
+| Status | `code` | Mensagem literal                                            | Condição                                                              | Evidência                                                                                                     |
+| ------ | ------ | ----------------------------------------------------------- | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| 400    | —      | `"Protocolo é obrigatório"`                                 | protocolo vazio após `trim` (guarda defensiva)                        | `F1 src/modules/requests/requests.service.ts:654-658`; `F1 src/modules/requests/requests.controller.ts:73-81` |
+| 401    | —      | `"Valide seus dados para acompanhar esta solicitação."`     | sem cookie e sem header válido                                        | `F1 src/shared/middleware/dualAuth.ts:31-33`                                                                  |
+| 401    | —      | `"Valide seus dados para acompanhar esta solicitação."`     | modo `PUBLIC` com identidade ausente                                  | `F1 src/modules/requests/requests.service.ts:619-622`                                                         |
+| 401    | —      | `"Valide seus dados para acompanhar esta solicitação."`     | protocolo inexistente **ou** nome/e-mail divergentes no modo `PUBLIC` | `F1 src/modules/requests/requests.service.ts:629-640`                                                         |
+| 401    | —      | `"Token não fornecido"` / `"Token inválido ou expirado"`    | cookie presente porém inválido                                        | `F1 src/shared/middleware/dualAuth.ts:22-24`; `F1 src/shared/middleware/auth.ts:27-45,87-95`                  |
+| 403    | —      | `"Verificação indisponível no modo atual"`                  | header de identidade com portal em `AUTHENTICATED`                    | `F1 src/modules/requests/requests.service.ts:613-617`                                                         |
+| 403    | —      | `"Perfis internos devem acompanhar pela consulta interna."` | sessão de perfil diferente de `Solicitante`                           | `F1 src/modules/requests/requests.service.ts:588-593`                                                         |
+| 404    | —      | `"Protocolo não encontrado"`                                | sessão `Solicitante` com protocolo inexistente ou de terceiro         | `F1 src/modules/requests/requests.service.ts:600-604`                                                         |
+| 500    | —      | `"Erro interno do servidor"`                                | falha não prevista                                                    | `F1 src/shared/middleware/errorHandler.ts:32-45`                                                              |
+
+Regra de posse no modo `authenticated`: o vínculo `requests.requester_user_id` é a fonte primária;
+sem vínculo (nulo), compara o e-mail normalizado de `requesters` com o da sessão (`F1 src/modules/requests/requests.service.ts:563-582`). No modo `public`, **nome e e-mail** precisam
+conferir após normalização (`F1 src/modules/requests/requests.service.ts:627-640`).
+
+**Divergente (legado vigente):** credencial pública por `X-Requester-Identity` com nome+e-mail e
+`401` genérico; a convenção §15.3 e o ADR-0023 apontam `X-Requester-Email`, comparação só por
+e-mail e `404` no lugar de `401`.
+
+**Desatualizado no legado:** `F1 docs/contract-pendencias_03.md` §7 registra `403` para "portal
+`AUTHENTICATED` sem sessão"; no código, quem não tem cookie nem header recebe `401` do
+`requesterDualAuth`, e o `403 "Verificação indisponível no modo atual"` só ocorre quando há header
+de identidade (`F1 src/modules/requests/requests.service.ts:613-617`).
+
+**Transporte:** header `X-Requester-Identity` carrega JSON (não é cookie, não é JWT); a resposta
+não emite cookie; datas em ISO-8601 UTC, exceto `desiredDeadline`/`mappingDate` (`yyyy-mm-dd`);
+`attachments[].downloadUrl` é string vazia (diferente do `null` da consulta interna). O middleware
+dual testa o cookie **literal** `session_id`, não `Config.COOKIE_NAME` (`F1 src/shared/middleware/dualAuth.ts:20`) — ver §3.2 do baseline.
+
+**Evidência:** `F1 src/modules/requests/requests.router.ts:52-55`; `F1 src/modules/requests/requests.controller.ts:44-56`; `F1 src/modules/requests/requests.service.ts:412-665`.
+
+### 9.8 PATCH /requests/:protocol/status
+
+**Request**
+
+- Path param `protocol`.
+- Auth: `authMiddleware` + `requireRole("Analista", "Gestor", "Administrador")`
+  (`F1 src/modules/requests/requests.router.ts:60-65`); a autorização por custódia acontece no
+  service.
+- Body JSON **strict** (`F1 src/modules/requests/requests.schema.ts:212-221`):
+
+  | Campo                  | Tipo           | Regra                                          |
+  | ---------------------- | -------------- | ---------------------------------------------- |
+  | `targetStatus`         | number         | inteiro > 0; é o `statuses.status_id` numérico |
+  | `justification`        | string         | 1–4.000 caracteres, `trim` não vazio           |
+  | `lastTechnicalMessage` | string \| null | opcional, 1–4.000 quando string                |
+
+  Não há `expectedStatus`, `force`, `override` nem `note`: o campo `note` da auditoria recebe
+  `justification` (`F1 src/modules/requests/requests.service.ts:1314`). `.strict()` recusa chave
+  desconhecida com `400` agregado (`F1 src/modules/requests/requests.schema.ts:221`).
+
+**Regras de autorização e alcance** (`F1 src/modules/requests/requests.service.ts:1189-1285`):
+
+| Ator                                             | Regra                                                                                       | Negativa                                  |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------- | ----------------------------------------- |
+| `Administrador`                                  | bypass de `triageMode`/`mappingMode`/`isRestricted`; ainda exige destino `isActive`         | `409` se destino inativo                  |
+| `Gestor`                                         | sempre negado (`F1 src/modules/requests/requests.service.ts:1206-1218`)                     | `403` + auditoria `request.access_denied` |
+| Analista responsável (triagem **ou** mapeamento) | só destino ativo, `isRestricted = false` e `triageMode` **ou** `mappingMode` igual a `free` | `403`                                     |
+| Qualquer outro perfil interno                    | sem custódia                                                                                | `403`                                     |
+
+Regras adicionais, na ordem em que o código as aplica:
+
+1. protocolo inexistente → `404 "Protocolo não encontrado"` (`F1 src/modules/requests/requests.service.ts:1195-1198`);
+2. `targetStatus` inexistente em `statuses` → `404 "Status de destino não encontrado"` (`F1 src/modules/requests/requests.service.ts:1200-1203`);
+3. mesmo status atual → `422 "A solicitação já está neste status."` (`F1 src/modules/requests/requests.service.ts:1240-1242`);
+4. destino inativo → `409 "Status inativo não pode ser alvo."`, inclusive para Administrador
+   (`F1 src/modules/requests/requests.service.ts:1244-1252`);
+5. destino restrito por não-Administrador →
+   `403 "Status Priorizado só pode ser definido por Administrador."` (`F1 src/modules/requests/requests.service.ts:1254-1267`);
+6. destino sem `free` →
+   `403 "Só é possível definir status ativo com triageMode ou mappingMode free."` (`F1 src/modules/requests/requests.service.ts:1268-1281`);
+7. destino público sem `lastTechnicalMessage` →
+   `400 "Retorno ao solicitante obrigatório para status público."` (`F1 src/modules/requests/requests.service.ts:1283-1285`);
+8. destino público com `lastTechnicalMessage` só de espaços →
+   `422 "Informe o retorno ao solicitante para um status público."` (`F1 src/modules/requests/statusTransition.ts:28-32`).
+
+**Concorrência:** não há precondição enviada pelo cliente. `expectedStatusId` recebe o status lido
+no início da mesma request (`F1 src/modules/requests/requests.service.ts:1302`); se a linha mudou
+entre a leitura e o `UPDATE`, a transição falha com
+`409 "Solicitação foi atualizada por outra operação"` (`F1 src/modules/requests/statusTransition.ts:38-51`).
+
+**Não verificado:** o comentário do schema e do service afirma que status terminais nunca são
+saída e que a tentativa responde `422` (`F1 src/modules/requests/requests.schema.ts:206-210`;
+`F1 src/modules/requests/requests.service.ts:1156-1166`), mas `updateRequestStatus` não consulta
+`current_is_terminal`: a coluna é selecionada em `F1 src/modules/requests/requests.repository.ts:826` e não tem leitor nesta rota (`F1 src/modules/requests/requests.service.ts:1189-1330`). Nenhuma outra rota deste domínio aplica o
+bloqueio.
+
+**Response 2xx** — `200` (`F1 src/modules/DTOs/requests/RequestRequests.dto.ts:55-61`):
+
+| Campo        | Tipo                | Observação                                                 |
+| ------------ | ------------------- | ---------------------------------------------------------- |
+| `protocol`   | string              |                                                            |
+| `status`     | string              | nome do status de destino                                  |
+| `previous`   | string              | nome do status anterior; `""` quando o status atual é nulo |
+| `next`       | string              | nome do status de destino                                  |
+| `lastUpdate` | string ISO-8601 UTC | `requests.updated_at` da transição                         |
+
+```json
+{
+  "protocol": "MAAT-8K3P-9X2M",
+  "status": "Em mapeamento",
+  "previous": "Aguardando mapeamento",
+  "next": "Em mapeamento",
+  "lastUpdate": "2026-09-20T13:05:44.000Z"
+}
+```
+
+**Erros**
+
+| Status | `code`                            | Mensagem literal                                                            | Condição                                                                                       |
+| ------ | --------------------------------- | --------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| 400    | —                                 | `"Campos inválidos: <path> — <mensagem>"`                                   | corpo inválido, chave desconhecida, `targetStatus` não inteiro/positivo, `justification` vazia |
+| 400    | —                                 | `"Retorno ao solicitante obrigatório para status público."`                 | destino `isPublic` sem `lastTechnicalMessage`                                                  |
+| 401    | —                                 | `"Token não fornecido"` / `"Token inválido ou expirado"`                    | sem sessão/sessão inválida                                                                     |
+| 403    | —                                 | `"Acesso restrito ao perfil Analista ou Gestor ou Administrador"`           | perfil `Solicitante`                                                                           |
+| 403    | `"INSUFFICIENT_ROLE_PERMISSIONS"` | `"Ação restrita ao Administrador ou ao Analista responsável pela demanda."` | Gestor (auditado com `"perfil Gestor é somente leitura"`) ou sem custódia                      |
+| 403    | `"INSUFFICIENT_ROLE_PERMISSIONS"` | `"Status Priorizado só pode ser definido por Administrador."`               | destino restrito por não-Administrador                                                         |
+| 403    | `"INSUFFICIENT_ROLE_PERMISSIONS"` | `"Só é possível definir status ativo com triageMode ou mappingMode free."`  | destino não-`free` por não-Administrador                                                       |
+| 404    | —                                 | `"Protocolo não encontrado"`                                                | protocolo inexistente                                                                          |
+| 404    | —                                 | `"Status de destino não encontrado"`                                        | `targetStatus` sem linha em `statuses`                                                         |
+| 409    | —                                 | `"Status inativo não pode ser alvo."`                                       | destino `isActive = false`                                                                     |
+| 409    | —                                 | `"Solicitação foi atualizada por outra operação"`                           | linha alterada entre leitura e escrita                                                         |
+| 422    | —                                 | `"A solicitação já está neste status."`                                     | destino igual ao status atual                                                                  |
+| 422    | —                                 | `"Informe o retorno ao solicitante para um status público."`                | retorno público só com espaços                                                                 |
+| 500    | —                                 | `"Erro interno do servidor"`                                                | falha não prevista                                                                             |
+
+**Transporte:** JSON; a transição atualiza `status_id`, `updated_by`, `updated_at` e, **somente
+quando o destino é público**, `last_public_status_id`, `last_technical_message` e
+`last_external_update_at` (`F1 src/modules/requests/statusTransition.ts:22-36`). A auditoria grava
+`request.override_status_admin` para Administrador e `request.status_change` para os demais (`F1 src/modules/requests/requests.service.ts:1287-1318`).
+
+**Evidência:** `F1 src/modules/requests/requests.router.ts:57-65`; `F1 src/modules/requests/requests.controller.ts:228-244`; `F1 src/modules/requests/requests.service.ts:1156-1330`; `F1 src/modules/requests/statusTransition.ts:18-53`.
+
+### 9.9 GET /requests/:protocol
+
+**Request**
+
+- Path param `protocol`; sem query (`F1 src/modules/requests/requests.controller.ts:36-42`).
+- Guard `requireAccessMode()` (`F1 src/modules/requests/requests.router.ts:67`).
+- Modo `AUTHENTICATED`: exige sessão e confere a posse pelo e-mail do cadastro; protocolo de
+  terceiro responde `404`, igual a inexistente (`F1 src/modules/requests/requests.service.ts:93-100`).
+
+**Response 2xx** — `200` com `RequestDetail` (`F1 src/modules/DTOs/requests/RequestResponse.dto.ts:3-24`; mapeamento em `F1 src/modules/requests/requests.repository.ts:428-490`):
+
+| Campo                  | Tipo                             | Origem/observação                                                                  |
+| ---------------------- | -------------------------------- | ---------------------------------------------------------------------------------- |
+| `protocol`             | string                           |                                                                                    |
+| `demandTitle`          | string                           | `requests.title`; `""` se nulo                                                     |
+| `processName`          | string                           | `requests.process_name`; `""` se nulo                                              |
+| `status`               | string                           | status público calculado (mesmo SQL de §9.3)                                       |
+| `assigneeName`         | string \| null                   | `users.full_name` do responsável da triagem                                        |
+| `openedAt`             | string ISO-8601 UTC              | `requests.created_at`                                                              |
+| `estimatedCompletion`  | string \| null                   | `requests.estimated_completion`, data pura `yyyy-mm-dd`                            |
+| `mappingDate`          | string \| null                   | parte-data de `meeting.scheduledFor` em America/Sao_Paulo                          |
+| `meeting`              | `{ scheduledFor, link }` \| null | `null` sem `meeting_scheduled_for`                                                 |
+| `pendingIssues`        | string[]                         | **sempre `[]`** no código (`F1 src/modules/requests/requests.repository.ts:482`)   |
+| `nextStep`             | string                           | `requests.next_steps`; default `"Aguarde o contato do analista"`                   |
+| `lastTechnicalMessage` | string \| null                   | `requests.last_technical_message`                                                  |
+| `lastUpdate`           | string ISO-8601 UTC              | `last_external_update_at`, senão `openedAt`                                        |
+| `conclusion`           | objeto \| null                   | **sempre `null`** no código (`F1 src/modules/requests/requests.repository.ts:486`) |
+
+```json
+{
+  "protocol": "MAAT-8K3P-9X2M",
+  "demandTitle": "Conferência de diárias",
+  "processName": "Conferência de diárias",
+  "status": "Em triagem",
+  "assigneeName": null,
+  "openedAt": "2026-08-25T14:03:11.000Z",
+  "estimatedCompletion": null,
+  "mappingDate": null,
+  "meeting": null,
+  "pendingIssues": [],
+  "nextStep": "Aguarde o contato do analista",
+  "lastTechnicalMessage": null,
+  "lastUpdate": "2026-08-26T10:12:40.000Z",
+  "conclusion": null
+}
+```
+
+**Erros**
+
+| Status | `code` | Mensagem literal                                         | Condição                                                     | Evidência                                              |
+| ------ | ------ | -------------------------------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------ |
+| 400    | —      | `"Protocolo é obrigatório"`                              | protocolo vazio após `trim` (guarda defensiva)               | `F1 src/modules/requests/requests.controller.ts:73-81` |
+| 401    | —      | `"Token não fornecido"` / `"Token inválido ou expirado"` | `AUTHENTICATED` sem sessão/sessão inválida                   | `F1 src/shared/middleware/auth.ts:27-45,87-95`         |
+| 401    | —      | `"Sessão inválida"`                                      | usuário da sessão inexistente/inativo na resolução do dono   | `F1 src/modules/requests/requests.service.ts:71-79`    |
+| 403    | —      | `"Troca de senha obrigatória antes de continuar"`        | `must_change_password`                                       | `F1 src/shared/middleware/auth.ts:49-61`               |
+| 404    | —      | `"Protocolo não encontrado"`                             | protocolo inexistente **ou** de terceiro no modo autenticado | `F1 src/modules/requests/requests.service.ts:87-100`   |
+| 500    | —      | `"Erro interno do servidor"`                             | falha não prevista                                           | `F1 src/shared/middleware/errorHandler.ts:32-45`       |
+
+**Desatualizado no legado:** `F1 docs/solicitations-api-requests-0_4.md` §3 exemplifica o erro de
+protocolo inexistente como `"Solicitação não encontrada"`; o código responde
+`"Protocolo não encontrado"` (`F1 src/modules/requests/requests.service.ts:89-91`).
+
+**Transporte:** JSON; sem query params; timestamps ISO-8601 UTC, `estimatedCompletion` e
+`mappingDate` em `yyyy-mm-dd`.
+
+**Evidência:** `F1 src/modules/requests/requests.router.ts:67`; `F1 src/modules/requests/requests.controller.ts:36-42`; `F1 src/modules/requests/requests.service.ts:81-103`; `F1 src/modules/requests/requests.repository.ts:422-490`.
+
+### 9.10 GET /requests/:protocol/internal
+
+**Request**
+
+- Path param `protocol` (`F1 src/modules/requests/requests.controller.ts:61-70`).
+- Auth: `authMiddleware` + `requireRole("Analista", "Gestor", "Administrador")` — o perfil
+  `Solicitante` não acessa (`F1 src/modules/requests/requests.router.ts:68-75`).
+- Escopo adicional no service: `Administrador` e `Gestor` veem qualquer solicitação; `Analista`
+  só as atribuídas a ele, por triagem (`assignee_user_id`) ou mapeamento
+  (`mapping_assignee_user_id`) (`F1 src/modules/requests/requests.service.ts:207-217`).
+
+**Response 2xx** — `200` com `RequestInternalDetailDTO` (`F1 src/modules/DTOs/requests/RequestInternalDetail.dto.ts:62-85`):
+
+| Campo                     | Tipo                                         | Observação                                                                                   |
+| ------------------------- | -------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `protocol`                | string                                       |                                                                                              |
+| `status`                  | string                                       | **nome do status interno** (`statuses.name`), podendo ser um status não público              |
+| `priority`                | string \| null                               | `priorities.level`                                                                           |
+| `prioritization.score`    | number \| null                               | `prioritization_evaluations.score`                                                           |
+| `prioritization.maxScore` | 50                                           | constante                                                                                    |
+| `prioritization.label`    | string \| null                               | `prioritization_evaluations.classification`                                                  |
+| `assignee`                | `{ id, name, email }` \| null                | `id` é `assignee_user_id` como string; `null` sem responsável                                |
+| `mappingAssignee`         | `{ id, name, email }` \| null                | sempre presente no corpo; `id` é `mapping_user_id`                                           |
+| `correctionAlert`         | `{ count, batchId }` \| null                 | derivado de pendências                                                                       |
+| `pendingSummary`          | `{ total, requested, responded, validated }` | zeros quando a consulta de pendências falha                                                  |
+| `unread`                  | `{ count, hasUnread, lastUnreadAt }`         | idem                                                                                         |
+| `requester`               | `RequesterBlock`                             | `area`/`manager` com fallback `""`; `department`/`additionalContact` omitidos quando nulos   |
+| `demand`                  | `DemandBlock`                                |                                                                                              |
+| `operational`             | `OperationalBlock`                           | `desiredDeadline` em `yyyy-mm-dd`; `monthlyEffortHours` convertido para number               |
+| `complementary`           | objeto \| ausente                            | chave omitida quando nenhum dos 5 campos foi respondido                                      |
+| `schedulePreferences`     | string[] \| null                             | `yyyy-mm-ddThh:mm`, asc; `null` quando vazio                                                 |
+| `mappingDate`             | string \| null                               | parte-data de `meeting.scheduledFor`                                                         |
+| `meeting`                 | `{ scheduledFor, link }` \| null             |                                                                                              |
+| `attachments`             | array                                        | `fileName`, `mimeType`, `sizeBytes`, `downloadUrl: null`, `canDownload: false`; **sem `id`** |
+| `openedAt`                | string ISO-8601 UTC                          | `created_at`                                                                                 |
+| `lastUpdate`              | string ISO-8601 UTC                          | `updated_at`                                                                                 |
+| `internalObservations`    | string \| null                               | extraído de `requests.internal_notes`, descartando o wrapper `__triage`                      |
+
+O mapeador completo está em `F1 src/modules/requests/requests.service.ts:194-374`; a extração de
+observações internas em `F1 src/modules/requests/requests.service.ts:376-410`. O bloco de
+pendências tem degradação silenciosa para zeros em caso de erro (`F1 src/modules/requests/requests.service.ts:236-258`).
+
+```json
+{
+  "protocol": "MAAT-8K3P-9X2M",
+  "status": "Aguardando mapeamento",
+  "priority": "Alta",
+  "prioritization": { "score": null, "maxScore": 50, "label": null },
+  "assignee": {
+    "id": "20",
+    "name": "Pessoa Responsável",
+    "email": "pessoa.responsavel@example.com"
+  },
+  "mappingAssignee": null,
+  "correctionAlert": null,
+  "pendingSummary": { "total": 0, "requested": 0, "responded": 0, "validated": 0 },
+  "unread": { "count": 0, "hasUnread": false, "lastUnreadAt": null },
+  "requester": {
+    "fullName": "Pessoa Solicitante",
+    "corporateEmail": "pessoa.solicitante@example.com",
+    "area": "Financeiro",
+    "department": "Contabilidade",
+    "manager": "Gestor Exemplo",
+    "additionalContact": "(11) 90000-0000"
+  },
+  "demand": {
+    "title": "Conferência de diárias",
+    "requestType": "Automação",
+    "category": "Automação",
+    "processName": "Conferência de diárias",
+    "description": "Conferência manual em planilha.",
+    "problem": "Retrabalho por erro de digitação.",
+    "expectedResult": "Reduzir o tempo de conferência.",
+    "justification": "Consome cerca de 60 horas/mês."
+  },
+  "operational": {
+    "processDescription": "RH recebe planilha por e-mail.",
+    "processSteps": "1. Receber\n2. Conferir",
+    "systemsUsed": "Excel, ERP",
+    "executionFrequency": "Mensal",
+    "volumetry": "500 transações/mês",
+    "peopleInvolved": 3,
+    "averageExecutionTime": "15 minutos",
+    "monthlyEffortHours": 60,
+    "hasManualControls": "Conferência dupla assinada pelo gestor.",
+    "mainRisks": "Erro de digitação em valores.",
+    "clientImpact": "Atraso no reembolso.",
+    "operationalImpact": "Alto",
+    "desiredDeadline": "2026-09-30",
+    "perceivedCriticality": "Alta"
+  },
+  "complementary": {
+    "hasProcessDocumentation": "Fluxo desenhado no Visio.",
+    "hasSimilarSolution": false,
+    "additionalNotes": "Planilha modelo anexa."
+  },
+  "schedulePreferences": ["2026-09-02T08:00", "2026-09-03T14:00"],
+  "mappingDate": null,
+  "meeting": null,
+  "attachments": [
+    {
+      "fileName": "fluxo-atual.pdf",
+      "mimeType": "application/pdf",
+      "sizeBytes": 412000,
+      "downloadUrl": null,
+      "canDownload": false
+    }
+  ],
+  "openedAt": "2026-07-01T09:00:00.000Z",
+  "lastUpdate": "2026-07-08T12:00:00.000Z",
+  "internalObservations": null
+}
+```
+
+**Erros**
+
+| Status | `code` | Mensagem literal                                                  | Condição                                                      | Evidência                                              |
+| ------ | ------ | ----------------------------------------------------------------- | ------------------------------------------------------------- | ------------------------------------------------------ |
+| 401    | —      | `"Token não fornecido"` / `"Token inválido ou expirado"`          | sem sessão/sessão inválida                                    | `F1 src/shared/middleware/auth.ts:27-45,87-95`         |
+| 401    | —      | `"Token inválido ou expirado"`                                    | `req.user` ausente ou `id` não inteiro na montagem do ator    | `F1 src/modules/requests/requests.controller.ts:84-93` |
+| 403    | —      | `"Acesso restrito ao perfil Analista ou Gestor ou Administrador"` | perfil `Solicitante`                                          | `F1 src/shared/middleware/requireRole.ts:21-22`        |
+| 403    | —      | `"Acesso negado a esta solicitação"`                              | `Analista` que não é responsável de triagem nem de mapeamento | `F1 src/modules/requests/requests.service.ts:210-217`  |
+| 404    | —      | `"Solicitação não encontrada"`                                    | protocolo inexistente                                         | `F1 src/modules/requests/requests.service.ts:203-205`  |
+| 500    | —      | `"Erro interno do servidor"`                                      | falha não prevista                                            | `F1 src/shared/middleware/errorHandler.ts:32-45`       |
+
+**Desatualizado no legado:** `F1 docs/requests-internal-query-contract.md` §Limitações afirma que
+`meeting`/`mappingDate` e `correctionAlert` são **sempre `null`**, e o DTO documentado em §Response
+200 não tem `mappingAssignee`/`pendingSummary`/`unread`; o código lê
+`meeting_scheduled_for`/`meeting_link` (`F1 src/modules/requests/requests.service.ts:226-234`),
+deriva o alerta de pendências (`F1 src/modules/requests/requests.service.ts:236-258`) e devolve os
+três campos novos (`F1 src/modules/requests/requests.service.ts:313-318`).
+
+**Desatualizado no legado:** o mesmo documento tipa `CorrectionAlert` como `{ count, message }`;
+o DTO vigente é `{ count, batchId }` (`F1 src/modules/DTOs/requests/RequestInternalDetail.dto.ts:36-39`).
+
+**Desatualizado no legado:** o documento tipa `Assignee.name` como `string`; o DTO aceita
+`string | null` (`F1 src/modules/DTOs/requests/RequestInternalDetail.dto.ts:19-23`).
+
+**Transporte:** JSON; `attachments[].downloadUrl` é `null` (não `""`); não há endpoint de
+download; `schedulePreferences` usam `yyyy-mm-ddThh:mm` sem fuso.
+
+**Evidência:** `F1 src/modules/requests/requests.router.ts:68-75`; `F1 src/modules/requests/requests.controller.ts:58-70`; `F1 src/modules/requests/requests.service.ts:169-410`; `F1 src/modules/requests/requests.repository.ts:492-638`.
+
+### 9.11 PATCH /requests/:protocol/internal
+
+**Request**
+
+- Path param `protocol`.
+- Auth: `authMiddleware` + `requireRole("Analista", "Gestor", "Administrador")`
+  (`F1 src/modules/requests/requests.router.ts:79-84`).
+- Body JSON (`F1 src/modules/requests/requests.schema.ts:143-148`):
+
+  | Bloco           | Campos                                                                                                         | Observação                                                                                            |
+  | --------------- | -------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+  | `requester`     | `area`, `department?`, `manager`, `additionalContact?`                                                         | `fullName`/`corporateEmail` **não existem** no schema; se enviados, são descartados pelo strip do Zod |
+  | `demand`        | `title`, `requestType`, `category`, `processName`, `description`, `problem`, `expectedResult`, `justification` | mesmos limites do POST                                                                                |
+  | `operational`   | os 14 campos do POST                                                                                           | `desiredDeadline` precisa ser **hoje ou futura** em America/Sao_Paulo                                 |
+  | `complementary` | os 5 campos opcionais                                                                                          | opcional                                                                                              |
+
+- Semântica de **substituição completa**: chave ausente no payload vira `NULL` no banco, inclusive
+  `complementary` omitido por inteiro (`F1 src/modules/requests/requests.repository.ts:910-978`;
+  `F1 src/modules/requests/requests.service.ts:667-670`).
+- `last_external_update_at` não é tocado (`F1 src/modules/requests/requests.repository.ts:911-914`).
+- Chaves desconhecidas são descartadas (strip), não recusadas (`F1 src/modules/requests/requests.schema.ts:139-141`).
+
+**Autorização de escrita:** `Administrador` e `Gestor` editam qualquer solicitação; `Analista`
+apenas aquelas em que `requests.professional_id` é o seu `details_professional.professional_id`
+(`F1 src/modules/requests/requests.service.ts:787-798`). Solicitação sem responsável não é
+editável por Analista.
+
+**Response 2xx** — `200` com o mesmo `RequestInternalDetailDTO` de §9.10, relido após a transação
+(`F1 src/modules/requests/requests.service.ts:816-818`).
+
+**Erros**
+
+| Status | `code` | Mensagem literal                                                                                        | Condição                               | Evidência                                                                                                |
+| ------ | ------ | ------------------------------------------------------------------------------------------------------- | -------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| 401    | —      | `"Token não fornecido"` / `"Token inválido ou expirado"`                                                | sem sessão/sessão inválida             | `F1 src/shared/middleware/auth.ts:27-45,87-95`                                                           |
+| 403    | —      | `"Acesso restrito ao perfil Analista ou Gestor ou Administrador"`                                       | perfil `Solicitante`                   | `F1 src/shared/middleware/requireRole.ts:21-22`                                                          |
+| 403    | —      | `"Acesso restrito às solicitações atribuídas a você"`                                                   | `Analista` sem custódia da solicitação | `F1 src/modules/requests/requests.service.ts:791-798`                                                    |
+| 404    | —      | `"Solicitação não encontrada"`                                                                          | protocolo inexistente                  | `F1 src/modules/requests/requests.service.ts:781-785`                                                    |
+| 422    | —      | mensagem agregada (`"Campos obrigatórios ausentes: ..."` / `"Campos inválidos: ..."`) + `fields` objeto | corpo inválido                         | `F1 src/modules/requests/requests.controller.ts:104-108`; `F1 src/shared/validation/zodErrors.ts:99-117` |
+| 500    | —      | `"Erro interno do servidor"`                                                                            | falha não prevista                     | `F1 src/shared/middleware/errorHandler.ts:32-45`                                                         |
+
+O `422` é o único erro de validação do domínio que devolve `fields` como objeto chave→mensagem
+(`F1 src/shared/middleware/errorHandler.ts:23-30`), com a chave de UI
+`operational.hasManualControlsDetail` para o campo `operational.hasManualControls`
+(`F1 src/shared/validation/zodErrors.ts:13-21`). Exemplo de corpo:
+
+```json
+{
+  "status": "error",
+  "statusCode": 422,
+  "message": "Campos obrigatórios ausentes: operational.hasManualControlsDetail",
+  "fields": {
+    "operational.hasManualControlsDetail": "Campo obrigatório."
+  }
+}
+```
+
+**Transporte:** JSON; a transação grava blocos, dados editáveis do solicitante e auditoria
+`request.update` com `previousValue`/`newValue` serializados (`F1 src/modules/requests/requests.service.ts:800-814`).
+
+**Evidência:** `F1 src/modules/requests/requests.router.ts:76-84`; `F1 src/modules/requests/requests.controller.ts:95-118`; `F1 src/modules/requests/requests.service.ts:667-819`; `F1 src/modules/requests/requests.repository.ts:910-993`.
+
+### 9.12 POST /requests
+
+**Request**
+
+- Path `/requests`; `requireAccessMode()` **antes** de `uploadFields` (`F1 src/modules/requests/requests.router.ts:86-88`).
+- `multipart/form-data` com duas partes nomeadas (`F1 src/shared/middleware/upload.ts:35-38`):
+
+  | Parte  | Nome          | Quantidade   | Conteúdo                                            |
+  | ------ | ------------- | ------------ | --------------------------------------------------- |
+  | JSON   | `payload`     | exatamente 1 | texto cujo valor é o JSON de `CreateRequestPayload` |
+  | anexos | `attachments` | 0 a 5        | binário                                             |
+
+- Limites do multer (`F1 src/shared/middleware/upload.ts:13-23`): 10 MB por arquivo, 5 arquivos,
+  2 MB por campo de texto.
+- MIME aceito (`F1 src/shared/middleware/upload.ts:5-11`): `application/pdf`,
+  `application/vnd.openxmlformats-officedocument.wordprocessingml.document`,
+  `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`, `image/png`,
+  `image/jpeg`.
+- Payload JSON (`F1 src/modules/requests/requests.schema.ts:90-117`):
+
+  | Bloco                  | Campos e limites                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+  | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+  | `requester`            | `fullName` (150), `corporateEmail` (e-mail, 254), `area` (100), `department?` (100), `manager` (150), `additionalContact?` (100)                                                                                                                                                                                                                                                                                                                                               |
+  | `demand`               | `title` (150), `requestType` (80), `category` (80), `processName` (150), `description` (4.000), `problem` (4.000), `expectedResult` (4.000), `justification` (4.000)                                                                                                                                                                                                                                                                                                           |
+  | `operational`          | `processDescription` (4.000), `processSteps` (4.000), `systemsUsed` (255), `executionFrequency` (50), `volumetry` (100), `peopleInvolved` (inteiro > 0), `averageExecutionTime` (60), `monthlyEffortHours` (0–99.999.999,99), `hasManualControls` (`false` ou texto 1–1.000), `mainRisks` (2.000), `clientImpact` (2.000), `operationalImpact` (`Baixo`/`Médio`/`Alto`/`Crítico`), `desiredDeadline` (`yyyy-mm-dd`), `perceivedCriticality` (`Baixa`/`Média`/`Alta`/`Crítica`) |
+  | `complementary?`       | `hasProcessDocumentation?`, `hasSimilarSolution?`, `dependsOnOtherAreas?`, `handlesRestrictedInfo?`, `additionalNotes?` (2.000)                                                                                                                                                                                                                                                                                                                                                |
+  | `schedulePreferences?` | 1 a 3 strings `yyyy-mm-ddThh:mm`, sem duplicatas, data de calendário válida                                                                                                                                                                                                                                                                                                                                                                                                    |
+
+- Em modo `AUTHENTICATED`, `requester.fullName` e `requester.corporateEmail` do payload são
+  **sobrescritos** pelo cadastro do usuário da sessão (`F1 src/modules/requests/requests.service.ts:111-116,125-139`); os campos continuam obrigatórios na
+  validação. O vínculo `requests.requester_user_id` é gravado; em `PUBLIC` fica `NULL` (`F1 src/modules/requests/requests.repository.ts:190-203`).
+- `demand.category` precisa existir em `categories` com `status = 'active'` (`F1 src/modules/requests/requests.repository.ts:55-61,306-310`). A solicitação nasce no status
+  `"Solicitação enviada"` (`F1 src/modules/requests/requests.repository.ts:36,312`).
+- Protocolo: `generateProtocol(request_id)` produz `MAAT-XXXX-XXXX` por cifra de Feistel/HMAC sobre
+  o id interno, alfabeto `0123456789ABCDEFGHJKMNPQRSTVWXYZ` (sem `I`, `L`, `O`, `U`), 8 caracteres
+  (`F1 src/shared/protocol/generateProtocol.ts:4-10,46-58`); máscara fixa `"MAAT-"` no código
+  (`F1 src/shared/protocol/generateProtocol.ts:57`).
+- Os arquivos são gravados em disco **antes** do insert; qualquer falha posterior remove os
+  arquivos (`F1 src/modules/requests/requests.service.ts:119-122`; `F1 src/shared/storage/fileStorage.ts:14-54`).
+
+**Response 2xx** — `201` com `CreateRequestResponse` (`F1 src/modules/requests/requests.controller.ts:149`; `F1 src/modules/DTOs/requests/RequestResponse.dto.ts:26-32`):
+
+| Campo       | Tipo                | Observação                     |
+| ----------- | ------------------- | ------------------------------ |
+| `protocol`  | string              | `MAAT-XXXX-XXXX`               |
+| `status`    | string              | sempre `"Solicitação enviada"` |
+| `createdAt` | string ISO-8601 UTC | `requests.created_at`          |
+
+```json
+{
+  "protocol": "MAAT-8K3P-9X2M",
+  "status": "Solicitação enviada",
+  "createdAt": "2026-08-25T14:03:11.000Z"
+}
+```
+
+**Erros**
+
+| Status | `code` | Mensagem literal                                                                                        | Condição                                                                       | Evidência                                                                                                |
+| ------ | ------ | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------- |
+| 400    | —      | `"Parte 'payload' ausente no corpo da requisição."`                                                     | parte `payload` ausente, vazia ou não textual                                  | `F1 src/modules/requests/requests.controller.ts:121-125`                                                 |
+| 400    | —      | `"A parte 'payload' contém um JSON inválido."`                                                          | `JSON.parse` falha                                                             | `F1 src/modules/requests/requests.controller.ts:127-131`                                                 |
+| 400    | —      | mensagem agregada `"Campos obrigatórios ausentes: <paths>"` / `"Campos inválidos: <path> — <mensagem>"` | payload fora do schema                                                         | `F1 src/modules/requests/requests.controller.ts:134-137`; `F1 src/shared/validation/zodErrors.ts:57-91`  |
+| 400    | —      | `"Formato de arquivo não permitido. Aceitos: PDF, DOCX, XLSX, PNG e JPG."`                              | MIME fora da allowlist                                                         | `F1 src/shared/middleware/upload.ts:24-32`                                                               |
+| 400    | —      | `"Cada anexo deve ter no máximo 10MB."`                                                                 | `LIMIT_FILE_SIZE`                                                              | `F1 src/shared/middleware/upload.ts:42-46`                                                               |
+| 400    | —      | `"Máximo de 5 anexos por solicitação."`                                                                 | `LIMIT_FILE_COUNT`                                                             | idem                                                                                                     |
+| 400    | —      | `"Parte de arquivo inesperada na requisição."`                                                          | `LIMIT_UNEXPECTED_FILE`                                                        | idem                                                                                                     |
+| 400    | —      | `"Erro ao processar o upload dos anexos."`                                                              | outro `MulterError` (ex.: `LIMIT_FIELD_VALUE` do `payload` acima de 2 MB)      | `F1 src/shared/middleware/upload.ts:54-60`                                                               |
+| 400    | —      | `"Categoria inválida — selecione uma opção da lista."`                                                  | `demand.category` não está ativa em `categories`                               | `F1 src/modules/requests/requests.repository.ts:308-310`                                                 |
+| 401    | —      | `"Token não fornecido"` / `"Token inválido ou expirado"`                                                | `AUTHENTICATED` sem sessão/sessão inválida                                     | `F1 src/shared/middleware/auth.ts:27-45,87-95`                                                           |
+| 401    | —      | `"Sessão inválida"`                                                                                     | usuário da sessão inativo ao resolver a identidade                             | `F1 src/modules/requests/requests.service.ts:71-79`                                                      |
+| 403    | —      | `"Troca de senha obrigatória antes de continuar"`                                                       | `must_change_password`                                                         | `F1 src/shared/middleware/auth.ts:49-61`                                                                 |
+| 500    | —      | `"Erro interno do servidor"`                                                                            | falha não prevista (inclusive status inicial ausente, que lança `Error` comum) | `F1 src/shared/middleware/errorHandler.ts:32-45`; `F1 src/modules/requests/requests.repository.ts:63-73` |
+
+**Divergente (legado vigente):** MIME inválido e estouro de tamanho respondem `400`, não `415`/
+`413` — convenção §9 de `docs/04-API-Conventions.md` (harmonização registrada na própria §9).
+
+**Divergente (legado vigente):** a parte `payload` acima de 2 MiB cai em `LIMIT_FIELD_VALUE` e
+recebe a mensagem genérica com `400`; a convenção §9 pede `413 payload_too_large` para a parte JSON.
+
+**Divergente (legado vigente):** o prefixo `MAAT` é constante de código; o ADR-0008 define o
+prefixo como máscara configurada no portal (`protocol_mask`).
+
+**Transporte:** multipart; o `Content-Type` da parte `payload` é ignorado pelo parser de campos de
+texto (`F1 docs/solicitations-api-requests-0_4.md` §1 — nota de implementação); os metadados do
+anexo (`fileName`, `mimeType`, `sizeBytes`) são derivados da parte, nunca declarados no payload
+(`F1 src/shared/storage/fileStorage.ts:34-40`); o nome em disco recebe um UUID, e o nome original
+fica só no banco (`F1 src/shared/storage/fileStorage.ts:31-38`). `201` é o único `201` deste
+domínio — todas as outras escritas respondem `200`.
+
+**Evidência:** `F1 src/modules/requests/requests.router.ts:86-88`; `F1 src/modules/requests/requests.controller.ts:120-150`; `F1 src/shared/middleware/upload.ts:5-64`; `F1 src/modules/requests/requests.service.ts:105-139`; `F1 src/modules/requests/requests.repository.ts:173-335`; `F1 src/shared/protocol/generateProtocol.ts:46-58`.
+
+### 9.13 Visão do consumidor (F2) e drift
+
+O consumidor cobre 8 das 10 rotas; duas não têm chamada em F2.
+
+| Rota                                          | Chamada em F2                                                                                 | Observação                                                                                              |
+| --------------------------------------------- | --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `GET /requests`                               | `listRequests` (`F2 src/lib/api/request.api.ts:44-66`)                                        | envia `search` quando presente                                                                          |
+| `GET /requests/assignees`                     | **nenhuma**                                                                                   | a lista de responsáveis vem de `GET /users/analysts` (`F2 src/lib/services/assignment.service.ts:1-40`) |
+| `PATCH /requests/:protocol/internal/assignee` | `assignAnalyst` (`F2 src/lib/api/request.api.ts:160-186`)                                     | envia `assigneeId` ou `mappingAssigneeId` conforme `responsibility`                                     |
+| `PATCH /requests/:protocol/assignee`          | **nenhuma**                                                                                   | alias legado sem consumidor em F2                                                                       |
+| `GET /requests/:protocol/tracking`            | `getPublicTracking` / `getSessionTracking` (`F2 src/lib/api/requester-tracking.api.ts:41-68`) | mesmo endpoint, credencial diferente                                                                    |
+| `PATCH /requests/:protocol/status`            | `updateRequestStatus` (`F2 src/lib/api/status.api.ts:9-34`)                                   | corpo `{ targetStatus, justification, lastTechnicalMessage? }`                                          |
+| `GET /requests/:protocol`                     | `getRequestByProtocol` (`F2 src/lib/api/request.api.ts:107-120`)                              | usado pela busca por protocolo (`F2 src/lib/services/request.service.ts:202-239`)                       |
+| `GET /requests/:protocol/internal`            | `getInternalRequest` (`F2 src/lib/api/request.api.ts:122-133`)                                |                                                                                                         |
+| `PATCH /requests/:protocol/internal`          | `updateInternalRequest` (`F2 src/lib/api/request.api.ts:137-156`)                             | comentário do F2 ainda chama o método de "proposto"                                                     |
+| `POST /requests`                              | `createRequest` (`F2 src/lib/api/request.api.ts:21-42`)                                       | `FormData` com `payload` + N `attachments`                                                              |
+
+Drift anotado, sem decisão:
+
+- **`search` sem efeito:** F2 envia `search` em `GET /requests` (`F2 src/lib/api/request.api.ts:57`) e o tipo declara o campo (`F2 src/lib/types/request.ts:344-348`),
+  mas o schema do backend não tem `search` e o `z.object` descarta a chave (§9.3).
+- **`email` opcional no tipo, obrigatório em `PUBLIC`:** `ListRequestsQuery.email?` (`F2 src/lib/types/request.ts:344-348`) contra a exigência do backend em modo público (§9.3).
+- **Protocolo e status tipados de forma diferente:** F2 fecha `RequestStatus` em união literal
+  (`F2 src/lib/types/request.ts:4-21`) e valida protocolo só por estrutura
+  (`/^[A-Za-z0-9]{1,10}-[A-Za-z0-9]{4}-[A-Za-z0-9]{4}$/`, `F2 src/lib/utils/validations.ts:252-256`), enquanto o backend tipa `RequestStatus = string` (`F1 src/shared/types/requests.ts:26`) e devolve o protocolo sem validação de máscara (§9.9).
+- **Campos que F2 espera e o backend não devolve no DTO interno:** `assigneeDeadline` (`F2 src/lib/types/request.ts:442-443`), `mappingAssigneeId` (`F2 src/lib/types/request.ts:439-441`),
+  `lastExternalUpdateAt` (`F2 src/lib/types/request.ts:463`), `lastTechnicalMessage` (`F2 src/lib/types/request.ts:466`), `triage` (`F2 src/lib/types/request.ts:468`) e
+  `prioritization.notes` (`F2 src/lib/types/request.ts:401-407`). O DTO de `F1` não tem esses
+  campos (`F1 src/modules/DTOs/requests/RequestInternalDetail.dto.ts:62-85`).
+- **Campos que o backend devolve e F2 marca como opcionais:** `correctionAlert`,
+  `pendingSummary`, `unread` (`F2 src/lib/types/request.ts:444-449`) são sempre emitidos por
+  `F1` (`F1 src/modules/requests/requests.service.ts:313-318`).
+- **`RequestSummary.demandTitle?`:** declarado opcional em F2 (`F2 src/lib/types/request.ts:358-367`) e nunca emitido pelo backend (§9.3).
+- **Retirada de responsável não é exercitada:** `assignAnalyst` sempre envia um id string e nunca
+  `null` (`F2 src/lib/api/request.api.ts:172-183`); o caminho de remoção existe só no backend
+  (§9.5).
+- **`assigneeDeadline` enviado ao mock, não ao backend:** a assinatura carrega o prazo e há `TODO`
+  explícito para incluí-lo no payload quando o contrato suportar (`F2 src/lib/api/request.api.ts:164-176`); `assignRequestSchema`/`assignAnalystSchema` não têm esse
+  campo (`F1 src/modules/requests/requests.schema.ts:175-202`).
+- **Acompanhamento convive com o detalhe público:** a página `/acompanhar/[protocolo]` usa
+  `tracking` (`F2 src/routes/(public)/acompanhar/[protocolo]/+page.svelte:97-98,161-162`), e a
+  busca por protocolo continua usando `GET /requests/:protocol` (`F2 src/lib/services/request.service.ts:223-224`).
+- **Tradução de erro no consumidor:** F2 troca a mensagem do backend por texto próprio em vários
+  fluxos, por exemplo `"Não foi possível carregar as solicitações."` (`F2 src/lib/services/request.service.ts:50-58`) e
+  `"Você não tem permissão para atribuir um analista."` para `403` (`F2 src/lib/services/assignment.service.ts:90-97`).
+
+### 9.14 Confronto com docs/04-API-Conventions.md
+
+| Convenção                                                   | Legado nesta seção                                                                                   | Veredito                                                           |
+| ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| §1 base path `/api/v1`                                      | rotas na raiz (`F1 src/router.ts:24`)                                                                | divergente (legado vigente)                                        |
+| §2 envelope de erro                                         | `{ status, statusCode, message }` + `code` aditivo                                                   | compatível                                                         |
+| §2.3/§11 `code` em `snake_case`                             | `"INSUFFICIENT_ROLE_PERMISSIONS"` em maiúsculas (`F1 src/modules/requests/requests.service.ts:891`)  | divergente (legado vigente)                                        |
+| §3/§5 validação `400` + `fields` array                      | `422` + `fields` objeto em `PATCH .../internal` (§9.11); `400` + mensagem agregada nas demais        | divergente (legado vigente) — C2, decisão D12 de #19               |
+| §4/§4.2 paginação `20`/`100` + clamp                        | `GET /requests` usa `10`/`10` e não faz clamp (`F1 src/modules/requests/requests.schema.ts:155-165`) | divergente (legado vigente)                                        |
+| §4.3 listagem não paginada                                  | `GET /requests/assignees` sem paginação e sem linha de exceção (§9.4)                                | divergente (legado vigente)                                        |
+| §8.1 concorrência com `targetStatusKey`/`expectedStatusKey` | `targetStatus` numérico e precondição lida no servidor (§9.8)                                        | divergente (legado vigente)                                        |
+| §8.2 idempotência                                           | `POST` não idempotente; `PATCH` de status repetido devolve `422`, não `409`                          | divergente (legado vigente)                                        |
+| §9 content types e multipart                                | MIME e tamanho respondem `400`; parte JSON grande responde `400` genérico (§9.12)                    | divergente (legado vigente)                                        |
+| §10 datas                                                   | timestamps ISO-8601 UTC; `desiredDeadline`/`mappingDate`/`estimatedCompletion` em `yyyy-mm-dd`       | compatível                                                         |
+| §11 idioma                                                  | chaves camelCase, valores pt-BR                                                                      | compatível (exceto `code`, acima)                                  |
+| §12 `x-request-id`                                          | ausente                                                                                              | divergente (legado vigente) — ver §3.10 do baseline                |
+| §13 rate limit do tracking                                  | rota sem limite próprio                                                                              | compatível; o gate do `verify` não é verificado no servidor (§9.7) |
+| §15.1 status por `key`, sem id numérico no wire             | `targetStatus` é `status_id` numérico (§9.8)                                                         | divergente (legado vigente) — ADR-0021                             |
+| §15.3 header do solicitante                                 | `X-Requester-Identity` com nome+e-mail e `401` genérico (§9.7)                                       | divergente (legado vigente) — ADR-0023                             |
+| §15.4 códigos de sucesso                                    | `200` em leitura/atualização, `201` só na criação (§9.12)                                            | compatível                                                         |
+| ADR-0008 máscara de protocolo                               | prefixo `MAAT` fixo no código (§9.12)                                                                | divergente (legado vigente)                                        |
+| ADR-0017 Gestor somente leitura                             | Gestor recebe `403` ao atribuir e ao trocar status (§9.5, §9.6, §9.8)                                | compatível                                                         |
+
+**Cobertura da seção:** 10 de 10 rotas do inventário.
+
+1. `GET /requests`
+2. `GET /requests/assignees`
+3. `PATCH /requests/:protocol/internal/assignee`
+4. `PATCH /requests/:protocol/assignee`
+5. `GET /requests/:protocol/tracking`
+6. `PATCH /requests/:protocol/status`
+7. `GET /requests/:protocol`
+8. `GET /requests/:protocol/internal`
+9. `PATCH /requests/:protocol/internal`
+10. `POST /requests`
