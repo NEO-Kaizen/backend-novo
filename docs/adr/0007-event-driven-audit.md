@@ -8,7 +8,7 @@ O produto exige trilha de auditoria imutável, gravada na mesma transação da a
 
 Decidimos que a auditoria da **alteração** é **orientada a evento**: o domínio que causa a alteração publica um evento de domínio com payload imutável e autocontido, e o domínio de auditoria assina o evento e grava o registro. A publicação acontece dentro da transação e a entrega é **síncrona e awaited** — o handler de auditoria roda inline, usa a mesma transação, e uma falha nele **desfaz a alteração**.
 
-O produto também considera importante registrar **tentativas recusadas** — ações que foram negadas por autorização ou por regra de negócio. Essa trilha tem garantia diferente e **não pode** estar dentro da transação: ela existe justamente porque a transação foi desfeita. Por isso a tentativa é gravada **na borda**, pelo *error handler*, a partir de um `DomainError` que carrega o contexto da recusa. Chegando à borda, a transação já foi desfeita, então a gravação acontece fora dela por construção.
+O produto também considera importante registrar **tentativas recusadas** — ações que foram negadas por autorização ou por regra de negócio. Essa trilha tem garantia diferente e **não pode** estar dentro da transação: ela existe justamente porque a transação foi desfeita. Por isso a tentativa é gravada **na borda**, pelo _error handler_, a partir de um `DomainError` que carrega o contexto da recusa. Chegando à borda, a transação já foi desfeita, então a gravação acontece fora dela por construção.
 
 ## Alternativas consideradas
 

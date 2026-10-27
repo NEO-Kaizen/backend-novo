@@ -20,9 +20,15 @@ The architectural review is rendered as a single self-contained HTML file in the
     <style>
       /* small custom layer for things Tailwind doesn't cover cleanly:
          dashed seam lines, hand-drawn-feeling arrow heads, etc. */
-      .seam { stroke-dasharray: 4 4; }
-      .leak { stroke: #dc2626; }
-      .deep { background: linear-gradient(135deg, #0f172a, #1e293b); }
+      .seam {
+        stroke-dasharray: 4 4;
+      }
+      .leak {
+        stroke: #dc2626;
+      }
+      .deep {
+        background: linear-gradient(135deg, #0f172a, #1e293b);
+      }
     </style>
   </head>
   <body class="bg-stone-50 text-slate-900 font-sans">
@@ -120,6 +126,6 @@ Write in clear, concise Portuguese, but the architectural nouns and verbs come s
 - "Aprofunde: uma interface, um lugar para testar."
 - "Dois adapters justificam a seam: HTTP em produção, in-memory nos testes."
 
-**Wins bullets** name the gain in glossary terms: *"locality: bugs se concentram em um module"*, *"leverage: uma interface, N call sites"*, *"interface encolhe; implementation absorve os wrappers"*. Don't write *"mais fácil de manter"* or *"código mais limpo"*, because those terms aren't in the glossary and don't earn their place.
+**Wins bullets** name the gain in glossary terms: _"locality: bugs se concentram em um module"_, _"leverage: uma interface, N call sites"_, _"interface encolhe; implementation absorve os wrappers"_. Don't write _"mais fácil de manter"_ or _"código mais limpo"_, because those terms aren't in the glossary and don't earn their place.
 
 No hedging, no throat-clearing, no "it's worth noting that…". If a sentence could be a bullet, make it a bullet. If a bullet could be cut, cut it. If a term isn't in the `/codebase-design` glossary, reach for one that is before inventing a new one.

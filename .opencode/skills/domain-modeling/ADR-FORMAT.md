@@ -14,7 +14,7 @@ Create the `docs/adr/` directory lazily: only when the first ADR is needed.
 {1-3 frases: qual era o contexto, o que decidimos e por quê.}
 ```
 
-That's it. An ADR can be a single paragraph. The value is in recording *that* a decision was made and *why*, not in filling out sections.
+That's it. An ADR can be a single paragraph. The value is in recording _that_ a decision was made and _why_, not in filling out sections.
 
 ## Optional sections
 

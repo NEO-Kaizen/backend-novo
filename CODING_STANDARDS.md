@@ -87,10 +87,7 @@ import type { User } from "./user.ts";
 - Evite `await` em loop para I/O independente; paralelize com limite.
 
 ```ts
-const [user, orders] = await Promise.all([
-  users.findById(id),
-  orders.listByUser(id),
-]);
+const [user, orders] = await Promise.all([users.findById(id), orders.listByUser(id)]);
 ```
 
 ## 5. Erros
@@ -180,7 +177,10 @@ if (!parsed.success) {
 - Use `res.status(...).json(...)`; não responda duas vezes.
 
 ```ts
-const getUser: RequestHandler<{ id: string }, UserDto, never, never, AppLocals> = async (req, res) => {
+const getUser: RequestHandler<{ id: string }, UserDto, never, never, AppLocals> = async (
+  req,
+  res,
+) => {
   const user = await users.findById(req.params.id);
   res.status(200).json(user);
 };

@@ -6,7 +6,7 @@ status: aceito
 
 O backend legado importa a conexão de banco como singleton de módulo: 22 arquivos dependem de `src/database/conexion.ts` diretamente, incluindo serviços. Isso torna o Postgres o único banco possível, impede qualquer teste sem banco real e esconde as dependências de cada módulo.
 
-Decidimos que **toda dependência chega pelo construtor** e que a montagem acontece em um único ponto, o *composition root* (`src/container.ts`), que é o único arquivo que sabe quais implementações concretas existem. Não há container de injeção, decorator ou registro global de dependências.
+Decidimos que **toda dependência chega pelo construtor** e que a montagem acontece em um único ponto, o _composition root_ (`src/container.ts`), que é o único arquivo que sabe quais implementações concretas existem. Não há container de injeção, decorator ou registro global de dependências.
 
 ## Alternativas consideradas
 
