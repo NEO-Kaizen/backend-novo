@@ -2290,3 +2290,779 @@ Não há em F2 rotas alternativas para leitura: o consumidor usa exatamente as 8
 - #10 `PATCH /portal-config/categories` (§7.8)
 - #11 `PATCH /portal-config/statuses` (§7.9)
 - #12 `PATCH /portal-config/prioritization-weights` (§7.10)
+
+## 8. users
+
+O domínio `users` cobre o diretório de analistas, o self-service "Meus dados" e a gestão administrativa de
+contas: listagem, criação, consulta, atualização, ativação/desativação e reset de senha. Nenhuma rota do
+domínio emite `code` no erro; o envelope é o da §3.3 do baseline, acrescido de `fields` apenas no `422`
+de criação/atualização administrativa.
+
+### 8.1 Fontes
+
+| Ref | Arquivo                                                                              | Uso                                                                                  |
+| --- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------ |
+| F1  | `src/modules/users/users.router.ts`                                                  | montagem, split de autenticação/autorização                                          |
+| F1  | `src/modules/users/users.controller.ts`                                              | parsing de request, validação, status de sucesso                                     |
+| F1  | `src/modules/users/users.service.ts`                                                 | regras de self-service, hierarquia de contas, avatar, auditoria                      |
+| F1  | `src/modules/users/users.repository.ts`                                              | queries, paginação, extensões 1:1, métricas                                          |
+| F1  | `src/modules/users/users.schema.ts`                                                  | schemas Zod de criação, listagem, status e atualização                               |
+| F1  | `src/modules/DTOs/users/UpdateProfileRequest.dto.ts`                                 | schema estrito do `payload` de `PUT /users/me`                                       |
+| F1  | `src/modules/DTOs/users/{UserRequests,UserResponse,UserProfileResponse}.dto.ts`      | contratos TypeScript de entrada e saída                                              |
+| F1  | `src/shared/middleware/uploadAvatar.ts`                                              | multipart do avatar (limites, MIME, erros)                                           |
+| F1  | `src/shared/middleware/auth.ts`, `src/shared/middleware/requireRole.ts`              | sessão e gate administrativo                                                         |
+| F1  | `src/shared/types/{user,role}.ts`, `src/shared/utils/{roleUtils,passwordHandler}.ts` | tipos e geração de senha temporária                                                  |
+| F1  | `src/shared/validation/fieldSchemas.ts`, `src/shared/validation/zodErrors.ts`        | limites, charset e formato do erro de validação                                      |
+| F1  | `docs/users-api-profile-0_1.md`                                                      | contrato do legado para "Meus dados" (`GET`/`PUT /users/me`, `GET`/`PUT /users/:id`) |
+| F1  | `docs/users-api-metrics-0_1.md`                                                      | contrato do legado para `GET /users/metrics`                                         |
+| F1  | `docs/contract-assign-action.md`                                                     | contrato do legado para `GET /users/analysts`                                        |
+| F2  | `src/lib/api/user.api.ts`                                                            | chamadas do consumidor                                                               |
+| F2  | `src/lib/types/user.ts`                                                              | tipagem do consumidor                                                                |
+| F2  | `src/lib/types/request.ts`                                                           | `PaginatedResponse<T>` consumido pela listagem                                       |
+
+### 8.2 Rotas
+
+| #   | Método | Path                        | Autenticação/autorização         | Handler             | Sucesso                              | Evidência                                 |
+| --- | ------ | --------------------------- | -------------------------------- | ------------------- | ------------------------------------ | ----------------------------------------- |
+| 13  | GET    | `/users/analysts`           | sessão (qualquer perfil interno) | `listAnalysts`      | 200 `AssignAnalyst[]`                | `F1 src/modules/users/users.router.ts:23` |
+| 14  | GET    | `/users/me`                 | sessão                           | `getMyProfile`      | 200 `UserProfileResponseDTO`         | `F1 src/modules/users/users.router.ts:26` |
+| 15  | PUT    | `/users/me`                 | sessão; multipart                | `updateMyProfile`   | 200 `UserProfileResponseDTO`         | `F1 src/modules/users/users.router.ts:29` |
+| 16  | GET    | `/users/metrics`            | Administrador                    | `getUserMetrics`    | 200 `UserMetricsResponse`            | `F1 src/modules/users/users.router.ts:32` |
+| 17  | GET    | `/users`                    | Administrador                    | `listUsers`         | 200 `PaginatedResponse<UserSummary>` | `F1 src/modules/users/users.router.ts:33` |
+| 18  | POST   | `/users`                    | Administrador                    | `createUser`        | 201 `CreateUserResponse`             | `F1 src/modules/users/users.router.ts:34` |
+| 19  | GET    | `/users/:id`                | Administrador                    | `getUser`           | 200 `UserProfileResponseDTO`         | `F1 src/modules/users/users.router.ts:35` |
+| 20  | PUT    | `/users/:id`                | Administrador                    | `updateUser`        | 200 `UserProfileResponseDTO`         | `F1 src/modules/users/users.router.ts:36` |
+| 21  | PATCH  | `/users/:id/status`         | Administrador                    | `changeUserStatus`  | 200 `ChangeUserStatusResponse`       | `F1 src/modules/users/users.router.ts:37` |
+| 22  | POST   | `/users/:id/reset-password` | Administrador                    | `resetUserPassword` | 200 `ResetPasswordResponse`          | `F1 src/modules/users/users.router.ts:38` |
+
+**Split de autenticação/autorização.** As duas primeiras rotas (`/analysts` e `GET /me`) declaram
+`authMiddleware` individualmente e ficam **antes** do gate administrativo
+(`F1 src/modules/users/users.router.ts:23-26`). Em seguida o router aplica `authMiddleware` no nível do
+router (linha 28), declara `PUT /me` (linha 29) e só então aplica `requireRole("Administrador")` (linha
+30), que vale para as sete rotas seguintes (linhas 32-38). O efeito é: `analysts`, `GET /me` e `PUT /me`
+exigem apenas sessão interna; `metrics`, `GET/POST /users` e todas as rotas com `/:id` exigem
+`Administrador` (`F1 src/shared/middleware/requireRole.ts:9-23`).
+
+Erros comuns a todas as rotas do domínio (além dos erros específicos de cada subseção):
+
+| Status | code | Mensagem literal                                   | Condição                                                                               | Evidência                                                                                        |
+| ------ | ---- | -------------------------------------------------- | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| 401    | —    | `"Token não fornecido"`                            | sem cookie de sessão                                                                   | `F1 src/shared/middleware/auth.ts:27-29`                                                         |
+| 401    | —    | `"Token inválido ou expirado"`                     | token inválido/expirado, usuário ou perfil inativo, ou `req.user.id` não inteiro       | `F1 src/shared/middleware/auth.ts:37-45,87-95`; `F1 src/modules/users/users.controller.ts:14-23` |
+| 401    | —    | `"Sua sessão foi revogada. Faça login novamente."` | `password_changed_at` do token difere do banco                                         | `F1 src/shared/middleware/auth.ts:63-72`                                                         |
+| 403    | —    | `"Troca de senha obrigatória antes de continuar"`  | sessão com `must_change_password = true` (exceto `/auth/change-password` e `/auth/me`) | `F1 src/shared/middleware/auth.ts:49-61`                                                         |
+| 403    | —    | `"Acesso restrito ao perfil Administrador"`        | perfil diferente de `Administrador` nas rotas administrativas                          | `F1 src/shared/middleware/requireRole.ts:16-22`                                                  |
+| 500    | —    | `"Erro interno do servidor"`                       | falha não prevista (mensagem genérica do `errorHandler`)                               | `F1 src/shared/middleware/errorHandler.ts:39-43`                                                 |
+
+**Divergente (legado vigente):** paths sem o prefixo `/api/v1` — convenção §1 de
+`docs/04-API-Conventions.md`.
+
+### 8.3 GET /users/analysts
+
+**Request** — sem query, sem body. O router registra explicitamente "sem query, sem paginação"
+(`F1 src/modules/users/users.router.ts:20-22`). `search` e `category` são filtrados no frontend
+(`F1 docs/contract-assign-action.md` §GET /users/analysts).
+
+**Response 200** — lista direta (sem envelope) de `AssignAnalyst`:
+
+| Campo         | Tipo           | Regra                                                                                                                                                             |
+| ------------- | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`          | string         | `user_id` convertido para string (`F1 src/modules/users/users.repository.ts:560`)                                                                                 |
+| `fullName`    | string         | `users.full_name`                                                                                                                                                 |
+| `email`       | string         | `users.email`                                                                                                                                                     |
+| `specialty`   | string         | `details_professional.job_title`, ou `""` quando nulo (`F1 src/modules/users/users.repository.ts:563`)                                                            |
+| `categories`  | string[]       | nomes das categorias ativas cujos ids estão em `attended_category_ids`; ids sem categoria ativa são omitidos (`F1 src/modules/users/users.repository.ts:522-557`) |
+| `notes`       | string \| null | `details_professional.notes`                                                                                                                                      |
+| `requestLoad` | number \| null | `COUNT(*)` ao vivo de `requests` por `professional_id`; `null` quando o analista não tem extensão (`F1 src/modules/users/users.repository.ts:530-545,566-568`)    |
+
+```json
+[
+  {
+    "id": "20",
+    "fullName": "Usuário Exemplo",
+    "email": "usuario.exemplo@example.com",
+    "specialty": "Especialista em processos",
+    "categories": ["Automação", "Apoio técnico"],
+    "notes": null,
+    "requestLoad": 4
+  }
+]
+```
+
+Filtro aplicado na query: `profiles.name = "analista"`, `profiles.is_active = true`, `users.is_active = true`
+e (`details_professional.status = "active"` **ou** extensão inexistente); ordenação por
+`users.full_name` ascendente (`F1 src/modules/users/users.repository.ts:502-518`). Analista sem linha em
+`details_professional` aparece na lista com `specialty: ""`, `categories: []`, `notes: null` e
+`requestLoad: null`.
+
+**Erros** — apenas os comuns da §8.2 mais `500` genérico. Não há `400`, `403` de perfil nem `404` nesta
+rota (`F1 src/modules/users/users.controller.ts:31-34`).
+
+**Transporte** — JSON; array sem paginação, sem `page`/`pageSize` e sem `total`. Cookie de sessão.
+
+**Evidência** — `F1 src/modules/users/users.router.ts:20-23`; `F1 src/modules/users/users.controller.ts:31-34`;
+`F1 src/modules/users/users.service.ts:79-81`; `F1 src/modules/users/users.repository.ts:495-571`;
+`F1 src/modules/DTOs/users/UserResponse.dto.ts:15-23`.
+
+**Desatualizado no legado:** `F1 docs/contract-assign-action.md` §GET /users/analysts descreve
+`Analyst extends UserSummary` com `profile`, `isActive`, `mustChangePassword` e `createdAt`; o código
+devolve somente `id`, `fullName`, `email`, `specialty`, `categories`, `notes` e `requestLoad`
+(`F1 src/modules/DTOs/users/UserResponse.dto.ts:15-23`). O mesmo documento afirma que `listUsers` aceita
+`category` na query; o schema de listagem não tem esse parâmetro (`F1 src/modules/users/users.schema.ts:59-79`).
+
+### 8.4 GET /users/me
+
+**Request** — sem path param, sem query, sem body. Exige cookie de sessão; o id vem de `req.user.id`
+(`F1 src/modules/users/users.controller.ts:112-116,14-23`).
+
+**Response 200** — `UserProfileResponseDTO`:
+
+| Campo          | Tipo           | Regra                                                                                                                                                                       |
+| -------------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`           | string         | `user_id` como string (`F1 src/modules/users/users.service.ts:297`)                                                                                                         |
+| `fullName`     | string         | `users.full_name`                                                                                                                                                           |
+| `email`        | string         | `users.email` (não editável no self-service; `PUT /users/:id` aceita alteração)                                                                                             |
+| `role`         | Role           | nome legível do perfil: `Solicitante`, `Analista`, `Gestor` ou `Administrador` (`F1 src/shared/utils/roleUtils.ts:5-21`)                                                    |
+| `avatarUrl`    | string \| null | caminho relativo `/uploads/avatars/<storageKey>` gravado em `users.avatar_url` (`F1 src/modules/users/users.service.ts:427-432`), ou `null`                                 |
+| `requester`    | objeto \| null | `{ area, department, manager, additionalContact }`, todos `string \| null`; `null` quando não há linha em `requesters` (`F1 src/modules/users/users.repository.ts:223-230`) |
+| `professional` | objeto \| null | `{ jobTitle, specialties[], attendedCategoryIds[], notes }`; ver regra de default abaixo (`F1 src/modules/users/users.service.ts:265-275,291-294`)                          |
+
+`professional` é `null` para perfis que não são `analista`. Para `analista` **sem** linha em
+`details_professional`, o bloco vem preenchido com `jobTitle: null`, `specialties: []`,
+`attendedCategoryIds: []`, `notes: null` (`F1 src/modules/users/users.service.ts:287-294`).
+`specialties` é lido de texto separado por `", "` e `attendedCategoryIds` de texto separado por `","`
+(`F1 src/modules/users/users.repository.ts:231-240`).
+
+```json
+{
+  "id": "42",
+  "fullName": "Usuário Exemplo",
+  "email": "usuario.exemplo@example.com",
+  "role": "Analista",
+  "avatarUrl": null,
+  "requester": {
+    "area": "Tecnologia",
+    "department": "Infraestrutura",
+    "manager": "Gestor Exemplo",
+    "additionalContact": null
+  },
+  "professional": {
+    "jobTitle": "Especialista em processos",
+    "specialties": ["Automação"],
+    "attendedCategoryIds": [1, 3],
+    "notes": null
+  }
+}
+```
+
+**Erros**
+
+| Status | code | Mensagem literal                                         | Condição                                                                                            |
+| ------ | ---- | -------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| 401    | —    | `"Token não fornecido"` / `"Token inválido ou expirado"` | §8.2                                                                                                |
+| 403    | —    | `"Troca de senha obrigatória antes de continuar"`        | senha temporária pendente                                                                           |
+| 404    | —    | `"Usuário não encontrado"`                               | sessão válida sem linha correspondente em `users` (`F1 src/modules/users/users.service.ts:281-285`) |
+
+**Transporte** — JSON; `avatarUrl` é URL relativa ao host e o arquivo é servido publicamente por
+`express.static` em `/uploads` (`F1 src/app.ts:24`). Datas não aparecem nesta resposta.
+
+**Evidência** — `F1 src/modules/users/users.router.ts:25-26`; `F1 src/modules/users/users.controller.ts:108-116`;
+`F1 src/modules/users/users.service.ts:277-305`; `F1 src/modules/users/users.repository.ts:200-242`;
+`F1 src/modules/DTOs/users/UserProfileResponse.dto.ts:3-28`.
+
+**Desatualizado no legado:** `F1 docs/users-api-profile-0_1.md` §0 afirma que `GET /users/me` e
+`PUT /users/me` "respeitam `system_settings.solicitation_mode`" (`PUBLIC`/`AUTHENTICATED`); no código as
+duas rotas só aplicam `authMiddleware`, sem middleware de modo do portal
+(`F1 src/modules/users/users.router.ts:23-29`). A §1 do mesmo documento diz que o bloco `professional`
+só existe quando há linha em `details_professional`, mas o código devolve o bloco com defaults para
+analista sem linha (`F1 src/modules/users/users.service.ts:291-294`).
+
+### 8.5 PUT /users/me
+
+**Request** — `multipart/form-data`, sem path param e sem query.
+
+| Parte     | Obrigatória | Tipo    | Regra                                                                                          |
+| --------- | ----------- | ------- | ---------------------------------------------------------------------------------------------- |
+| `payload` | sim         | texto   | JSON de `UpdateProfilePayload` (`F1 src/modules/DTOs/users/UpdateProfileRequest.dto.ts:47-53`) |
+| `avatar`  | não         | binário | 1 arquivo; imagem JPEG/PNG; 2 MB (`F1 src/shared/middleware/uploadAvatar.ts:14-29,61`)         |
+
+O `payload` precisa chegar como string não vazia; caso contrário → `400 "Parte 'payload' ausente no
+corpo da requisição."`; JSON inválido → `400 "A parte 'payload' contém um JSON inválido."`
+(`F1 src/modules/users/users.controller.ts:124-136`). Um corpo JSON puro (sem multipart) cai no primeiro
+erro, porque `req.body.payload` não existe.
+
+Campos aceitos no `payload` (schema estrito; chave desconhecida é recusada):
+
+| Campo                         | Tipo           | Regra                                                                                                                                                   |
+| ----------------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `fullName`                    | string         | `requiredText(150)`: `trim`, 1..150 e apenas letras e espaços — `"Campo obrigatório."`, `"Máximo de 150 caracteres."`, `"Use apenas letras e espaços."` |
+| `requester.additionalContact` | string \| null | `trim`, até 100; `""` vira `null`; `null` limpa                                                                                                         |
+| `requester.area`              | string         | `requiredText(100)`; aceito no self-service apenas para o próprio `Administrador`                                                                       |
+| `requester.department`        | string \| null | `optionalText(100)` ou `null`; mesma restrição de perfil                                                                                                |
+| `requester.manager`           | string         | `requiredText(150)`; mesma restrição de perfil                                                                                                          |
+| `removeAvatar`                | boolean        | `true` remove a foto atual                                                                                                                              |
+
+Os limites e o charset vêm de `F1 src/shared/validation/fieldSchemas.ts:5-10,32-57`; o bloco `requester`
+do self-service é `strict` (`F1 src/modules/DTOs/users/UpdateProfileRequest.dto.ts:15-22`) e o objeto
+raiz também (`:47-53`). `email`, `role` e `professional` são recusados no `payload` — o exemplo de
+recusa do legado é `400` com a mensagem `Campos inválidos: professional — Unrecognized key: "professional"`
+(`F1 docs/users-api-profile-0_1.md` §2).
+
+**Regras de autorização e efeito:**
+
+- `area`, `department` ou `manager` enviados por perfil diferente de `Administrador` → `403 "Área,
+departamento e gestor só podem ser alterados por administrador. Use PUT /users/:id."`, checado antes
+  do schema no controller (`F1 src/modules/users/users.controller.ts:138-160`) e novamente no service
+  com o perfil persistido no banco (`F1 src/modules/users/users.service.ts:360-372`).
+- `removeAvatar: true` junto com arquivo `avatar` → `400 "Envie 'removeAvatar' ou 'avatar', não ambos."`
+  (`F1 src/modules/users/users.service.ts:329-334`).
+- `fullName` atualiza `users.full_name` e sincroniza `requesters.full_name`/`corporate_email`
+  (`F1 src/modules/users/users.service.ts:351-358`).
+- O bloco `requester` faz merge parcial: campo ausente preserva o valor; linha inexistente é criada e
+  linha anônima com o mesmo e-mail corporativo é adotada (`F1 src/modules/users/users.repository.ts:597-664`).
+- Avatar novo substitui o anterior (arquivo antigo removido best-effort); `removeAvatar` apaga o arquivo
+  e grava `users.avatar_url = null` (`F1 src/modules/users/users.service.ts:390-401,435-441`;
+  `F1 src/modules/users/users.repository.ts:342-357`).
+- Tudo ocorre em uma transação com auditoria `user.update_profile` e `changeOrigin: "self"`
+  (`F1 src/modules/users/users.service.ts:350-417`); a resposta é o perfil relido por `getMyProfile`
+  (`:419`).
+
+**Response 200** — mesmo `UserProfileResponseDTO` da §8.4 (campos `id`, `fullName`, `email`, `role`,
+`avatarUrl`, `requester`, `professional`), já com os valores atualizados:
+
+```json
+{
+  "id": "17",
+  "fullName": "Usuário Exemplo Atualizado",
+  "email": "usuario.exemplo@example.com",
+  "role": "Solicitante",
+  "avatarUrl": "/uploads/avatars/<storageKey>.jpg",
+  "requester": {
+    "area": "Recursos Humanos",
+    "department": "Folha de Pagamento",
+    "manager": "Gestor Exemplo",
+    "additionalContact": "ramal 1234"
+  },
+  "professional": null
+}
+```
+
+**Erros**
+
+| Status | code | Mensagem literal                                                                                    | Condição                                                                                                                                                                    |
+| ------ | ---- | --------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 400    | —    | `"Parte 'payload' ausente no corpo da requisição."`                                                 | parte ausente, vazia ou corpo não multipart                                                                                                                                 |
+| 400    | —    | `"A parte 'payload' contém um JSON inválido."`                                                      | `JSON.parse` falha                                                                                                                                                          |
+| 400    | —    | `"Envie 'removeAvatar' ou 'avatar', não ambos."`                                                    | remoção e upload na mesma requisição                                                                                                                                        |
+| 400    | —    | mensagem agregada do Zod (ex.: `Campos inválidos: professional — Unrecognized key: "professional"`) | schema estrito/limites (`F1 src/modules/users/users.controller.ts:162-165`)                                                                                                 |
+| 401    | —    | `"Token não fornecido"` / `"Token inválido ou expirado"`                                            | §8.2                                                                                                                                                                        |
+| 403    | —    | `"Troca de senha obrigatória antes de continuar"`                                                   | senha temporária pendente                                                                                                                                                   |
+| 403    | —    | `"Área, departamento e gestor só podem ser alterados por administrador. Use PUT /users/:id."`       | perfil não administrador envia campo administrativo                                                                                                                         |
+| 403    | —    | `"Você não pode editar o perfil de outro usuário"`                                                  | actor diferente do dono — guarda do service (`F1 src/modules/users/users.service.ts:324-327`); a rota sempre usa o próprio id, então a condição não é alcançável pela borda |
+| 404    | —    | `"Usuário não encontrado"`                                                                          | dono da sessão sem linha em `users` (`F1 src/modules/users/users.service.ts:336-339`)                                                                                       |
+| 413    | —    | `"A foto de perfil deve ter no máximo 2MB."`                                                        | `LIMIT_FILE_SIZE` (`F1 src/shared/middleware/uploadAvatar.ts:63-79`)                                                                                                        |
+| 415    | —    | `Campo de arquivo inesperado: "<campo>".`                                                           | parte de arquivo com nome diferente de `avatar` (`:30-34`)                                                                                                                  |
+| 415    | —    | `Extensão "<ext>" não permitida para avatar. Aceitas: .jpg, .jpeg, .png.`                           | extensão fora da allowlist (`:36-45`)                                                                                                                                       |
+| 415    | —    | `MIME "<mime>" não permitido para avatar. Aceitos: image/jpeg, image/png.`                          | MIME fora da allowlist (`:47-55`)                                                                                                                                           |
+| 400    | —    | `"Máximo de 1 arquivo por requisição."`                                                             | `LIMIT_FILE_COUNT` (`:64-67,76-79`)                                                                                                                                         |
+| 400    | —    | `"Parte de arquivo inesperada na requisição."`                                                      | `LIMIT_UNEXPECTED_FILE` (`:66,76-79`)                                                                                                                                       |
+| 400    | —    | `"Erro ao processar o upload."`                                                                     | demais `MulterError` sem tradução, inclusive `LIMIT_FIELD_SIZE` da parte `payload` (`:76-79`)                                                                               |
+| 500    | —    | `"Falha ao salvar o avatar"`                                                                        | `saveFiles` não devolve anexo (`F1 src/modules/users/users.service.ts:427-431`)                                                                                             |
+
+**Transporte** — multipart com `multer.memoryStorage()`; limites `fileSize` 2 MB, `files: 1`, `fields: 1`,
+`fieldSize` 2 MB (`F1 src/shared/middleware/uploadAvatar.ts:20-29`). O `payload` é o único campo de texto
+aceito. JSON trafega como parte texto; datas não aparecem na resposta.
+
+**Evidência** — `F1 src/modules/users/users.router.ts:28-29`;
+`F1 src/modules/users/users.controller.ts:118-175`; `F1 src/modules/users/users.service.ts:312-441`;
+`F1 src/modules/DTOs/users/UpdateProfileRequest.dto.ts:9-53`;
+`F1 src/shared/middleware/uploadAvatar.ts:6-84`; `F1 src/app.ts:24`.
+
+**Desatualizado no legado:** `F1 docs/users-api-profile-0_1.md` §2 mapeia `LIMIT_UNEXPECTED_FILE` para
+`415`; no código esse código do multer responde `400 "Parte de arquivo inesperada na requisição."`
+(o `415` fica restrito ao `fileFilter`) (`F1 src/shared/middleware/uploadAvatar.ts:30-34,63-79`). O
+exemplo de `413` do documento usa a mensagem `"Arquivo excede o tamanho máximo permitido para esta
+chave."`; a mensagem vigente é `"A foto de perfil deve ter no máximo 2MB."` (`:64`).
+
+### 8.6 GET /users/metrics
+
+**Request** — sem query e sem body (`F1 src/modules/users/users.controller.ts:25-29`).
+
+**Response 200** — objeto único, sem envelope e sem paginação:
+
+| Campo     | Tipo   | Regra                                                                                |
+| --------- | ------ | ------------------------------------------------------------------------------------ |
+| `total`   | number | `COUNT(*)` sobre `users` com JOIN em `profiles`                                      |
+| `active`  | number | `COUNT` de `users.is_active = true`                                                  |
+| `pending` | number | `COUNT` de `users.must_change_password = true`, **independentemente** de `is_active` |
+| `admins`  | number | `COUNT` de `profiles.name = "administrador"`                                         |
+
+```json
+{ "total": 15, "active": 13, "pending": 3, "admins": 3 }
+```
+
+As quatro contagens saem de uma única query (`F1 src/modules/users/users.repository.ts:574-591`); a
+semântica de `pending` incluir inativos está registrada no contrato do legado
+(`F1 docs/users-api-metrics-0_1.md` §Observações).
+
+**Erros** — comuns da §8.2, incluindo `403 "Acesso restrito ao perfil Administrador"` para perfil
+diferente de `Administrador`. Sem `400`/`404` próprios.
+
+**Transporte** — JSON; sem paginação, sem auditoria e sem escrita.
+
+**Evidência** — `F1 src/modules/users/users.router.ts:30-32`; `F1 src/modules/users/users.controller.ts:25-29`;
+`F1 src/modules/users/users.repository.ts:573-591`; `F1 src/shared/types/user.ts:35-41`.
+
+**Desatualizado no legado:** `F1 docs/users-api-metrics-0_1.md` §1 afirma que o módulo aplica
+`authMiddleware` + `requireRole("Administrador")` "no nível do router, portanto todas as rotas,
+inclusive esta, exigem ... perfil de administrador". As rotas `/users/analysts` e `GET/PUT /users/me`
+ficam antes do `requireRole` e aceitam qualquer sessão interna
+(`F1 src/modules/users/users.router.ts:23-30`).
+
+### 8.7 GET /users
+
+**Request** — query string validada por `listUsersQuerySchema`:
+
+| Parâmetro  | Tipo    | Regra                                                                                                     |
+| ---------- | ------- | --------------------------------------------------------------------------------------------------------- |
+| `profile`  | string  | `trim`, 1..60; deve corresponder exatamente a um `profiles.name` do banco, senão `400 "Perfil inválido."` |
+| `search`   | string  | `trim`, até 150; busca `ILIKE` em `users.full_name` **ou** `users.email`, com `%`, `_` e `\` escapados    |
+| `page`     | inteiro | default `1`; 1..10000                                                                                     |
+| `pageSize` | inteiro | default `10`; 1..50                                                                                       |
+
+Chaves de query não declaradas são descartadas pelo Zod (o schema não é `strict`), inclusive `category`.
+A validação de sintaxe responde `400` com mensagem agregada
+(`F1 src/modules/users/users.controller.ts:36-46`); o `profile` é validado de novo contra a tabela e, se
+não existir, responde `400 "Perfil inválido."` (`F1 src/modules/users/users.service.ts:68-77`).
+
+**Response 200** — envelope efetivamente usado:
+
+| Campo        | Tipo            | Regra                                                           |
+| ------------ | --------------- | --------------------------------------------------------------- |
+| `data`       | `UserSummary[]` | itens da página                                                 |
+| `page`       | number          | ecoa a página pedida, sem clamp                                 |
+| `pageSize`   | number          | ecoa o tamanho pedido                                           |
+| `total`      | number          | total de linhas do filtro                                       |
+| `totalPages` | number          | `0` quando `total = 0`; caso contrário `ceil(total / pageSize)` |
+
+Item de `data`:
+
+| Campo                | Tipo           | Regra                                                |
+| -------------------- | -------------- | ---------------------------------------------------- |
+| `id`                 | string         | `user_id` como string                                |
+| `fullName`           | string         | `users.full_name`                                    |
+| `email`              | string         | `users.email`                                        |
+| `avatarUrl`          | string \| null | `users.avatar_url`                                   |
+| `profile`            | Role           | nome legível do perfil (campo `profile`, não `role`) |
+| `isActive`           | boolean        | `users.is_active`                                    |
+| `mustChangePassword` | boolean        | `users.must_change_password`                         |
+| `createdAt`          | string         | ISO-8601 do banco                                    |
+
+```json
+{
+  "data": [
+    {
+      "id": "42",
+      "fullName": "Usuário Exemplo",
+      "email": "usuario.exemplo@example.com",
+      "avatarUrl": null,
+      "profile": "Analista",
+      "isActive": true,
+      "mustChangePassword": false,
+      "createdAt": "2026-09-01T12:00:00.000Z"
+    }
+  ],
+  "page": 1,
+  "pageSize": 10,
+  "total": 1,
+  "totalPages": 1
+}
+```
+
+Ordenação `created_at DESC` e, em empate, `user_id DESC`; `offset = (page - 1) * pageSize`
+(`F1 src/modules/users/users.repository.ts:383-397`). Página acima de `totalPages` devolve `data: []`
+e ecoa a página pedida — não há clamp (`F1 src/modules/users/users.repository.ts:397,410-413`).
+
+**Erros**
+
+| Status  | code | Mensagem literal                                                                                                  | Condição                                                                                                                   |
+| ------- | ---- | ----------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| 400     | —    | `"Campos inválidos: pageSize — Máximo de 50 itens por página."` (ou equivalente para `page`, `profile`, `search`) | sintaxe da query inválida (`F1 src/modules/users/users.controller.ts:39-41`; `F1 src/modules/users/users.schema.ts:59-79`) |
+| 400     | —    | `"Perfil inválido."`                                                                                              | `profile` inexistente em `profiles` (`F1 src/modules/users/users.service.ts:69-74`)                                        |
+| 401/403 | —    | comuns da §8.2                                                                                                    | sessão/perfil                                                                                                              |
+
+**Transporte** — JSON paginado; `createdAt` em ISO-8601 UTC; `page` é 1-based.
+
+**Evidência** — `F1 src/modules/users/users.router.ts:30-33`; `F1 src/modules/users/users.controller.ts:36-46`;
+`F1 src/modules/users/users.schema.ts:59-79`; `F1 src/modules/users/users.repository.ts:359-415`;
+`F1 src/modules/DTOs/users/UserResponse.dto.ts:4-13`; `F1 src/shared/types/pagination.ts:1-7`.
+
+**Divergente (legado vigente):** o envelope coincide com a convenção §4.1, mas o default é `10`, o
+máximo é `50` e não há clamp de página — convenção §4.2 e a linha de migração da §4.3 de
+`docs/04-API-Conventions.md` (10/50 não são herdados; decisões C3/C4).
+
+### 8.8 POST /users
+
+**Request** — JSON:
+
+| Campo          | Tipo   | Regra                                                                                                                                                                       |
+| -------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `fullName`     | string | `requiredString(150)`: `trim`, 1..150 (aceita qualquer caractere; diferente do `fullName` de `PUT /users/:id`, que é `requiredText`)                                        |
+| `email`        | string | `trim`, minúsculas, formato de e-mail, até 254 — `"Informe um e-mail válido."`, `"Máximo de 254 caracteres."`                                                               |
+| `role`         | string | `trim`, 1..60; precisa existir como `profiles.name` (valores do banco em minúsculas: `solicitante`, `analista`, `gestor`, `administrador`) — senão `400 "Perfil inválido."` |
+| `requester`    | objeto | **obrigatório**: `area` (`requiredText(100)`), `department` (`optionalText(100)`), `manager` (`requiredText(150)`), `additionalContact` (string até 100, `""` vira `null`)  |
+| `professional` | objeto | obrigatório para `role = "analista"` e proibido para os demais perfis (regra do schema)                                                                                     |
+
+`professional`:
+
+| Campo                 | Tipo     | Regra                                                                                          |
+| --------------------- | -------- | ---------------------------------------------------------------------------------------------- |
+| `jobTitle`            | string   | `requiredString(100)`                                                                          |
+| `specialties`         | string[] | ao menos 1 item, cada `requiredString(100)` — `"Informe ao menos uma especialidade."`          |
+| `attendedCategoryIds` | number[] | ao menos 1 inteiro positivo — `"Id inválido."`, `"Selecione ao menos uma categoria atendida."` |
+| `notes`               | string   | opcional, `trim`, até 500 — `"Máximo de 500 caracteres."`                                      |
+
+O `superRefine` do schema emite `422` com `fields.professional` para as mensagens `"Dados
+profissionais são obrigatórios para o perfil Analista."` e `"Dados profissionais são exclusivos do
+perfil Analista."` (`F1 src/modules/users/users.schema.ts:33-57`). No service, a regra de
+obrigatoriedade tem guarda defensiva com a mesma mensagem sem ponto final e status `400`
+(`F1 src/modules/users/users.service.ts:124-130`); a exclusividade, no `POST`, é garantida apenas pelo
+schema.
+
+**Response 201** — `CreateUserResponse`:
+
+| Campo                | Tipo    | Regra                                                |
+| -------------------- | ------- | ---------------------------------------------------- |
+| `id`                 | string  | `user_id` como string                                |
+| `fullName`           | string  | `users.full_name`                                    |
+| `email`              | string  | e-mail normalizado (`trim` + minúsculas)             |
+| `role`               | Role    | nome legível do perfil criado                        |
+| `isActive`           | boolean | default do schema (`true`)                           |
+| `mustChangePassword` | boolean | gravado como `true` na criação                       |
+| `createdAt`          | string  | ISO-8601                                             |
+| `temporaryPassword`  | string  | senha temporária em claro, exibida **uma única vez** |
+
+```json
+{
+  "id": "42",
+  "fullName": "Usuário Exemplo",
+  "email": "usuario.exemplo@example.com",
+  "role": "Analista",
+  "isActive": true,
+  "mustChangePassword": true,
+  "createdAt": "2026-10-27T12:00:00.000Z",
+  "temporaryPassword": "<senha-temporaria>"
+}
+```
+
+**Efeitos:** o e-mail é gravado em minúsculas (`F1 src/modules/users/users.repository.ts:92-99`); a
+senha temporária é gerada por CSPRNG (`randomBytes(14)` em base64url) e gravada como hash bcrypt
+(`F1 src/shared/utils/passwordHandler.ts:5-15,31-33`); `must_change_password` nasce `true`
+(`F1 src/modules/users/users.repository.ts:98`); a linha 1:1 de `requesters` é criada (ou uma linha
+anônima de mesmo e-mail é adotada) (`F1 src/modules/users/users.repository.ts:126-168`); a extensão
+`details_professional` é criada quando o perfil é `analista`
+(`F1 src/modules/users/users.repository.ts:71-83`); criação, extensões e auditoria `user.create` rodam na
+mesma transação (`F1 src/modules/users/users.service.ts:107-147`).
+
+**Erros**
+
+| Status  | code | Mensagem literal                                                                         | Condição                                                                                            |
+| ------- | ---- | ---------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| 400     | —    | `"Perfil inválido."`                                                                     | `role` não existe em `profiles` (`F1 src/modules/users/users.service.ts:95-98`)                     |
+| 403     | —    | `"Não é possível gerenciar contas de Administradores"`                                   | `role` resolve para `Administrador` (`F1 src/modules/users/users.service.ts:62-66,101`)             |
+| 409     | —    | `"E-mail já cadastrado"`                                                                 | violação de unicidade `23505` dentro da transação (`F1 src/modules/users/users.service.ts:148-153`) |
+| 422     | —    | `"Campos obrigatórios ausentes: role"` + `fields`                                        | body fora do schema (`F1 src/modules/users/users.controller.ts:48-54`)                              |
+| 422     | —    | `"Dados profissionais são obrigatórios para o perfil Analista."` + `fields.professional` | `role = "analista"` sem `professional`                                                              |
+| 422     | —    | `"Dados profissionais são exclusivos do perfil Analista."` + `fields.professional`       | `professional` com perfil não analista                                                              |
+| 500     | —    | `"Falha ao criar o usuário"`                                                             | transação não devolve linha (`F1 src/modules/users/users.service.ts:155-157`)                       |
+| 401/403 | —    | comuns da §8.2                                                                           | sessão/perfil                                                                                       |
+
+**Transporte** — JSON; `201` sem header `Location`; `createdAt` em ISO-8601 UTC. A senha temporária só
+existe nesta resposta — não há rota de leitura dela.
+
+**Evidência** — `F1 src/modules/users/users.router.ts:30-34`; `F1 src/modules/users/users.controller.ts:48-59`;
+`F1 src/modules/users/users.schema.ts:10-57`; `F1 src/modules/users/users.service.ts:87-169`;
+`F1 src/shared/validation/fieldSchemas.ts:5-33`; `F1 src/modules/DTOs/users/UserResponse.dto.ts:28-33`.
+
+**Divergente (legado vigente):** validação de body com `422` e `fields` como objeto indexado por campo —
+convenção §3 (C2) e #5 de `docs/04-API-Conventions.md` (alvo `400`, `fields` lista). O valor de `role` é o
+slug do banco (`analista`) na escrita e o nome capitalizado (`Analista`) na leitura; a convenção §6 e a
+ADR-0006 fixam cinco perfis capitalizados, incluindo `Admin Root`, que esta rota não cria e não aceita.
+
+### 8.9 GET /users/:id
+
+**Request** — path param `id`. `parseUserId` aceita apenas inteiro positivo; qualquer outro valor
+responde `404 "Usuário não encontrado"` (`F1 src/modules/users/users.service.ts:46-52`).
+
+**Response 200** — o mesmo `UserProfileResponseDTO` da §8.4, com as mesmas regras de `requester`,
+`professional` e `avatarUrl` (`F1 src/modules/users/users.service.ts:307-310`).
+
+```json
+{
+  "id": "42",
+  "fullName": "Usuário Exemplo",
+  "email": "usuario.exemplo@example.com",
+  "role": "Solicitante",
+  "avatarUrl": null,
+  "requester": null,
+  "professional": null
+}
+```
+
+**Erros** — `401/403` comuns; `403 "Acesso restrito ao perfil Administrador"`; `404 "Usuário não
+encontrado"` para id não inteiro, não positivo ou inexistente.
+Não há `400` próprio.
+
+**Transporte** — JSON; id numérico em string no path e na resposta.
+
+**Evidência** — `F1 src/modules/users/users.router.ts:30,35`; `F1 src/modules/users/users.controller.ts:79-83`;
+`F1 src/modules/users/users.service.ts:46-52,307-310`.
+
+**Divergente (legado vigente):** `:id` é numérico — convenção §15.1 e ADR-0003 (PK UUID v4).
+
+### 8.10 PUT /users/:id
+
+**Request** — JSON, merge parcial; campos ausentes preservam o valor atual
+(`F1 src/modules/users/users.service.ts:443-448`).
+
+| Campo          | Tipo   | Regra                                                                                                                                                         |
+| -------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `fullName`     | string | `requiredText(150)`: 1..150, apenas letras e espaços                                                                                                          |
+| `email`        | string | `trim`, minúsculas, formato de e-mail, até 254                                                                                                                |
+| `role`         | string | `trim`, 1..60; precisa existir em `profiles`; `Administrador` é bloqueado                                                                                     |
+| `requester`    | objeto | patch parcial: `area` (`requiredText(100)`), `department` (string ou `null`), `manager` (`requiredText(150)`), `additionalContact` (string até 100 ou `null`) |
+| `professional` | objeto | mesmo schema do `POST /users`; exclusivo de perfil analista                                                                                                   |
+
+Body vazio → `422` com `fields: { "payload": "Informe ao menos um campo para atualização." }`
+(`F1 src/modules/users/users.schema.ts:120-126`; `F1 src/shared/validation/zodErrors.ts:110-114`).
+
+**Regras de negócio:**
+
+- actor igual ao alvo → `400 "Você não pode modificar a própria conta"` (`F1 src/modules/users/users.service.ts:455-459`).
+- alvo é `Administrador` e o patch contém `fullName`, `email`, `role` ou `professional` → `403 "Não é
+possível gerenciar contas de Administradores"`; um patch só de `requester` é aceito
+  (`F1 src/modules/users/users.service.ts:466-475`).
+- `role` inválido → `400 "Perfil inválido."`; `role` que resolve para `Administrador` → `403` da mesma
+  mensagem de hierarquia (`:477-487`).
+- `professional` em perfil final não analista → `400 "Dados profissionais são exclusivos do perfil
+Analista"`; promoção para analista sem `professional` → `400 "Dados profissionais são obrigatórios para
+o perfil Analista"`; o schema já bloqueia `professional` com `role` não analista em `422`, com as
+  mesmas mensagens e ponto final (`F1 src/modules/users/users.service.ts:489-506`;
+  `F1 src/modules/users/users.schema.ts:105-119`).
+- mudança de nome/e-mail sincroniza `requesters.full_name` e `requesters.corporate_email`
+  (`F1 src/modules/users/users.service.ts:520-525`); e-mail é gravado em `trim` + minúsculas
+  (`F1 src/modules/users/users.repository.ts:433-441`).
+- `professional` é upsert; quando o alvo deixa de ser analista, a extensão é apagada
+  (`F1 src/modules/users/users.service.ts:527-532`).
+- tudo em uma transação com auditoria `user.update` (`:512-556`).
+
+**Response 200** — `UserProfileResponseDTO` relido do banco (mesma tabela de campos da §8.4), incluindo o
+bloco `professional` com defaults para analista sem extensão
+(`F1 src/modules/users/users.service.ts:564-581`):
+
+```json
+{
+  "id": "42",
+  "fullName": "Usuário Exemplo",
+  "email": "usuario.exemplo@example.com",
+  "role": "Analista",
+  "avatarUrl": null,
+  "requester": {
+    "area": "Tecnologia",
+    "department": null,
+    "manager": "Gestor Exemplo",
+    "additionalContact": null
+  },
+  "professional": {
+    "jobTitle": "Especialista em processos",
+    "specialties": ["Automação"],
+    "attendedCategoryIds": [1],
+    "notes": null
+  }
+}
+```
+
+**Erros**
+
+| Status  | code | Mensagem literal                                                | Condição                                                                           |
+| ------- | ---- | --------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| 400     | —    | `"Você não pode modificar a própria conta"`                     | actor = alvo                                                                       |
+| 400     | —    | `"Perfil inválido."`                                            | `role` inexistente em `profiles`                                                   |
+| 400     | —    | `"Dados profissionais são exclusivos do perfil Analista"`       | `professional` com perfil final não analista                                       |
+| 400     | —    | `"Dados profissionais são obrigatórios para o perfil Analista"` | promoção para analista sem `professional`                                          |
+| 403     | —    | `"Não é possível gerenciar contas de Administradores"`          | alvo administrador com patch não-`requester`, ou `role` administrador              |
+| 404     | —    | `"Usuário não encontrado"`                                      | id inválido ou inexistente (`F1 src/modules/users/users.service.ts:46-52,461-464`) |
+| 409     | —    | `"E-mail já cadastrado"`                                        | `23505` na transação (`:557-562`)                                                  |
+| 422     | —    | mensagem agregada do Zod + `fields`                             | schema (inclui `fields.payload` para body vazio)                                   |
+| 401/403 | —    | comuns da §8.2                                                  | sessão/perfil                                                                      |
+
+**Transporte** — JSON; `PUT` com semântica de merge, não de substituição integral. `id` numérico em
+string.
+
+**Evidência** — `F1 src/modules/users/users.router.ts:30,36`; `F1 src/modules/users/users.controller.ts:61-77`;
+`F1 src/modules/users/users.schema.ts:81-127`; `F1 src/modules/users/users.service.ts:443-582`;
+`F1 src/modules/users/users.repository.ts:433-465,597-664`.
+
+**Divergente (legado vigente):** validação com `422` + `fields` objeto — convenção §3 (C2); `:id`
+numérico — convenção §15.1/ADR-0003.
+
+### 8.11 PATCH /users/:id/status
+
+**Request** — JSON:
+
+| Campo      | Tipo    | Regra                                                      |
+| ---------- | ------- | ---------------------------------------------------------- |
+| `isActive` | boolean | obrigatório (`F1 src/modules/users/users.schema.ts:88-90`) |
+
+Validação com `formatZodIssues` → `400`; corpo sem a chave responde `"Campos obrigatórios ausentes:
+isActive"` (`F1 src/modules/users/users.controller.ts:85-90`).
+
+**Response 200** — `ChangeUserStatusResponse`:
+
+| Campo      | Tipo    | Regra                    |
+| ---------- | ------- | ------------------------ |
+| `id`       | string  | `user_id` como string    |
+| `isActive` | boolean | valor enviado no request |
+
+```json
+{ "id": "42", "isActive": false }
+```
+
+**Efeitos:** grava `users.is_active` e `updated_at` (`F1 src/modules/users/users.repository.ts:418-430`) e
+registra auditoria `user.activate` ou `user.deactivate`, com `previousValue`/`newValue`, na mesma
+transação (`F1 src/modules/users/users.service.ts:190-205`). A desativação passa a valer no request
+seguinte do alvo: `authMiddleware` relê `users.is_active` e responde `401 "Token inválido ou expirado"`
+(`F1 src/shared/middleware/auth.ts:42-45`).
+
+**Erros**
+
+| Status  | code | Mensagem literal                                                 | Condição                                                       |
+| ------- | ---- | ---------------------------------------------------------------- | -------------------------------------------------------------- |
+| 400     | —    | `"Você não pode modificar a própria conta"`                      | actor = alvo (`F1 src/modules/users/users.service.ts:179-181`) |
+| 400     | —    | `"Campos obrigatórios ausentes: isActive"` (ou mensagem de tipo) | body inválido                                                  |
+| 403     | —    | `"Não é possível gerenciar contas de Administradores"`           | alvo administrador (`:188`)                                    |
+| 404     | —    | `"Usuário não encontrado"`                                       | id inválido ou inexistente (`:46-52,183-186`)                  |
+| 401/403 | —    | comuns da §8.2                                                   | sessão/perfil                                                  |
+
+**Transporte** — JSON; o estado é um booleano, não uma `key` de status.
+
+**Evidência** — `F1 src/modules/users/users.router.ts:30,37`; `F1 src/modules/users/users.controller.ts:85-100`;
+`F1 src/modules/users/users.service.ts:171-208`; `F1 src/modules/users/users.schema.ts:88-90`;
+`F1 src/modules/users/users.repository.ts:417-430`; `F1 src/shared/types/user.ts:14-33`.
+
+### 8.12 POST /users/:id/reset-password
+
+**Request** — sem body, sem query; path param `id` (`F1 src/modules/users/users.controller.ts:102-106`).
+
+**Response 200** — `ResetPasswordResponse`:
+
+| Campo               | Tipo   | Regra                                      |
+| ------------------- | ------ | ------------------------------------------ |
+| `id`                | string | `user_id` como string                      |
+| `temporaryPassword` | string | nova senha em claro, exibida uma única vez |
+
+```json
+{ "id": "42", "temporaryPassword": "<senha-temporaria>" }
+```
+
+**Efeitos:** gera senha temporária por CSPRNG (`randomBytes(14)` em base64url) e grava o hash bcrypt
+(`F1 src/shared/utils/passwordHandler.ts:5-15,31-33`); grava `must_change_password = true`,
+`password_changed_at = now` e `updated_at`; o avanço de `password_changed_at` revoga tokens emitidos antes
+(`F1 src/modules/users/users.repository.ts:468-483`; `F1 src/shared/middleware/auth.ts:63-72`); registra
+auditoria `user.reset_password` na mesma transação (`F1 src/modules/users/users.service.ts:231-244`).
+A senha não é escolhida pelo cliente e não há campo de senha no request.
+
+**Erros**
+
+| Status  | code | Mensagem literal                                       | Condição                                                         |
+| ------- | ---- | ------------------------------------------------------ | ---------------------------------------------------------------- |
+| 400     | —    | `"Você não pode modificar a própria conta"`            | actor = alvo (`F1 src/modules/users/users.service.ts:217-219`)   |
+| 403     | —    | `"Não é possível gerenciar contas de Administradores"` | alvo administrador (`:226`)                                      |
+| 404     | —    | `"Usuário não encontrado"`                             | id inválido ou inexistente (`:46-52,221-224`)                    |
+| 500     | —    | `"Erro ao gerar hash da senha"`                        | falha do bcrypt (`F1 src/shared/utils/passwordHandler.ts:12-14`) |
+| 401/403 | —    | comuns da §8.2                                         | sessão/perfil                                                    |
+
+**Transporte** — JSON em ambos os sentidos; a senha temporária trafega no corpo da resposta.
+
+**Evidência** — `F1 src/modules/users/users.router.ts:30,38`; `F1 src/modules/users/users.controller.ts:102-106`;
+`F1 src/modules/users/users.service.ts:210-247`; `F1 src/modules/users/users.repository.ts:467-483`;
+`F1 src/shared/utils/passwordHandler.ts:27-33`.
+
+### 8.13 Visão do consumidor (F2) e drift
+
+Chamadas em `F2 src/lib/api/user.api.ts`:
+
+| Função F2           | Método e path                    | Observação                                                                                                                |
+| ------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `getMyProfile`      | `GET /users/me`                  | `apiClient` com cookie (`F2 src/lib/api/user.api.ts:23-25`)                                                               |
+| `updateMyProfile`   | `PUT /users/me`                  | monta `FormData` com `payload` (JSON.stringify de `fullName`, `requester`, `removeAvatar`) e `avatar` opcional (`:27-49`) |
+| `getUser`           | `GET /users/:id`                 | `:51-58`                                                                                                                  |
+| `updateUser`        | `PUT /users/:id`                 | envia `UpdateUserInput` (`:60-73`)                                                                                        |
+| `listUsers`         | `GET /users`                     | envia `profile`, `search`, `category`, `page`, `pageSize` (`:75-111`)                                                     |
+| `listAnalysts`      | `GET /users/analysts`            | sem query (`:113-120`)                                                                                                    |
+| `getUserStats`      | `GET /users/metrics`             | em qualquer erro devolve `{ total: 0, active: 0, pending: 0, admins: 0 }` (`:122-133`)                                    |
+| `createUser`        | `POST /users`                    | envia `CreateUserPayload` (`:135-145`)                                                                                    |
+| `updateUserStatus`  | `PATCH /users/:id/status`        | envia `{ isActive }` (`:147-162`)                                                                                         |
+| `resetUserPassword` | `POST /users/:id/reset-password` | sem body (`:164-173`)                                                                                                     |
+
+Drift anotado, sem decisão:
+
+- **`category` na listagem.** O FE envia `category` quando presente (`F2 src/lib/api/user.api.ts:94-96`;
+  tipo em `F2 src/lib/types/user.ts:51-57`), mas o backend só lê `profile`, `search`, `page` e `pageSize`
+  (`F1 src/modules/users/users.schema.ts:59-79`); a chave é descartada e o filtro não tem efeito.
+- **Tipo de `Analyst` com campos ausentes na resposta.** O tipo do FE é
+  `Omit<UserSummary, 'isActive' | 'avatarUrl'>` acrescido de `specialty`, `categories`, `notes` e
+  `requestLoad` (`F2 src/lib/types/user.ts:35-42`), portanto espera também `profile`,
+  `mustChangePassword` e `createdAt`; o backend devolve apenas sete campos
+  (`F1 src/modules/DTOs/users/UserResponse.dto.ts:15-23`), e esses três chegam `undefined` em runtime.
+- **`AdminUser` não corresponde a nenhuma resposta.** O tipo tem `name`, `role` e
+  `status` com os valores `"Ativo" | "Inativo"` (`F2 src/lib/types/user.ts:9-22`), enquanto a listagem
+  devolve `fullName`, `profile` e
+  `isActive` (`F1 src/modules/DTOs/users/UserResponse.dto.ts:4-13`); nenhuma chamada de
+  `F2 src/lib/api/user.api.ts` devolve esse formato.
+- **`UpdateUserInput` mais estreito que o backend.** O FE envia apenas `fullName`, `requester
+{ area, department, manager }` e `professional` (`F2 src/lib/types/user.ts:159-167`); o backend aceita
+  ainda `email`, `role` e `requester.additionalContact` (`F1 src/modules/users/users.schema.ts:92-127`).
+- **`CreateUserFormData` usa `name`, não `fullName`.** O tipo chama o nome de `name`
+  (`F2 src/lib/types/user.ts:59-68`), mas o payload efetivamente enviado usa `fullName` (`:70-81`).
+- **Estatísticas silenciam erro.** `getUserStats` captura qualquer falha e devolve zeros
+  (`F2 src/lib/api/user.api.ts:128-132`); um `401`/`403` de `GET /users/metrics` não chega à UI como erro.
+- **Resposta de criação tipada como literal.** `CreateUserResponse` do FE fixa `isActive: true` e
+  `mustChangePassword: true` (`F2 src/lib/types/user.ts:83-92`), o que coincide com o que o backend grava
+  hoje (`F1 src/modules/users/users.repository.ts:92-99`).
+- **`role` na escrita é slug, na leitura é nome legível.** O FE tipa o payload com `UserProfile`
+  minúsculo (`F2 src/lib/types/user.ts:7,52,62,73`) e a resposta com `UserRole` capitalizado
+  (`:3-5,29,87`); o backend segue a mesma assimetria (`F1 src/modules/users/users.repository.ts:26-30`;
+  `F1 src/shared/utils/roleUtils.ts:5-21`).
+
+### 8.14 Confronto com docs/04-API-Conventions.md
+
+| Tema                      | Convenção                                                                                    | Situação no legado                                                                                                                                                                                                                         |
+| ------------------------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Base path                 | §1 — `/api/v1`                                                                               | **Divergente (legado vigente):** rotas montadas em `/users` (`F1 src/router.ts:26`; `F1 src/modules/users/users.router.ts:18`)                                                                                                             |
+| Envelope de erro          | §2 — `{ status, statusCode, message }` com `code`/`requestId` aditivos                       | Compatível no formato; nenhuma rota do domínio envia `code` nem `requestId` (`F1 src/shared/middleware/errorHandler.ts:11-30`)                                                                                                             |
+| Validação                 | §3 e #5 — `400` + `fields` lista                                                             | **Divergente (legado vigente):** `POST /users` e `PUT /users/:id` respondem `422` com `fields` objeto (`F1 src/modules/users/users.controller.ts:48-54,61-67`; `F1 src/shared/errors/ValidationError.ts:10-17`)                            |
+| Paginação                 | §4.1/§4.2/§4.3 — default 20, máximo 100, clamp                                               | **Divergente (legado vigente):** default 10, máximo 50, sem clamp (`F1 src/modules/users/users.schema.ts:67-78`; `F1 src/modules/users/users.repository.ts:397`)                                                                           |
+| Listagem não paginada     | §4.3 — exige linha de exceção                                                                | `GET /users/analysts` não é paginada e não tem linha em §4.3 (`F1 src/modules/users/users.router.ts:20-23`); o contrato do legado a define como direta (`F1 docs/contract-assign-action.md` §GET /users/analysts)                          |
+| Sessão e cookie           | §5 — `session_id`, relê usuário/perfil                                                       | Compatível (`F1 src/shared/middleware/auth.ts:20-86`; `F1 src/configs.ts:20`)                                                                                                                                                              |
+| Autorização               | §6 e ADR-0025 — capabilities, diretório com `assignee_directory:read`, cinco perfis          | **Divergente (legado vigente):** gate por perfil (`requireRole("Administrador")`) e diretório aberto a qualquer sessão, sem capability; não existe `Admin Root` (`F1 src/modules/users/users.router.ts:23,30`)                             |
+| Gestão de contas          | ADR-0006 e `03-Data-Model.md` §7.5                                                           | Parcialmente compatível: bloqueia alvo `Administrador`, promovê-lo e a própria conta (`F1 src/modules/users/users.service.ts:62-66,179-181,217-219,466-475`); não há `Admin Root` nem a matriz ator × operação × perfil de destino         |
+| Ids                       | §15.1 e ADR-0003 — UUID v4                                                                   | **Divergente (legado vigente):** `id` e `:id` são inteiros serializados como string (`F1 src/modules/users/users.service.ts:46-52,160`; `F1 src/modules/users/users.repository.ts:401`)                                                    |
+| Content types / multipart | §9 — avatar 1 arquivo, 2 MiB, JPEG/PNG; 413 tamanho, 415 MIME/extensão, 400 parte inesperada | Compatível nos limites (`F1 src/shared/middleware/uploadAvatar.ts:14-29`); **divergente (legado vigente)** na parte de arquivo inesperada: `fileFilter` responde `415` e `LIMIT_UNEXPECTED_FILE` do multer responde `400` (`:30-34,63-79`) |
+| Códigos de sucesso        | §15.4 — 201 criação, 200 demais                                                              | Compatível (`F1 src/modules/users/users.controller.ts:58`)                                                                                                                                                                                 |
+| Idioma                    | §11 — chaves camelCase, valores pt-BR                                                        | Compatível nas chaves; o campo `role` aceita slug minúsculo na escrita e devolve nome capitalizado na leitura (`F1 src/modules/users/users.schema.ts:37`; `F1 src/shared/utils/roleUtils.ts:5-21`)                                         |
+| Idempotência              | §8.2 — `PUT` idempotente, `POST` sem deduplicação                                            | Compatível: `PUT /users/:id` é merge repetível e `POST /users` não deduplica (`F1 src/modules/users/users.service.ts:111-147,449-556`)                                                                                                     |
+| Avatar no `/auth/me`      | §7 — `avatarUrl` `string \| null`                                                            | Compatível: mesmo campo e mesma URL relativa (`F1 src/modules/DTOs/users/UserProfileResponse.dto.ts:9`; `F1 src/modules/users/users.service.ts:301,427-432`)                                                                               |
+
+**Cobertura da seção:** 10 de 10 rotas do inventário.
+
+- `GET /users/analysts`
+- `GET /users/me`
+- `PUT /users/me`
+- `GET /users/metrics`
+- `GET /users`
+- `POST /users`
+- `GET /users/:id`
+- `PUT /users/:id`
+- `PATCH /users/:id/status`
+- `POST /users/:id/reset-password`
