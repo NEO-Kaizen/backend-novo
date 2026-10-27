@@ -26,13 +26,15 @@
     // Segredos por último: o deny vence as regras de Git, npm e comandos destrutivos.
     { "action": "read", "resource": "*.env", "effect": "deny" },
     { "action": "read", "resource": "*.env.*", "effect": "deny" },
-    { "action": "read", "resource": "*.env.example*", "effect": "allow" },
-    // Sem allow de shell para `.env.example`: como o padrão cobre a string inteira,
-    // `cat .env.example .env` casaria a allow e leria o `.env`. Use a ferramenta read.
+    // Exemplo exato: `*.env.example` não libera variações como `.env.example.prod`.
+    { "action": "read", "resource": "*.env.example", "effect": "allow" },
+    // Sem allow de shell para `.env.example`: cada subcomando é avaliado como string
+    // inteira, então `cat .env.example .env` casaria a allow e leria o `.env`.
+    // Cadeias em que um subcomando cita `.env` são negadas; use `read`/`edit` no exemplo.
     { "action": "shell", "resource": "*.env*", "effect": "deny" },
     { "action": "edit", "resource": "*.env", "effect": "deny" },
     { "action": "edit", "resource": "*.env.*", "effect": "deny" },
-    { "action": "edit", "resource": "*.env.example*", "effect": "allow" },
+    { "action": "edit", "resource": "*.env.example", "effect": "allow" },
 
     // Fora do projeto: sempre confirmar.
     { "action": "external_directory", "resource": "*", "effect": "ask" }
