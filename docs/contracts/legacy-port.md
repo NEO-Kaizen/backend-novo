@@ -25,8 +25,8 @@ intencionais vivem nas specs de domínio (issues #15–#27) e em `docs/adr/`.
 - **Fora do inventário** — rota servida por middleware estático ou de infraestrutura, que não é
   contrato de domínio.
 
-Os dois marcadores aparecem em negrito quando abrem um parágrafo e em texto corrido quando estão
-dentro de tabelas; a grafia é fixa.
+Os marcadores de divergência e de desatualização aparecem em negrito quando abrem um parágrafo e em
+texto corrido quando estão dentro de tabelas; a grafia é fixa.
 
 Citação: `F1 <caminho>:<linha>` para código e `F2 <caminho>:<linha>` para o consumidor; documentos
 do legado são citados como `F1 docs/<arquivo>.md` (sem linha, salvo quando a seção é relevante).
@@ -1374,7 +1374,7 @@ Transporte comum das rotas JSON:
 - Toda escrita roda em transação com `lockSettings` (e `lockTheme` no tema) e grava auditoria
   `entityType: "settings"`, `entityId: "settings"`, `actionType: "settings.update"`
   (`F1 src/modules/portalConfig/portalConfig.service.ts:106-122,135-160,173-191,204-223,236-257,270-346,357-378`).
-- `GET /uploads/*` é `express.static` público sobre `Config.UPLOAD_DIR` com `fallthrough: false`
+- **Fora do inventário:** `GET /uploads/*` é `express.static` público sobre `Config.UPLOAD_DIR` com `fallthrough: false`
   (`F1 src/app.ts:24`): serve os binários de `/assets`, é infraestrutura e **não** integra o
   inventário da §4 (mesma classificação da §3.1).
 
@@ -6953,7 +6953,8 @@ Sem corpo (`F1 src/modules/internalNotes/internalNotes.controller.ts:75`).
 
 Este índice não decide nada: ele apenas agrupa, por tema, onde o legado diverge das convenções
 congeladas. As decisões correspondentes estão nas specs de domínio (#15–#27) e nos ADRs em
-`docs/adr/`.
+`docs/adr/`. Neste índice, `#n` refere-se a issue; números de convenção aparecem como
+`tabela 0.1 #n`.
 
 | Tema                      | O que o legado faz                                                                                           | Onde aparece                                    | Ponteiro                                                     |
 | ------------------------- | ------------------------------------------------------------------------------------------------------------ | ----------------------------------------------- | ------------------------------------------------------------ |
