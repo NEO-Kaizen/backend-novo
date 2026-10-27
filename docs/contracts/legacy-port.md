@@ -4115,3 +4115,266 @@ Drift anotado, sem decisão:
 8. `GET /requests/:protocol/internal`
 9. `PATCH /requests/:protocol/internal`
 10. `POST /requests`
+
+## 10. triage
+
+### 10.1 Fontes
+
+| Ref | Caminho                                                                       | Uso                                                                      |
+| --- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| F1  | `src/modules/requests/triage/triage.router.ts`                                | montagem, autenticação e perfis                                          |
+| F1  | `src/modules/requests/triage/triage.controller.ts`                            | handlers, validação de body e de path                                    |
+| F1  | `src/modules/requests/triage/triage.schema.ts`                                | `TriageAssessment`, `CreateTriagePayload` e `createTriagePayloadSchema`  |
+| F1  | `src/modules/requests/triage/triage.service.ts`                               | autorização, resoluções de banco, efeitos e auditoria                    |
+| F1  | `src/modules/requests/triage/triage.repository.ts`                            | leitura da triagem vigente, resolução de status/categoria, transação     |
+| F1  | `src/modules/DTOs/internalNotes/InternalNotes.dto.ts`                         | histórico `triages[]` (consumidor da mesma entidade)                     |
+| F1  | `src/modules/DTOs/requests/RequestResponse.dto.ts`                            | `conclusion.result` no detalhe público (campo distinto, não é a triagem) |
+| F1  | `docs/contract-triage_04.md`                                                  | contrato do legado (parcialmente desatualizado — ver §10.4 e §10.5)      |
+| F1  | `docs/internal-observations.md`                                               | histórico completo em `triages[]` (§1 do documento)                      |
+| F2  | `src/lib/api/triage.api.ts`                                                   | chamadas HTTP                                                            |
+| F2  | `src/lib/types/triage.ts`                                                     | tipos e `createEmptyTriageAssessment`                                    |
+| F2  | `src/lib/services/triage.service.ts`                                          | tradução de erro por status                                              |
+| F2  | `src/routes/(admin)/fila/[protocolo]/components/triagem/triage-validation.ts` | espelho da validação no cliente                                          |
+| F2  | `src/routes/(admin)/fila/[protocolo]/components/triagem/TriageSection.svelte` | gate de prioridade e modo readonly                                       |
+
+Não existe DTO de triagem em `F1 src/modules/DTOs/requests/*`: o contrato do recurso é o tipo `TriageAssessment` de `F1 src/modules/requests/triage/triage.schema.ts:9-24`, reutilizado pelo histórico de `internal-notes` (`F1 src/modules/DTOs/internalNotes/InternalNotes.dto.ts:6,42-56`).
+
+### 10.2 Rotas
+
+| #   | Método | Path                         | Autenticação/autorização                                                                                                 | Handler      | Sucesso                            | Erros                                           |
+| --- | ------ | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------ | ------------ | ---------------------------------- | ----------------------------------------------- |
+| 33  | GET    | `/requests/:protocol/triage` | sessão (`authMiddleware`) + `requireRole("Analista", "Gestor", "Administrador")`; Analista restrito ao responsável atual | `getTriage`  | `200` `TriageAssessment` ou `null` | `400`, `401`, `403`, `404`, `500`               |
+| 34  | POST   | `/requests/:protocol/triage` | sessão + `requireRole("Administrador", "Analista")`; escrita restrita a Administrador ou Analista responsável            | `saveTriage` | `201` `TriageAssessment`           | `400`, `401`, `403`, `404`, `409`, `422`, `500` |
+
+- O router aplica `authMiddleware` a todas as rotas (`F1 src/modules/requests/triage/triage.router.ts:8`); o path é montado sob `/requests` (`F1 src/router.ts:24-25`).
+- Gestor é somente leitura: não está na lista de perfis do POST (`F1 src/modules/requests/triage/triage.router.ts:17-19`).
+- "Responsável" é `requests.professional_id` resolvido para `details_professional.user_id`, comparado com o `user_id` numérico do ator (`F1 src/modules/requests/triage/triage.repository.ts:30-46`; `F1 src/modules/requests/triage/triage.service.ts:16-20`).
+
+### 10.3 GET `/requests/:protocol/triage`
+
+#### Request
+
+| Parte   | Conteúdo                                                                                                                               |
+| ------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| Path    | `protocol` — `z.string().trim().min(1, "Protocolo é obrigatório.")` (`F1 src/modules/requests/triage/triage.controller.ts:9-11,31-38`) |
+| Query   | nenhuma                                                                                                                                |
+| Body    | não há                                                                                                                                 |
+| Headers | cookie de sessão (`session_id`)                                                                                                        |
+
+O `400` de path é produzido por `formatZodIssues` (`F1 src/modules/requests/triage/triage.controller.ts:33-35`), mas o padrão de rota `/:protocol/triage` não casa com protocolo vazio — na prática o `400` não é alcançável por HTTP.
+
+#### Autorização
+
+1. `requireRole("Analista", "Gestor", "Administrador")` — outro perfil recebe `403 "Acesso restrito ao perfil Analista ou Gestor ou Administrador"` (`F1 src/shared/middleware/requireRole.ts:21-22`); sessão em `must_change_password` recebe `403 "Troca de senha obrigatória antes de continuar"` (`F1 src/shared/middleware/requireRole.ts:11-13`).
+2. Protocolo inexistente → `404 "Protocolo não encontrado"` (`F1 src/modules/requests/triage/triage.service.ts:44-47`).
+3. `Gestor` acessa qualquer solicitação; `Administrador` e `Analista` passam por `isAdminOrAssignee` (`F1 src/modules/requests/triage/triage.service.ts:16-20,51-55`). Sem custódia (ou solicitação sem responsável) → `403 "Acesso negado a esta solicitação"` (`F1 src/modules/requests/triage/triage.service.ts:53-55`).
+4. A leitura **não** aplica os gates de status terminal ou de status restrito (`Priorizado`) e **não** audita a negação — diferente do POST (`F1 src/modules/requests/triage/triage.service.ts:43-58`).
+
+#### Response `200`
+
+`TriageAssessment` da triagem vigente, ou o literal `null` quando a solicitação nunca foi triada (`F1 src/modules/requests/triage/triage.service.ts:57`; `F1 src/modules/requests/triage/triage.controller.ts:46`).
+
+| Campo                               | Tipo                                                                          | Origem/regra                                                                                                                                                      |
+| ----------------------------------- | ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                                | `string` (uuid v4)                                                            | `triages.triage_id`, gerado no POST (`F1 src/modules/requests/triage/triage.service.ts:139`)                                                                      |
+| `adherentToScope`                   | `"Sim" \| "Não" \| ""`                                                        | coluna `adherent_to_scope`                                                                                                                                        |
+| `adherentJustification`             | `string` (≤ 1000)                                                             | `""` quando `adherentToScope !== "Não"`                                                                                                                           |
+| `changeCategory`                    | `"Sim" \| "Não" \| ""`                                                        | coluna `change_category`                                                                                                                                          |
+| `newCategory`                       | `string` (≤ 40)                                                               | nome canônico da categoria; `""` quando `changeCategory !== "Sim"`                                                                                                |
+| `preliminaryComplexity`             | `string` (≤ 4000)                                                             | `""` quando `adherentToScope !== "Sim"`                                                                                                                           |
+| `perceivedRisks`                    | `string` (≤ 4000)                                                             | idem                                                                                                                                                              |
+| `suggestedResponsible`              | `string` (≤ 150)                                                              | sugestão do analista, não o autor                                                                                                                                 |
+| `suggestedResponsibleJustification` | `string` (≤ 1000)                                                             |                                                                                                                                                                   |
+| `exitStatus`                        | `number`                                                                      | `statuses.status_id` numérico (não a `name` e não um literal de `TriageResult`)                                                                                   |
+| `result`                            | `string` (≤ 1000)                                                             | **existe** no corpo e é persistido em `triages.result` (`F1 src/modules/requests/triage/triage.repository.ts:39,100`)                                             |
+| `conclusionJustification`           | `string` (≤ 4000)                                                             |                                                                                                                                                                   |
+| `assignee`                          | `{ id: string \| null, name: string \| null, email: string \| null } \| null` | snapshot do autor do POST; `null` só quando `assignee_user_id` e `assignee_name` são ambos `null` (`F1 src/modules/requests/triage/triage.repository.ts:102-109`) |
+| `lastTechnicalMessage`              | `string \| null`                                                              | retorno ao solicitante; `null` quando o status de saída não é público (`F1 src/modules/requests/triage/triage.repository.ts:110`)                                 |
+
+- Não há timestamp no corpo: `occurredAt` da triagem não é exposto por esta rota (a proveniência vive no `audit_history` — `F1 src/modules/requests/triage/triage.repository.ts:230-235`).
+- `assignee.id` é `String(users.user_id)`; o `professional_id` (uuid) não aparece na triagem.
+- Nome de campo `exitStatus` numérico: o valor é id de `statuses`, não a `key` (ver §10.7).
+
+#### Erros
+
+| Status | Mensagem literal                                                  | Condição                                | Evidência                                                |
+| ------ | ----------------------------------------------------------------- | --------------------------------------- | -------------------------------------------------------- |
+| 401    | `"Token não fornecido"`                                           | sem cookie                              | `F1 src/shared/middleware/auth.ts:27-45`                 |
+| 401    | `"Token inválido ou expirado"`                                    | token inválido/expirado/usuário inativo | `F1 src/shared/middleware/auth.ts:87-95`                 |
+| 403    | `"Troca de senha obrigatória antes de continuar"`                 | `must_change_password`                  | `F1 src/shared/middleware/requireRole.ts:11-13`          |
+| 403    | `"Acesso restrito ao perfil Analista ou Gestor ou Administrador"` | perfil fora da lista                    | `F1 src/shared/middleware/requireRole.ts:21-22`          |
+| 404    | `"Protocolo não encontrado"`                                      | protocolo inexistente                   | `F1 src/modules/requests/triage/triage.service.ts:44-47` |
+| 403    | `"Acesso negado a esta solicitação"`                              | Analista sem custódia                   | `F1 src/modules/requests/triage/triage.service.ts:53-55` |
+
+O `403` da leitura é `AppError` sem `code` (`F1 src/modules/requests/triage/triage.service.ts:54`), ao contrário do `403` da escrita.
+
+### 10.4 POST `/requests/:protocol/triage`
+
+#### Request
+
+`Content-Type: application/json`. Body validado por `createTriagePayloadSchema`, um objeto `.strict()` (`F1 src/modules/requests/triage/triage.schema.ts:42-79`): chave não prevista é rejeitada. Em particular **`assignee` não é aceito** — o autor vem da sessão — e `id` também não.
+
+| Campo                               | Tipo/limite                              | Obrigatório                    | Observação                                                                                                |
+| ----------------------------------- | ---------------------------------------- | ------------------------------ | --------------------------------------------------------------------------------------------------------- |
+| `adherentToScope`                   | `"Sim" \| "Não" \| ""`                   | sim; `""` rejeitado            | `"Informe se a demanda é aderente ao escopo"` (`F1 src/modules/requests/triage/triage.schema.ts:81-87`)   |
+| `adherentJustification`             | string, trim, ≤ 1000, default `""`       | se `adherentToScope === "Não"` | `"Informe a justificativa quando não aderente ao escopo"` (`:97-103`)                                     |
+| `changeCategory`                    | `"Sim" \| "Não" \| ""`                   | sim; `""` rejeitado            | `"Informe se houve troca de categoria"` (`:89-95`)                                                        |
+| `newCategory`                       | string, trim, ≤ 40, default `""`         | se `changeCategory === "Sim"`  | `"Selecione a categoria de destino"` (`:105-111`); name-string do cadastro ativo                          |
+| `preliminaryComplexity`             | string, trim, ≤ 4000, default `""`       | se `adherentToScope === "Sim"` | `"Descreva a complexidade preliminar"` (`:113-119`)                                                       |
+| `perceivedRisks`                    | string, trim, ≤ 4000, default `""`       | se `adherentToScope === "Sim"` | `"Descreva os riscos percebidos"` (`:121-127`)                                                            |
+| `suggestedResponsible`              | string, trim, ≤ 150, default `""`        | não                            | `"Máximo de 150 caracteres."`                                                                             |
+| `suggestedResponsibleJustification` | string, trim, ≤ 1000, default `""`       | não                            |                                                                                                           |
+| `exitStatus`                        | inteiro positivo (`number`)              | sim                            | `"Selecione o status de saída"` (ausente) / `"Status de saída inválido."` (não inteiro ou ≤ 0) (`:57-60`) |
+| `result`                            | string, trim, 1..1000                    | sim                            | `"Informe o resultado da triagem"` / `"Máximo de 1.000 caracteres."` (`:61-65`)                           |
+| `conclusionJustification`           | string, trim, 1..4000                    | sim                            | `"Informe a justificativa final"` / `"Máximo de 4.000 caracteres."` (`:66-70`)                            |
+| `lastTechnicalMessage`              | string, trim, 1..4000, `null` ou ausente | condicional                    | `"Informe o retorno ao solicitante"`; exigido de fato quando o status de saída é público (`:71-77`)       |
+
+Limpeza condicional feita no próprio schema: `newCategory` vira `""` quando `changeCategory !== "Sim"` e `adherentJustification` vira `""` quando `adherentToScope !== "Não"` (`F1 src/modules/requests/triage/triage.schema.ts:129-135`). O trim é feito de novo no service (`F1 src/modules/requests/triage/triage.service.ts:141-157`).
+
+Body fora do schema → `422` com `message` agregada (`"Campos obrigatórios ausentes: …"`, `"Campos inválidos: <campo> — <mensagem>"`) e `fields` como **objeto** campo → mensagem (`F1 src/shared/validation/zodErrors.ts:57-117`; `F1 src/modules/requests/triage/triage.controller.ts:53-57`).
+
+#### Ordem das checagens no service
+
+1. Protocolo inexistente → `404 "Protocolo não encontrado"` (`F1 src/modules/requests/triage/triage.service.ts:66-69`).
+2. Status terminal (`statuses.is_terminal`) → `422 "Solicitação encerrada."` (`:74-76`). Não há reabertura.
+3. Status restrito (`statuses.is_restricted`, "Priorizado") e ator não-Administrador → auditoria `request.access_denied` com `note` `"Triagem negada: solicitação priorizada"` e `403 "Ação restrita ao Administrador ou ao Analista responsável pela demanda."` com `code: "INSUFFICIENT_ROLE_PERMISSIONS"` (`:78-85`; `:22-41`).
+4. Sem custódia (`isAdminOrAssignee`) → auditoria `request.access_denied` com `note` `"Triagem negada: sem custódia da solicitação"` e o mesmo `403`/`code` (`:87-95`).
+5. `exitStatus` resolvido contra `statuses` — ver abaixo.
+6. `lastTechnicalMessage` obrigatório se o status de saída for público.
+7. `newCategory` resolvida quando `changeCategory === "Sim"`.
+8. Transação única: insert em `triages`, update da solicitação, auditoria e liberação do responsável.
+
+#### Regra do `exitStatus`
+
+`resolveExitStatus` aceita **apenas** status com `is_active = true`, `is_restricted = false` e `triage_mode = 'conclusion_only'`, casando `status_id` numérico (`F1 src/modules/requests/triage/triage.repository.ts:137-154`). Não há aceitação de nome/literal antigo (`F1 src/modules/requests/triage/triage.repository.ts:141-143`).
+
+Falha → `422` `message: "Validação falhou"` e `fields.exitStatus: "Status de saída deve ser um status ativo com triageMode conclusion_only e isRestricted=false"` (`F1 src/modules/requests/triage/triage.service.ts:102-111`).
+
+**Desatualizado no legado:** `F1 docs/contract-triage_04.md` §1/§4 e `F1 docs/contract-triage_04.md` "Observações" dizem `triageMode IN ('conclusion_only','free')` e o comentário de `F1 src/modules/requests/triage/triage.schema.ts:53-56` repete isso; o código filtra **só** `conclusion_only`. A mensagem de erro do documento (`"Status de saída deve ser um status ativo elegível para triagem"`) também não é a do código.
+
+#### `lastTechnicalMessage`
+
+- Obrigatório quando `exitStatus.is_public` é verdadeiro: ausente/`null` → `422` `"Validação falhou"` com `fields.lastTechnicalMessage: "Retorno ao solicitante obrigatório para status público (1..4000 caracteres)."` (`F1 src/modules/requests/triage/triage.service.ts:112-120`; `F1 src/modules/requests/triage/triage.repository.ts:197-204`).
+- Quando o status não é público, o valor é descartado: a triagem e o `audit_history` recebem `null` (`F1 src/modules/requests/triage/triage.service.ts:154-157`; `F1 src/modules/requests/triage/triage.repository.ts:305-308`).
+
+#### `newCategory`
+
+Resolvida por nome exato contra `categories` com `status = 'active'` (`F1 src/modules/requests/triage/triage.repository.ts:156-168`). Não encontrada → `422` `fields.newCategory: "Categoria de destino inválida ou inativa"` (`F1 src/modules/requests/triage/triage.service.ts:124-131`). O nome **canônico** do cadastro é o persistido em `triages.new_category` e em `requests.category_id` (`F1 src/modules/requests/triage/triage.service.ts:132-135,144`; `F1 src/modules/requests/triage/triage.repository.ts:206-208`).
+
+O comentário de `F1 src/modules/requests/triage/triage.service.ts:133-135` menciona compatibilidade com id numérico, mas a resolução compara apenas `name` (`F1 src/modules/requests/triage/triage.repository.ts:161-167`) — um id numérico não resolve.
+
+#### Response `201`
+
+Mesmo shape do GET (`§10.3`), com duas diferenças:
+
+- `assignee` é sempre objeto, com o snapshot de quem executou: `{ id: String(actor.id), name, email }` (`F1 src/modules/requests/triage/triage.service.ts:153`).
+- `lastTechnicalMessage` só vem preenchido quando o status de saída é público (`F1 src/modules/requests/triage/triage.service.ts:154-157`).
+
+```json
+{
+  "id": "b1c0f0a2-7d55-4a4e-9a3e-5d0d1f2a9c11",
+  "adherentToScope": "Sim",
+  "adherentJustification": "",
+  "changeCategory": "Não",
+  "newCategory": "",
+  "preliminaryComplexity": "Média — depende de integração com sistema externo",
+  "perceivedRisks": "Divergência de dados entre as bases",
+  "suggestedResponsible": "Ana Souza",
+  "suggestedResponsibleJustification": "Experiência prévia no processo",
+  "exitStatus": 5,
+  "result": "Encaminhada para mapeamento",
+  "conclusionJustification": "Demanda aderente ao escopo",
+  "assignee": { "id": "20", "name": "Rafael Alves", "email": "rafael.alves@example.com" },
+  "lastTechnicalMessage": null
+}
+```
+
+#### Efeitos colaterais (mesma transação)
+
+| Efeito                   | Regra                                                                                                                                                                          | Evidência                                                                                                                         |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
+| append em `triages`      | uma linha por POST, `triage_id` = uuid gerado no service                                                                                                                       | `F1 src/modules/requests/triage/triage.repository.ts:236-263`; `F1 migrations/requester_request/20260923000000_create_triages.js` |
+| status da solicitação    | passa a `exitStatus` (grava `status_id`)                                                                                                                                       | `F1 src/modules/requests/triage/triage.repository.ts:183-187,210-213`                                                             |
+| categoria                | `requests.category_id` atualizado quando `changeCategory === "Sim"`                                                                                                            | `F1 src/modules/requests/triage/triage.repository.ts:206-208`                                                                     |
+| status público           | grava `last_public_status_id`, `last_technical_message` e `last_external_update_at`                                                                                            | `F1 src/modules/requests/triage/triage.repository.ts:197-204`                                                                     |
+| liberação do responsável | **sempre** na conclusão: `requests.professional_id = null` (`applyRequestOutcome` chamado com `releaseAssignee: true`)                                                         | `F1 src/modules/requests/triage/triage.repository.ts:189-195,288`                                                                 |
+| auditoria da triagem     | `request.triage`, `previousValue` `{status, category}`, `newValue` `{triageId, exitStatus, status}`, `note` = `conclusionJustification`, `changeOrigin` `"admin"`/`"internal"` | `F1 src/modules/requests/triage/triage.repository.ts:291-311`; `F1 src/modules/requests/triage/triage.service.ts:171-179`         |
+| auditoria da liberação   | `request.unassign`, `previousValue` = `user_id` anterior, `changeOrigin: "system"`, só quando havia vínculo                                                                    | `F1 src/modules/requests/triage/triage.repository.ts:313-327`                                                                     |
+
+O evento `request.unassign` é emitido com base em `professional_id !== null` da leitura do contexto, não no status de destino; a solicitação fica órfã mesmo quando o status de saída não é terminal (`F1 src/modules/requests/triage/triage.repository.ts:193-195,316-327`; `F1 src/modules/requests/triage/triage.service.ts:170`).
+
+#### Erros
+
+| Status | Corpo/mensagem literal                                                                                                | Condição                                                                            | Evidência                                                                                                               |
+| ------ | --------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| 401    | `"Token não fornecido"` / `"Token inválido ou expirado"`                                                              | sessão                                                                              | `F1 src/shared/middleware/auth.ts:27-45,87-95`                                                                          |
+| 403    | `"Troca de senha obrigatória antes de continuar"`                                                                     | `must_change_password`                                                              | `F1 src/shared/middleware/requireRole.ts:11-13`                                                                         |
+| 403    | `"Acesso restrito ao perfil Administrador ou Analista"`                                                               | Gestor, Solicitante                                                                 | `F1 src/modules/requests/triage/triage.router.ts:19`; `F1 src/shared/middleware/requireRole.ts:21-22`                   |
+| 404    | `"Protocolo não encontrado"`                                                                                          | protocolo inexistente                                                               | `F1 src/modules/requests/triage/triage.service.ts:66-69`                                                                |
+| 422    | `"Solicitação encerrada."`                                                                                            | status terminal                                                                     | `F1 src/modules/requests/triage/triage.service.ts:74-76`                                                                |
+| 403    | `"Ação restrita ao Administrador ou ao Analista responsável pela demanda."` + `code: "INSUFFICIENT_ROLE_PERMISSIONS"` | status restrito (não-Admin) ou sem custódia                                         | `F1 src/modules/requests/triage/triage.service.ts:78-95`                                                                |
+| 422    | `"Validação falhou"` + `fields`                                                                                       | body inválido, `exitStatus` inelegível, categoria inválida, retorno público ausente | `F1 src/modules/requests/triage/triage.controller.ts:53-57`; `F1 src/modules/requests/triage/triage.service.ts:102-131` |
+| 409    | `"Solicitação foi atualizada por outra operação."`                                                                    | `status_id` mudou entre a leitura e o update                                        | `F1 src/modules/requests/triage/triage.repository.ts:210-217`                                                           |
+
+O `409` não é uma precondição enviada pelo cliente: o `expectedStatusId` é lido do próprio banco no início do POST (`F1 src/modules/requests/triage/triage.service.ts:168`). Não há `Idempotency-Key`; repetir o POST cria outra triagem.
+
+#### Transporte
+
+JSON puro, sem multipart e sem paginação. Não há campo de data no request nem no response. O `ip` da requisição é gravado na auditoria (`F1 src/modules/requests/triage/triage.controller.ts:59`; `F1 src/modules/requests/triage/triage.service.ts:64`).
+
+### 10.5 Semântica de append-only e triagem vigente
+
+- `triages` é histórico versionado: cada POST insere uma linha; não há update nem delete (`F1 src/modules/requests/triage/triage.repository.ts:230-263`; cabeçalho da migration `F1 migrations/requester_request/20260923000000_create_triages.js`).
+- A "triagem vigente" é a **última**, e o critério de ordem é a auditoria, não o uuid: `audit_history` com `entity_type = 'request'`, `action_type = 'request.triage'`, junção por `new_value->>'triageId'`, ordenado por `occurred_at desc, audit_id desc` (`F1 src/modules/requests/triage/triage.repository.ts:114-135`).
+- Não há unicidade por solicitação: "nunca duas triagens simultâneas" é regra de fluxo declarada no contrato (`F1 docs/contract-triage_04.md` §1), não constraint de banco (`F1 src/modules/requests/triage/triage.repository.ts:114-120`).
+- O histórico completo (`triages[]`, `oldest → newest`) é servido por `GET /requests/:protocol/internal-notes` (§17 deste documento) — `F1 src/modules/DTOs/internalNotes/InternalNotes.dto.ts:42-56`; `F1 docs/internal-observations.md` §1.
+- O detalhe público `GET /requests/:protocol` expõe `conclusion.result` tipado como `TriageResult` (sete literais antigos), que **não** é a triagem (`F1 src/modules/DTOs/requests/RequestResponse.dto.ts:20-23`; `F1 src/shared/types/requests.ts:45-52`). `GET /requests/:protocol/internal` não embute triagem (`F1 src/modules/DTOs/requests/RequestInternalDetail.dto.ts:1-4`).
+
+**Desatualizado no legado:** em `F1 docs/contract-triage_04.md`, com o código do mesmo commit como referência:
+
+- §Tipos declara `TriageAssessment` sem `assignee` e sem `lastTechnicalMessage`, e `CreateTriagePayload = Omit<TriageAssessment, "id">` (§1) — os dois campos existem no código, na resposta e no body opcional (`F1 src/modules/requests/triage/triage.schema.ts:3-31,42-79`).
+- Os exemplos de response `201` (§1) e `200` (§2) não trazem `assignee` nem `lastTechnicalMessage`, ambos presentes no código (`F1 src/modules/requests/triage/triage.service.ts:138-158`).
+- §1 e §Observações dão a mensagem de `exitStatus` inelegível como `"Status de saída deve ser um status ativo elegível para triagem"`; o código devolve `"Status de saída deve ser um status ativo com triageMode conclusion_only e isRestricted=false"` (§10.4).
+- §4 e §Observações aceitam `triageMode` `conclusion_only` **ou** `free`; o repositório filtra apenas `conclusion_only` (§10.4).
+- §4 afirma que `isRestricted` bloqueia triagem "de qualquer perfil"; no POST de triagem o `Administrador` passa (§10.4). No mapeamento o bloqueio vale para todos os perfis (§11.4).
+- A tabela de erros do §2 diz que o `403` do GET segue "mesma regra `Admin|assignee`"; o código concede leitura ao `Gestor` (`F1 src/modules/requests/triage/triage.service.ts:49-55`).
+
+### 10.6 Visão do consumidor (F2) e drift
+
+`F2 src/lib/api/triage.api.ts:7-45` chama exatamente `POST`/`GET /requests/{protocol}/triage` (protocolo com `encodeURIComponent`), com `credentials: 'include'` herdado de `F2 src/lib/api/client.ts:55-62`, e devolve `TriageAssessment` / `TriageAssessment | null` — alinhado ao backend.
+
+Drift observado (sem decisão):
+
+| Ponto                             | F2                                                                                                                                                                                                                                                                        | Backend (F1)                                                                                                                    | Evidência                                                                                                                                                                                       |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `exitStatus` no tipo              | `number \| ''`                                                                                                                                                                                                                                                            | sempre `number` na resposta                                                                                                     | `F2 src/lib/types/triage.ts:13`; `F1 src/modules/requests/triage/triage.service.ts:150`                                                                                                         |
+| `assignee`                        | opcional, `email?` opcional                                                                                                                                                                                                                                               | sempre presente no POST; `email` sempre `string \| null`                                                                        | `F2 src/lib/types/triage.ts:22`; `F1 src/modules/requests/triage/triage.service.ts:153`                                                                                                         |
+| `CreateTriagePayload`             | omite `id` e `assignee`                                                                                                                                                                                                                                                   | o tipo do backend também remove `lastTechnicalMessage` e o reabre como opcional; o schema `.strict()` rejeita `id` e `assignee` | `F2 src/lib/types/triage.ts:27`; `F1 src/modules/requests/triage/triage.schema.ts:26-31,42-79`                                                                                                  |
+| `lastTechnicalMessage` no tipo    | `string` opcional (não anulável)                                                                                                                                                                                                                                          | `string \| null` na resposta                                                                                                    | `F2 src/lib/types/triage.ts:17`; `F1 src/modules/requests/triage/triage.schema.ts:23`                                                                                                           |
+| `lastTechnicalMessage` no payload | enviado **só** quando o status escolhido é público                                                                                                                                                                                                                        | exigido quando público; descartado quando não público                                                                           | `F2 src/routes/(admin)/fila/[protocolo]/components/triagem/triage-validation.ts:70-72`; `F1 src/modules/requests/triage/triage.service.ts:112-120,154-157`                                      |
+| Priorização antes de finalizar    | bloqueia o envio com `"Calcule a prioridade antes de finalizar a triagem."`                                                                                                                                                                                               | o POST não verifica priorização                                                                                                 | `F2 src/routes/(admin)/fila/[protocolo]/components/triagem/TriageSection.svelte:169-179,283-285,302-304`; `F1 src/modules/requests/triage/triage.service.ts:60-182`                             |
+| Mensagens de erro                 | substitui pelo status: 404 `"Solicitação não encontrada."`, 403 `"Você não tem permissão para realizar a triagem."`, resto `"Não foi possível salvar a triagem."` (GET: `"Você não tem permissão para visualizar a triagem."` / `"Não foi possível carregar a triagem."`) | mensagens literais do §10.4 (ex.: `"Solicitação encerrada."`, `"Protocolo não encontrado"`)                                     | `F2 src/lib/services/triage.service.ts:15-20,36-41`                                                                                                                                             |
+| `422` de regra de negócio         | cai no genérico `"Não foi possível salvar a triagem."`                                                                                                                                                                                                                    | `"Solicitação encerrada."` / `"Validação falhou"` + `fields`                                                                    | `F2 src/lib/services/triage.service.ts:14-23`                                                                                                                                                   |
+| Estado finalizado                 | readonly quando o GET devolve objeto; edição conforme `canEditSolicitation` (Admin ou responsável)                                                                                                                                                                        | GET permitido a Gestor; POST restrito a Admin ou responsável                                                                    | `F2 src/routes/(admin)/fila/[protocolo]/components/triagem/TriageSection.svelte:56-71`; `F2 src/lib/services/access.service.ts:35-42`; `F1 src/modules/requests/triage/triage.service.ts:51-55` |
+| Validação local                   | replica limites e condicionais, com mensagens próprias (ex.: `"Selecione o status de saída."`, `"Informe o resultado."`)                                                                                                                                                  | mensagens do schema (`"Informe o resultado da triagem"`)                                                                        | `F2 src/routes/(admin)/fila/[protocolo]/components/triagem/triage-validation.ts:76-170`; `F1 src/modules/requests/triage/triage.schema.ts:61-70`                                                |
+| Rascunho                          | persistido em `sessionStorage` por protocolo, com precedência sobre o GET                                                                                                                                                                                                 | não há rascunho no servidor                                                                                                     | `F2 src/routes/(admin)/fila/[protocolo]/components/triagem/TriageSection.svelte:73-99,133-153`                                                                                                  |
+
+O rascunho inicial de `createEmptyTriageAssessment` traz `lastTechnicalMessage: ''` (`F2 src/lib/types/triage.ts:29-44`), mas `toTriagePayload` omite o campo quando o destino não é público e o envia com `trim` quando é (`F2 src/routes/(admin)/fila/[protocolo]/components/triagem/triage-validation.ts:70-72`) — string vazia só chega ao backend se o usuário deixar o campo em branco num destino público, caso em que o backend responde `422`.
+
+### 10.7 Confronto com `docs/04-API-Conventions.md`
+
+| Tema                | Situação                                                                                                                                                                            | Ponteiro                        |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------- |
+| Base path           | Divergente (legado vigente): rotas na raiz, sem `/api/v1`                                                                                                                           | convenção §1 (#1)               |
+| Sucesso             | Compatível: `200` leitura, `201` criação                                                                                                                                            | #20 / §15.4                     |
+| Validação           | Divergente (legado vigente): `422` + `fields` como objeto; `400` de path via mensagem agregada                                                                                      | #5 / §3; decisão D12 de #19     |
+| `code` de erro      | Divergente (legado vigente): `403` da leitura e `404`/`409`/`422` sem `code`; `code` de domínio em `UPPER_SNAKE` (`INSUFFICIENT_ROLE_PERMISSIONS`) em vez de snake_case do catálogo | #4 / §2.3                       |
+| Referência a status | Divergente (legado vigente): `exitStatus` é `statuses.status_id` numérico; a `key` não vai ao wire                                                                                  | #18 / ADR-0003, ADR-0021; §15.1 |
+| Concorrência        | Divergente (legado vigente): o `409` existe, mas o corpo não traz `currentStatusKey`/`currentStatusId` e o cliente não envia precondição                                            | #10 / §8.1                      |
+| Idempotência        | Compatível: `POST` de criação não idempotente e não deduplicado                                                                                                                     | #11 / §8.2                      |
+| Autorização         | Divergente (legado vigente): perfis por nome de perfil em `requireRole` + custódia no service, em vez de capability keys com escopo `own`/`all`                                     | #8 / ADR-0025; §6               |
+| Datas               | Não se aplica: a rota não expõe timestamp                                                                                                                                           | §10                             |
+| Request-id          | Divergente (legado vigente): sem `x-request-id` e sem `requestId` no envelope                                                                                                       | #15 / §12                       |
+| Rate limit          | Não se aplica: rota autenticada                                                                                                                                                     | §13                             |
+
+**Cobertura da seção:** 2 de 2 rotas do inventário — `GET /requests/:protocol/triage` (#33) e `POST /requests/:protocol/triage` (#34).
