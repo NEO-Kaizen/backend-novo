@@ -4,7 +4,7 @@ status: aceito
 
 # Dependências de serviço são recortes de capacidade
 
-A injeção manual ([ADR-0002](./0002-manual-dependency-injection.md)) faz o objeto de dependências atravessar container → fábrica → construtor, e o primeiro desenho montava `new RequestService({ ...dependencies, repository })` com `dependencies: RequestsModuleDependencies`, que estende `ModuleDependencies` — e esse objeto carrega `database`. O service passava a ter a **capacidade** de falar com o banco, mesmo sem precisar: podia montar query, e o tipo dizia que podia. A regra "SQL no repositório" ficava na disciplina: `assertInTransaction()` só barra a escrita que passa pelo repositório, e um service com a porta `Database` ainda podia usar `client` para escrever fora dele.
+A injeção manual ([ADR-0002](./0002-manual-dependency-injection.md)) faz o objeto de dependências atravessar container → fábrica → construtor, e o primeiro desenho montava `new RequestService({ ...dependencies, repository })` com `dependencies: RequestsModuleDependencies`, que estende `ModuleDependencies` — e esse objeto carrega `database`. O service passava a ter a **capacidade** de falar com o banco, mesmo sem precisar: podia montar query, e o tipo dizia que podia. A regra "SQL no repositório" ficava na disciplina: `assertInTransaction()` só barra a escrita que passa por um método que o chama — em especial o repositório — e um service com a porta `Database` ainda podia usar `client` para escrever fora dele.
 
 Decidimos que as dependências são um **recorte por quem as usa**, em três níveis:
 
@@ -41,3 +41,5 @@ Com isso, `this.dependencies.database` não compila: o service não recebe a por
 - A regra é a mesma das portas publicadas: `queue` e `reports` não escrevem porque não recebem `*Writer`; agora o banco segue a mesma lógica de capacidade.
 
 Ver [§ 7.2](../02-Architecture.md#72-baseservice) e [§ 8.2](../02-Architecture.md#82-fábrica-de-módulo) em [`02-Architecture.md`](../02-Architecture.md).
+
+> **Numeração:** o `0026` está reservado pelo [PR #40](https://github.com/NEO-Kaizen/backend-novo/pull/40), que adiciona `docs/adr/0026-openapi-generated-from-zod.md`; este ADR usa o `0027` para não colidir. Se o #40 for fechado sem merge, este ADR volta para `0026`.
