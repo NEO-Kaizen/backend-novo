@@ -15,6 +15,7 @@ Ver [`docs/04-API-Conventions.md`](./04-API-Conventions.md). Esta spec apenas re
 ## 5. Endpoints
 
 - método, path sob `/api/v1`, auth, capability.
+- contrato de máquina: cada rota ganha metadados em `<domínio>.openapi.ts`, conforme [`04-HTTP-Contract.md`](./04-HTTP-Contract.md).
 
 ## 6. Paginação
 
@@ -46,4 +47,4 @@ Ver [`docs/04-API-Conventions.md`](./04-API-Conventions.md). Esta spec apenas re
 
 ## 13. Checklist de revisão
 
-Ver [`docs/04-API-Conventions.md`](./04-API-Conventions.md) §16.
+Ver [`docs/04-API-Conventions.md`](./04-API-Conventions.md) §16 e [`docs/04-HTTP-Contract.md`](./04-HTTP-Contract.md) §15.

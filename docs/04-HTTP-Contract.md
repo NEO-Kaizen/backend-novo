@@ -1,6 +1,6 @@
 # Contrato HTTP (OpenAPI)
 
-Política normativa do contrato HTTP publicado. Fonte única do padrão OpenAPI do backend-novo. Toda spec de domínio cita este documento em vez de redefinir estas decisões; divergência exige emenda aqui e emenda ao ADR-0026.
+Política normativa do contrato HTTP versionado. Fonte única do padrão OpenAPI do backend-novo. Toda spec de domínio cita este documento em vez de redefinir estas decisões; divergência exige emenda aqui e emenda ao ADR-0026.
 
 Decisões transversais (base path, envelope de erro, paginação, sessão, autorização, concorrência, content types, datas, idioma, request-id, rate limit, CORS) estão em `docs/04-API-Conventions.md` e são herdadas, não redefinidas aqui.
 
@@ -9,20 +9,20 @@ Decisões transversais (base path, envelope de erro, paginação, sessão, autor
 Hierarquia:
 
 1. **Schemas Zod + metadados de rota** (código) — fonte única.
-2. **OpenAPI 3.1.0** (`openapi/openapi.json`) — gerado, versionado, publicado.
+2. **OpenAPI 3.1.0** (`openapi/openapi.json`) — artefato versionado; gerado e publicado quando o pipeline existir.
 
 Documentos normativos (`04-API-Conventions.md`, `02-Architecture.md`, `03-Data-Model.md`) complementam regras que o OpenAPI não expressa, mas não são contrato de máquina.
 
-Não há contratos Markdown versionados no backend-novo. DTOs não são duplicados fora dos schemas Zod.
+Não há contratos Markdown por domínio no backend-novo: este documento é a política normativa e as specs de domínio são narrativa, não contrato de máquina. DTOs não são duplicados fora dos schemas Zod.
 
 ## 2. Versão e gerador
 
-- OpenAPI **3.1.0** (mínimo suportado pelo gerador).
+- OpenAPI **3.1.0** — versão estável adotada. O `zod-openapi` 6.x também lista `3.2.0` nas typings, mas o suporte documentado cobre 3.1.x; a adoção de 3.2 fica para o spike.
 - Gerador: **`zod-openapi` 6.x**, sem monkey patch, usando `.meta()` nativo do Zod.
 - Proibido: `tsoa`, decorators, geração baseada em AST do TypeScript.
-- Spike validado: TS 6 + `nodenext` + Node 24 + `z.iso.datetime()` + `z.file()` (multipart) — ver ADR-0026.
+- A adoção do gerador exige o spike de compatibilidade previsto no ADR-0026: `zod-openapi`, TypeScript 7 como alvo (o `package.json` fixa `~6.0.3`), `nodenext`, Node 24, `z.iso.datetime()`/`z.iso.date()` e `z.file()`.
 
-## 3. Estrutura de arquivos
+## 3. Estrutura alvo
 
 ```
 src/
@@ -40,11 +40,11 @@ src/
 openapi/
 └── openapi.json            # artefato commitado
 docs/openapi/
-└── README.md               # comandos
+└── README.md               # comandos e regra do artefato
 .spectral.yaml              # lint
 ```
 
-Regra de dependências (`docs/02-Architecture.md` §19): `domains` não importa `platform`; `*.openapi.ts` não importa `platform`. A composição acontece em `src/docs/openapi.ts` (composition root do docs).
+Regra de dependências (`docs/02-Architecture.md` §19): `domains` não importa `platform`; `*.openapi.ts` não importa `platform`. A composição dos metadados de rota acontece em `src/docs/openapi.ts`.
 
 ## 4. Metadados de rota
 
@@ -57,12 +57,13 @@ Regra de dependências (`docs/02-Architecture.md` §19): `domains` não importa 
 
 ## 5. Segurança
 
-- `securitySchemes.sessionCookie`: `{ type: "apiKey", in: "cookie", name: "session_id" }`.
+- `securitySchemes.sessionCookie`: `{ type: "apiKey", in: "cookie", name: "session_id" }`. O nome é o default de `COOKIE_NAME` (`docs/04-API-Conventions.md` §5).
 - Segurança global: `security: [{ sessionCookie: [] }]`.
+- `servers[0].url` é o base path relativo (`/api/v1`); host e esquema vêm do ambiente, nunca do artefato.
 - Operações públicas declaram `security: []` explicitamente (login, verificação pública por protocolo, etc.).
 - Nunca usar `bearerAuth`; a sessão é cookie HttpOnly.
 
-## 6. Envelope de erro (documentado uma vez)
+## 6. Envelope de erro no OpenAPI
 
 O contrato vigente é o legado (ADR-0005). O OpenAPI documenta o vigente, não o alvo.
 
@@ -70,67 +71,61 @@ O contrato vigente é o legado (ADR-0005). O OpenAPI documenta o vigente, não o
 { "status": "error", "statusCode": 404, "message": "Solicitação não encontrada." }
 ```
 
-Aditivos permitidos (não quebram o cliente): `code` (snake_case estável), `requestId` (correlation HTTP), `fields` (erros por campo, em validação). O componente `ErrorEnvelope` em `src/docs/components.ts` é a única definição; todas as respostas de erro a referenciam. O campo `code`, quando presente, referencia o componente `ErrorCode`, um enum gerado de `core/errors/error-codes.ts`; no esqueleto atual a lista é a do `docs/04-API-Conventions.md` §2.3, mais códigos de domínio conhecidos. O `code` é opcional no envelope legado e clientes devem ter fallback para valores desconhecidos.
+Aditivos permitidos (não quebram o cliente): `code` (snake_case estável), `requestId` (correlation HTTP), `fields` (erros por campo, em validação). No artefato (`openapi/openapi.json`), o componente `ErrorEnvelope` é a definição; quando o gerador existir, `src/docs/components.ts` será a única definição e todas as respostas de erro a referenciarão. O campo `code`, quando presente, referencia o componente `ErrorCode`, que será gerado de `core/errors/error-codes.ts`; no artefato, a lista é a do `docs/04-API-Conventions.md` §2.3, mais códigos de domínio conhecidos. `core/errors/internal-codes.ts` nunca é exposto. No 409 de concorrência, o corpo estende `ErrorEnvelope` com `currentStatusKey` e, opcionalmente, `currentStatusId` (`docs/04-API-Conventions.md` §8.1). O `code` é opcional no envelope legado e clientes devem ter fallback para valores desconhecidos.
 
-## 7. Paginação (documentada uma vez)
+## 7. Paginação no OpenAPI
 
 ```json
 { "data": [], "page": 1, "pageSize": 20, "total": 0, "totalPages": 0 }
 ```
 
-O componente `PaginatedResponse` em `src/docs/components.ts` é a única definição. Exceções registradas em `docs/04-API-Conventions.md` (timeline por cursor; auditoria padrão) são documentadas na spec de domínio correspondente.
+No artefato (`openapi/openapi.json`), o componente `PaginatedResponse` é a definição; quando o gerador existir, `src/docs/components.ts` será a única definição. `pageSize` tem default **20** e máximo **100**; acima do máximo é `400` `validation_error` (`docs/04-API-Conventions.md` §4.2). Exceções registradas em `docs/04-API-Conventions.md` (timeline por cursor; auditoria padrão) são documentadas na spec de domínio correspondente.
 
-## 8. Multipart e content types
+## 8. Multipart
 
-- `application/json` para JSON; `multipart/form-data` para uploads.
-- `Content-Type` inesperado → `415` (`invalid_content_type`).
-- Corpo acima do limite → `413` (`payload_too_large`).
-- `POST /api/v1/requests`: `payload` + `attachments` (0–5 arquivos, 10 MB por arquivo, MIME allowlist). Documentado com `z.file()` (renderiza `format: binary`).
-- Limites de arquivo por rota são registrados na spec de domínio.
+- Content types, limites e erros seguem `docs/04-API-Conventions.md` §9.
+- `POST /api/v1/requests`: `payload` + `attachments`, documentado com `z.file()` (renderiza `format: binary`); os limites e a MIME allowlist vêm da §9.
 
 ## 9. Header do solicitante
 
-- Aceitar `X-Requester-Email` e `X-Requester-Identity` por uma release (janela de compatibilidade).
-- Depois, apenas `X-Requester-Email`.
-- O header é chave de busca, não autenticação (ADR-0023); sem correspondência, resposta `404` (nunca `403`).
-- Documentar ambos os parâmetros no OpenAPI durante a janela, marcando `X-Requester-Identity` como `deprecated`.
+- A janela de compatibilidade, a busca e o `404` estão em `docs/04-API-Conventions.md` §15.3 e no ADR-0023.
+- No OpenAPI, documentar `X-Requester-Email` e `X-Requester-Identity` (marcado `deprecated`).
 
 ## 10. Datas e horas
 
-- Timestamps: ISO-8601 UTC com `Z` — usar `z.iso.datetime()`.
-- Datas puras: `yyyy-mm-dd` — usar `z.iso.date()`.
-- Serialização na borda sempre ISO (`docs/04-API-Conventions.md` §10).
+- Timestamps usam `z.iso.datetime()`; datas puras usam `z.iso.date()`.
+- Serialização e formato seguem `docs/04-API-Conventions.md` §10.
 
-## 11. Versionamento, breaking change e depreciação
+## 11. Versionamento e depreciação
 
-- Base path: `/api/v1` para todos os endpoints (`docs/04-API-Conventions.md` §1).
-- `v2` não existe; quando existir, convive com `v1` por janela documentada.
-- Breaking change: exige label `breaking-change` no PR, plano de `/api/v2` e aprovação. `oasdiff breaking` compara base × PR e falha se houver breaking sem a label.
+- Base path, `v2` e idempotência seguem `docs/04-API-Conventions.md` §1 e §8.
+- Breaking change: exige label `breaking-change`, plano de `/api/v2` e aprovação; o gate `oasdiff breaking` entra quando o workflow existir.
 - Depreciação: `deprecated: true` no OpenAPI, com prazo documentado; remoção só em `v2`.
-- Idempotência e concorrência seguem `docs/04-API-Conventions.md` §8.
+- `info.version` versiona o contrato publicado, não o `package.json`; é `0.0.0` até a primeira versão publicada e depois usa `1.x`, alinhado a `/api/v1`.
 
 ## 12. Comandos
 
 ```bash
 npm run docs:generate   # regenera openapi/openapi.json a partir dos schemas Zod
 npm run docs:lint       # spectral lint openapi/openapi.json
-npm run docs:check     # regenera e falha se o artefato estiver desatualizado
+npm run docs:check      # regenera e falha se o artefato estiver desatualizado
 ```
 
-- O artefato `openapi/openapi.json` é **commitado**. Edição manual é proibida; toda mudança passa por `docs:generate`.
-- Em CI: `docs:generate` → `docs:lint` → `docs:check`, mais `oasdiff breaking` contra a base.
+- Os scripts acima serão adicionados com a automação do contrato. Enquanto eles não existirem, a validação manual do artefato é `npx @stoplight/spectral-cli lint openapi/openapi.json`.
+- O artefato `openapi/openapi.json` é **commitado**. Enquanto o gerador não existir, ele é mantido manualmente; depois, edição manual é proibida e toda mudança passa por `docs:generate`.
+- Em CI, quando o gate existir: `docs:generate` → `docs:lint` → `docs:check`, mais `oasdiff breaking` contra a base.
 
 ## 13. Exposição por ambiente
 
 - Documentação e UI desabilitadas em produção por padrão.
 - Habilitação em produção apenas com opt-in explícito (`DOCS_ENABLED=true`).
-- Em desenvolvimento e teste: habilitadas.
+- Em desenvolvimento e teste: habilitadas quando o router existir.
 
 ## 14. Lint do spec
 
-- `spectral lint openapi/openapi.json` com `spectral:oas` + regras customizadas (`.spectral.yaml`).
-- Regras mínimas: `operation-operationId`, `operation-tags`, schemas com `description`/`example`.
-- Exemplos sem PII verificados por script auxiliar.
+- `spectral lint openapi/openapi.json` usa `spectral:oas`; `.spectral.yaml` eleva `operation-operationId` e `operation-tags` a erro.
+- Não há regras customizadas. As regras de `description`/`example` em schema e a verificação de PII serão adicionadas como regras customizadas.
+- Exemplos sem PII serão verificados por script auxiliar quando o gerador existir.
 
 ## 15. Checklist de revisão (OpenAPI)
 
@@ -140,12 +135,12 @@ npm run docs:check     # regenera e falha se o artefato estiver desatualizado
 - [ ] Timestamps usam `z.iso.datetime()`; datas puras usam `z.iso.date()`.
 - [ ] Operações públicas declaram `security: []`.
 - [ ] Multipart documenta limites e `415`.
-- [ ] Artefato regenerado (`docs:check` verde).
+- [ ] Artefato regenerado (`docs:check` verde, quando o script existir).
 
 ## 16. Referências
 
 - ADR-0005 — envelope de erro legado.
 - ADR-0023 — header do solicitante.
-- ADR-0026 — esta decisão.
+- ADR-0026 — OpenAPI gerado dos schemas Zod.
 - `docs/04-API-Conventions.md` — convenções transversais.
 - `docs/02-Architecture.md` §15 — roteamento.

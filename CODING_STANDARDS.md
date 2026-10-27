@@ -137,7 +137,7 @@ export class AppError extends Error {
 - Ordenação, colunas e filtros dinâmicos passam por allowlist.
 - Transações para operações multi-tabela; timeout de query; paginação com limite máximo; nada de query sem limite.
 - Evite N+1: carregue em lote ou use join/estratégia equivalente.
-- Toda rota documentada no OpenAPI tem schema de request e de response explícito, com exemplos.
+- Toda rota documentada no OpenAPI tem schema de request, quando houver, e de response explícito, com exemplos.
 - Timestamps usam `z.iso.datetime()` (UTC) e datas puras usam `z.iso.date()`; serialize sempre em ISO.
 - Exemplos no spec são obrigatórios e não podem conter PII.
 
@@ -275,7 +275,7 @@ describe("POST /api/v1/users", () => {
 - [ ] Sem N+1, query sem limite ou payload sem paginação.
 - [ ] Comentários explicam o porquê; sem código morto.
 - [ ] Schema alterado? `docs/03-Data-Model.md` e os derivados `docs/db/02-reference.md`, `docs/db/03-erd.md` e `docs/db/schema.dbml` foram atualizados no mesmo PR.
-- [ ] Rota alterada? `*.openapi.ts` e `openapi/openapi.json` (via `docs:generate`) atualizados; `docs:check` verde.
+- [ ] Rota alterada? `*.openapi.ts` e `openapi/openapi.json` atualizados (via `docs:generate`, quando o script existir); `docs:check` verde quando disponível.
 - [ ] Exemplos no spec sem PII.
 - [ ] Exceções a este documento registradas no PR.
 

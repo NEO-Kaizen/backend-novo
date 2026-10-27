@@ -9,6 +9,7 @@ Documentos relacionados:
 - [`02-Architecture.md`](./02-Architecture.md) — arquitetura em camadas, injeção de dependências, persistência com Knex e regras de modularização.
 - [`03-Data-Model.md`](./03-Data-Model.md) — o modelo de dados: tabelas, colunas, relações e invariantes.
 - [`04-API-Conventions.md`](./04-API-Conventions.md) — convenções transversais da API v1 herdadas por todas as specs de domínio.
+- [`04-HTTP-Contract.md`](./04-HTTP-Contract.md) — política do contrato HTTP e do OpenAPI 3.1.
 - [`_template.md`](./_template.md) — template de spec de domínio.
 - [`../GLOSSARY.md`](../GLOSSARY.md) — vocabulário do domínio.
 - [`adr/`](./adr/) — decisões de arquitetura registradas.
@@ -114,6 +115,8 @@ O inventário completo, com responsabilidades e portas publicadas por cada domí
 02-Architecture.md    → como o código se organiza e por quê
 03-Data-Model.md      → as tabelas, as relações e as invariantes do banco
 04-API-Conventions.md → convenções transversais da API v1 (envelope, paginação, sessão, ids, datas, request-id, rate limit, CORS)
+04-HTTP-Contract.md   → política do contrato HTTP e do OpenAPI 3.1
+openapi/README.md     → comandos e regra do artefato OpenAPI
 _template.md          → template de spec de domínio
 db/README.md          → porta de entrada da documentação do banco
   db/01-vocabulary.md → índice termo → tabela
@@ -128,7 +131,7 @@ CODING_STANDARDS.md   → como escrever o código
 SETUP.md              → como preparar o ambiente
 ```
 
-As convenções transversais da API v1 estão em [`04-API-Conventions.md`](./04-API-Conventions.md); o template de spec de domínio está em [`_template.md`](./_template.md).
+As convenções transversais da API v1 estão em [`04-API-Conventions.md`](./04-API-Conventions.md); o contrato HTTP e o padrão OpenAPI estão em [`04-HTTP-Contract.md`](./04-HTTP-Contract.md); o template de spec de domínio está em [`_template.md`](./_template.md).
 
 ---
 

@@ -3,12 +3,12 @@
   "info": {
     "title": "MAAT Backend API",
     "version": "0.0.0",
-    "description": "Contrato HTTP publicado do backend-novo. Gerado a partir dos schemas Zod; não editar manualmente."
+    "description": "Contrato HTTP do backend-novo. As operações serão geradas a partir dos schemas Zod."
   },
   "servers": [
     {
-      "url": "http://localhost:3000/api/v1",
-      "description": "Desenvolvimento local"
+      "url": "/api/v1",
+      "description": "Base path da API; a origem é definida pelo ambiente."
     }
   ],
   "paths": {},
@@ -18,7 +18,20 @@
         "type": "apiKey",
         "in": "cookie",
         "name": "session_id",
-        "description": "Sessão JWT em cookie HttpOnly."
+        "description": "Sessão JWT em cookie HttpOnly; nome default session_id."
+      }
+    },
+    "parameters": {
+      "PageSize": {
+        "name": "pageSize",
+        "in": "query",
+        "description": "Default 20; máximo 100. Acima do máximo a API responde 400 validation_error.",
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 20
+        }
       }
     },
     "schemas": {
@@ -59,6 +72,15 @@
               },
               "required": ["path", "message"]
             }
+          },
+          "currentStatusKey": {
+            "type": "string",
+            "description": "409 de concorrência: key do status atual (§8.1)."
+          },
+          "currentStatusId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "409 de concorrência: UUID do status atual (fallback de migração)."
           }
         },
         "required": ["status", "statusCode", "message"]
@@ -78,7 +100,7 @@
           "pageSize": {
             "type": "integer",
             "minimum": 1,
-            "maximum": 100
+            "description": "Tamanho efetivo da página; default 20 e máximo 100 na convenção."
           },
           "total": {
             "type": "integer",
@@ -93,7 +115,7 @@
       },
       "ErrorCode": {
         "type": "string",
-        "description": "Código estável em snake_case (catálogo em core/errors/error-codes.ts).",
+        "description": "Código estável em snake_case. Será gerado de core/errors/error-codes.ts; os códigos de core/errors/internal-codes.ts nunca são expostos.",
         "enum": [
           "validation_error",
           "unauthorized",

@@ -137,7 +137,7 @@ seeds/<domain>/                # seeds donos por cada domínio
 knexfile.ts
 ```
 
-> Pastas e arquivos são criados conforme a necessidade. Um domínio sem tabelas próprias não tem `schema/`; um domínio sem rotas públicas não precisa de subpastas.
+> Pastas e arquivos são criados conforme a necessidade. Um domínio sem tabelas próprias não tem `schema/`; um domínio sem rotas públicas não precisa de subpastas. O diretório `src/docs/` (composição do OpenAPI) está detalhado na §23.1.
 
 Schema e migrations pertencem ao domínio — a definição da tabela vive em `src/domains/<domínio>/schema/`, ao lado da regra que a usa. Ver [ADR-0004](./adr/0004-domain-owned-schema-and-migrations.md).
 
@@ -1523,7 +1523,8 @@ core      → (nenhuma dependência interna)
 domains   → core
 domains   → outro domain: apenas via port publicada (import de tipo)
 platform  → core
-container → core + platform + domains
+docs      → core + domains (metadados)
+container → core + platform + domains + docs
 ```
 
 | Proibição                                                                        | Por quê                                                                          |
@@ -1532,6 +1533,7 @@ container → core + platform + domains
 | `domains` **nunca** importa de `platform`                                        | A implementação concreta do adapter entra pelo container                         |
 | Um domínio **nunca** importa repositório, service ou controller de outro domínio | Fronteira entre áreas                                                            |
 | `platform` **nunca** importa de `domains`                                        | Inclusive o _error handler_: ele recebe a porta `AttemptRecorder`, não o domínio |
+| `docs` **não** é importado por `core`, `domains` ou `platform`                   | O spec é composto no container; o router recebe o documento pronto               |
 | `app.ts` e `server.ts` **nunca** criam dependência                               | Eles consomem o `Container`                                                      |
 
 ---
@@ -1561,8 +1563,6 @@ Os padrões abaixo são os que o backend legado usa e que esta arquitetura exist
 
 ---
 
----
-
 ## 21. Checklist de Revisão
 
 Cada linha aponta a seção que define a regra. Um PR que muda mais de uma camada marca mais de uma linha.
@@ -1588,8 +1588,8 @@ Cada linha aponta a seção que define a regra. Um PR que muda mais de uma camad
 | [ ] | Nenhuma coluna `ENUM`; conjunto fechado é `text` + `ck_` ou tabela de referência        | [`03-Data-Model.md` § 2.7](./03-Data-Model.md#27-conjuntos-fechados)      | `rg "\.enu\(" src/domains`                                               |
 | [ ] | `ON DELETE RESTRICT` em toda chave estrangeira; nada é apagado                          | [`03-Data-Model.md` § 2.11](./03-Data-Model.md#211-política-de-exclusão)  | `rg "onDelete\(" src/domains`                                            |
 | [ ] | Schema alterado, modelo documentado atualizado                                          | [ADR-0010](./adr/0010-data-model-doc-is-the-spec.md)                      | Diff em `03-Data-Model.md` no mesmo PR                                   |
-| [ ] | Rota documentada no OpenAPI com request/response schemas explícitos                     | [§ 23](#23-contrato-http-openapi)                                         | `*.openapi.ts` + `docs:check`                                            |
-| [ ] | Exemplos no spec sem PII                                                                | [§ 23](#23-contrato-http-openapi)                                         | Revisão manual + script de checagem                                      |
+| [ ] | Rota documentada no OpenAPI com request/response schemas explícitos                     | [§ 23](#23-contrato-http-openapi)                                         | `*.openapi.ts` + revisão manual                                          |
+| [ ] | Exemplos no spec sem PII                                                                | [§ 23](#23-contrato-http-openapi)                                         | Revisão manual                                                           |
 | [ ] | Autorização verificada no servidor, em um lugar só por domínio                          | [§ 14.4](#144-autorização)                                                | `AuthorizationService.assert`                                            |
 | [ ] | Log estruturado com request id; sem PII; sem `console.log`                              | [§ 17](#17-log)                                                           | `rg "console\.(log\|error)" src/`                                        |
 | [ ] | Segredo vem de ambiente validado; nunca no repositório                                  | [§ 16](#16-configuração)                                                  | `.env.example` sem valor                                                 |
@@ -1605,6 +1605,7 @@ As pendências de **schema** estão no [`03-Data-Model.md` § 21](./03-Data-Mode
 | Envelope de erro `{ error: { code, message, requestId } }` | Frontend precisa ajustar `readErrorMessage`                                                              | Release coordenada com o frontend    |
 | Contratos publicados: ids numéricos e 4 perfis             | O frontend atual descarta id que não seja número em categorias e status                                  | Release coordenada; ver § 22.1       |
 | Suíte de testes automatizados                              | Rede de segurança ausente para a reescrita                                                               | Ferramentas de teste decididas       |
+| Gerador OpenAPI e spike de compatibilidade                 | Sem gerador, o artefato é mantido manualmente e não há gate de drift                                     | Adoção do gerador                    |
 | Credencial de runtime e de migração                        | O append-only por privilégio exige duas credenciais no Postgres/MySQL; hoje o schema de ambiente tem uma | Implementação do deploy              |
 | Contrato da API de auditoria                               | A rota é montada; o formato de resposta não está acordado                                                | Formalização do domínio de auditoria |
 | RBAC configurável                                          | Desenho no Apêndice C; o Apêndice B continua sendo o contrato                                            | Frontend consumir `permissions`      |
@@ -1629,9 +1630,9 @@ A release é um **cutover coordenado**, não um adapter numérico: devolver id n
 
 ## 23. Contrato HTTP (OpenAPI)
 
-O contrato HTTP publicado é gerado a partir dos schemas Zod e dos metadados de rota. A política normativa completa está em `docs/04-HTTP-Contract.md`; as convenções transversais (base path, envelope, paginação, sessão, autorização, etc.) estão em `docs/04-API-Conventions.md`.
+O contrato HTTP será derivado dos schemas Zod e dos metadados de rota. A política normativa completa está em `docs/04-HTTP-Contract.md`; as convenções transversais (base path, envelope, paginação, sessão, autorização, etc.) estão em `docs/04-API-Conventions.md`.
 
-### 23.1 Estrutura
+### 23.1 Estrutura alvo
 
 ```text
 src/
@@ -1648,6 +1649,9 @@ src/
         └── docs-router.ts  # serve /api/v1/openapi.json e /api/v1/docs
 openapi/
 └── openapi.json            # artefato commitado
+docs/openapi/
+└── README.md               # comandos e regra do artefato
+.spectral.yaml              # lint do spec
 ```
 
 ### 23.2 Regras
@@ -1655,21 +1659,15 @@ openapi/
 | Regra                                                                      | Motivo                                                                            |
 | -------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
 | `*.openapi.ts` não importa `platform`                                      | Metadados de rota ficam no domínio; a composição é feita em `src/docs/openapi.ts` |
-| `*.schema.ts` é a fonte única dos schemas de request/response              | Zod é a fonte de verdade; o OpenAPI é derivado                                    |
 | `src/platform/http/docs-router.ts` é o único lugar que serve o spec e a UI | Uma porta de exposição                                                            |
-| Documentação e UI desabilitadas em produção por padrão                     | Exposição controlada por opt-in (`DOCS_ENABLED`)                                  |
-| Artefato commitado e regenerado em CI                                      | Gate de drift (`docs:check`)                                                      |
 
 ### 23.3 Montagem
 
-```ts
-// src/app.ts
-app.use("/api/v1", container.modules.docs.router); // openapi.json + /docs
-```
-
-A UI (Scalar self-hosted) consome `/api/v1/openapi.json`. O esquema de segurança é `sessionCookie` (`apiKey`, `in: cookie`, `name: session_id`); operações públicas declaram `security: []`.
+O `container` compõe o documento a partir dos `*.openapi.ts` e entrega o router de docs ao `app.ts`, que o registra em `/api/v1`. A UI (Scalar self-hosted) consome `/api/v1/openapi.json`; o esquema de segurança é `sessionCookie` (`apiKey`, `in: cookie`, `name: session_id`) e operações públicas declaram `security: []`.
 
 Ver [ADR-0026](./adr/0026-openapi-generated-from-zod.md).
+
+---
 
 ## 24. Índice
 
