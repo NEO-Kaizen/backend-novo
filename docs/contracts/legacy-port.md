@@ -338,3 +338,524 @@ Só o verify público de pendências aplica limite: 10 tentativas por 10 minutos
 | audit          | 3                       | §16   |
 | internal-notes | 3                       | §17   |
 | **Total**      | **54**                  | —     |
+
+## 5. auth
+
+Quatro rotas, montadas em `/auth` (`F1 src/router.ts:20`), cobrindo o ciclo de sessão por cookie JWT:
+login, logout, leitura da sessão e troca de senha. No router de `auth` não há recuperação de senha por
+e-mail, refresh de token nem cadastro público (o reset administrativo vive em `/users`, §8). A sessão é
+sempre cookie `HttpOnly`; nenhuma rota de `auth` aceita `Authorization: Bearer`.
+
+### 5.1 Fontes
+
+**Código (F1):**
+
+| Caminho                                                                                                             | Uso                                               |
+| ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| `src/modules/auth/auth.router.ts`                                                                                   | registro das 4 rotas e do `authMiddleware`        |
+| `src/modules/auth/auth.controller.ts`                                                                               | handlers, cookie de sessão, DTOs de resposta      |
+| `src/modules/auth/auth.service.ts`                                                                                  | autenticação, releitura de sessão, troca de senha |
+| `src/modules/auth/auth.schema.ts`                                                                                   | `loginSchema` e `changePasswordSchema`            |
+| `src/modules/auth/auth.repository.ts`                                                                               | consultas de usuário/perfil e update de senha     |
+| `src/modules/DTOs/auth/{LoginRequest,LoginResponse,MeResponse,ChangePasswordRequest,ChangePasswordResponse}.dto.ts` | forma dos corpos                                  |
+| `src/shared/middleware/auth.ts`                                                                                     | `authMiddleware`, escopo e revogação              |
+| `src/shared/utils/jwtUtil.ts`                                                                                       | emissão e verificação do JWT                      |
+| `src/shared/utils/roleUtils.ts`                                                                                     | mapa `profiles.name` → `Role`                     |
+| `src/shared/utils/passwordHandler.ts`                                                                               | bcrypt (custo 10)                                 |
+| `src/shared/validation/fieldSchemas.ts`                                                                             | `emailSchema` e `passwordSchema`                  |
+| `src/shared/validation/zodErrors.ts`                                                                                | `formatZodIssues`                                 |
+| `src/configs.ts`                                                                                                    | `COOKIE_NAME`, `JWT_EXPIRES_IN`, `COOKIE_MAX_AGE` |
+| `src/shared/middleware/errorHandler.ts`                                                                             | envelope de erro                                  |
+| `src/app.ts`                                                                                                        | `express.json`, `cookieParser`, CORS              |
+| `src/modules/users/users.service.ts`, `src/modules/users/users.repository.ts`                                       | reset administrativo de senha (revogação)         |
+
+**Documentos do legado (F1):** `docs/database/authentication-persistence.md` (modelo de `profiles` e
+`users`).
+
+**Desatualizado no legado:** `F1 docs/database/authentication-persistence.md` descreve `users` sem
+`avatar_url`, `must_change_password` e `password_changed_at` (tabela em §"Tabela `users`") e declara os
+endpoints de autenticação fora de escopo (§"Fora do escopo"). O código lê as três colunas em toda
+consulta de autenticação (`F1 src/modules/auth/auth.repository.ts:10-28`) e elas são criadas por
+`F1 migrations/users/20260921000000_add_avatar_url_to_users.js`,
+`F1 migrations/20260911120000_add_must_change_password_to_users.js` e
+`F1 migrations/20260912150000_add_password_changed_at_to_users.js`.
+
+**Consumidor (F2):** `src/lib/api/auth.api.ts`, `src/lib/services/auth.service.ts`,
+`src/lib/types/auth.ts`, `src/lib/types/user.ts`, `src/lib/api/client.ts`, `src/lib/utils/api-assets.ts`,
+`src/hooks.server.ts`, `src/lib/services/access.service.ts`,
+`src/lib/components/forms/LoginForm.svelte`, `src/routes/(app)/redefinir-senha/+page.svelte`.
+
+### 5.2 Rotas
+
+| Método | Path                    | Autenticação                                          | Handler          | Sucesso                                     | Erros              |
+| ------ | ----------------------- | ----------------------------------------------------- | ---------------- | ------------------------------------------- | ------------------ |
+| POST   | `/auth/login`           | pública                                               | `authenticate`   | 200 + DTO de sessão + `Set-Cookie`          | 400, 401, 500      |
+| POST   | `/auth/logout`          | pública                                               | `logout`         | 200 `{ message }` + cookie expirado         | 500                |
+| GET    | `/auth/me`              | sessão (cookie); permitida com `must_change_password` | `me`             | 200 + DTO de sessão                         | 401, 500           |
+| PUT    | `/auth/change-password` | sessão (cookie); permitida com `must_change_password` | `changePassword` | 200 + DTO de sessão + `Set-Cookie` renovado | 400, 401, 404, 500 |
+
+Evidência do registro: `F1 src/modules/auth/auth.router.ts:7-10`.
+
+**Divergente (legado vigente):** os paths não têm o prefixo `/api/v1` — convenção §1 de
+`docs/04-API-Conventions.md` (ver também §3.1 deste documento).
+
+O DTO de sessão é o mesmo nas três respostas com corpo (`LoginResponseDTO`, `MeResponseDTO`,
+`ChangePasswordResponseDTO` são estruturalmente idênticos): `id`, `name`, `email`, `avatarUrl`, `role`,
+`mustChangePassword` (`F1 src/modules/DTOs/auth/LoginResponse.dto.ts:3-10`;
+`F1 src/modules/DTOs/auth/MeResponse.dto.ts:3-10`;
+`F1 src/modules/DTOs/auth/ChangePasswordResponse.dto.ts:3-10`). Não existe campo `permissions` em
+nenhuma resposta de `auth`.
+
+### 5.3 POST /auth/login
+
+Autentica por e-mail e senha, emite o JWT no cookie e devolve o DTO de sessão. Rota pública
+(`F1 src/modules/auth/auth.router.ts:7`).
+
+#### Request
+
+| Parte   | Conteúdo                                                                                            |
+| ------- | --------------------------------------------------------------------------------------------------- |
+| Path    | nenhum parâmetro; path completo `/auth/login`                                                       |
+| Query   | nenhuma                                                                                             |
+| Body    | JSON `{ "email": string, "password": string }` (`F1 src/modules/DTOs/auth/LoginRequest.dto.ts:1-4`) |
+| Headers | `Content-Type: application/json`; cookie não é necessário                                           |
+
+Regras de validação (`F1 src/modules/auth/auth.schema.ts:4-12`):
+
+| Campo      | Regra                                                                                  | Mensagem literal                                                                                                |
+| ---------- | -------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `email`    | `emailSchema`: string, `trim`, `toLowerCase`, formato de e-mail, máximo 254 caracteres | `"Informe um e-mail válido."`, `"Máximo de 254 caracteres."` (`F1 src/shared/validation/fieldSchemas.ts:20-25`) |
+| `password` | `maxPasswordBytes`: string, mínimo 1 caractere, máximo 72 **bytes** UTF-8; sem `trim`  | `"Campo obrigatório."`, `"Máximo de 72 bytes."` (`F1 src/modules/auth/auth.schema.ts:4-7`)                      |
+
+- `password` no login **não** passa por `passwordSchema`: não há mínimo de 8 caracteres nessa rota
+  (`F1 src/modules/auth/auth.schema.ts:11`).
+- A falha de validação usa `formatZodIssues` + `AppError(..., 400)`, portanto o corpo do 400 tem
+  apenas `message` agregada, sem `fields` (`F1 src/modules/auth/auth.controller.ts:32-36`;
+  `F1 src/shared/validation/zodErrors.ts:57-91`). Exemplos de `message`:
+  - `"Campos obrigatórios ausentes: email, password"` (ambos ausentes);
+  - `"Campos inválidos: email — Informe um e-mail válido."`;
+  - `"Campos inválidos: password — Máximo de 72 bytes."`;
+  - valor não-string vira `"Deve ser um texto."` (`F1 src/shared/validation/zodErrors.ts:3-8,33-37`).
+- O e-mail é normalizado uma segunda vez no service (`trim` + `toLowerCase`) antes da consulta
+  (`F1 src/modules/auth/auth.service.ts:27-29`). A senha não é normalizada.
+- A consulta é `users` JOIN `profiles` por `profile_id`, trazendo `profile_name` e
+  `profile_is_active` (`F1 src/modules/auth/auth.repository.ts:6-28`).
+- Usuário inexistente, senha incorreta, `users.is_active = false` e `profiles.is_active = false`
+  produzem **a mesma** resposta: `401 "Credenciais inválidas"`. Nos casos de usuário inexistente e de
+  usuário/perfil inativo o service executa um `comparePassword` contra um hash descartável para
+  equalizar o tempo do bcrypt (`F1 src/modules/auth/auth.service.ts:22-24,31-48`).
+- Não há rate limit nesta rota: o router não aplica nenhum middleware de limite
+  (`F1 src/modules/auth/auth.router.ts:7`).
+
+#### Response 2xx
+
+Status `200` (`F1 src/modules/auth/auth.controller.ts:61,84`).
+
+| Campo                | Tipo                                                         | Origem                                                                            |
+| -------------------- | ------------------------------------------------------------ | --------------------------------------------------------------------------------- |
+| `id`                 | string decimal (`String(user_id)`)                           | `F1 src/modules/auth/auth.service.ts:52`                                          |
+| `name`               | string (`users.full_name`)                                   | `F1 src/modules/auth/auth.service.ts:53`                                          |
+| `email`              | string (`users.email`, já normalizado no banco)              | `F1 src/modules/auth/auth.service.ts:54`                                          |
+| `avatarUrl`          | string ou `null` (`users.avatar_url`)                        | `F1 src/modules/auth/auth.service.ts:55`                                          |
+| `role`               | `"Solicitante" \| "Analista" \| "Gestor" \| "Administrador"` | `F1 src/modules/auth/auth.service.ts:56`; `F1 src/shared/utils/roleUtils.ts:5-22` |
+| `mustChangePassword` | boolean                                                      | `F1 src/modules/auth/auth.service.ts:57`                                          |
+
+Exemplo (dados fictícios):
+
+```json
+{
+  "id": "42",
+  "name": "Ana Souza",
+  "email": "ana.souza@example.com",
+  "avatarUrl": null,
+  "role": "Analista",
+  "mustChangePassword": false
+}
+```
+
+Quando `users.must_change_password` é verdadeiro, a resposta tem a mesma forma com
+`"mustChangePassword": true` e o cookie carrega `scope: "change_password"`
+(`F1 src/modules/auth/auth.controller.ts:40-62`).
+
+O `id` trafega como **string**, não como número: o service faz `String(user.user_id)`
+(`F1 src/modules/auth/auth.service.ts:52`) e o DTO declara `id: string`
+(`F1 src/modules/DTOs/auth/LoginResponse.dto.ts:4`).
+
+#### Erros
+
+| Status | `code` | Mensagem literal                                                                                                                                                   | Condição                                                                                                                                                    |
+| ------ | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 400    | —      | `"Campos obrigatórios ausentes: email, password"` / `"Campos inválidos: email — Informe um e-mail válido."` / `"Campos inválidos: password — Máximo de 72 bytes."` | body inválido (`F1 src/modules/auth/auth.controller.ts:34-36`)                                                                                              |
+| 401    | —      | `"Credenciais inválidas"`                                                                                                                                          | e-mail inexistente, senha incorreta, usuário inativo ou perfil inativo (`F1 src/modules/auth/auth.service.ts:31-49`)                                        |
+| 500    | —      | `"Erro ao comparar as senhas"`                                                                                                                                     | falha do bcrypt no `compare` (`F1 src/shared/utils/passwordHandler.ts:17-25`)                                                                               |
+| 500    | —      | `"Perfil inválido"`                                                                                                                                                | `profiles.name` fora do mapa canônico (`F1 src/shared/utils/roleUtils.ts:14-22`)                                                                            |
+| 500    | —      | `"Erro interno do servidor"`                                                                                                                                       | erro não-`AppError`, por exemplo `JWT_SECRET` ausente na emissão (`F1 src/shared/utils/jwtUtil.ts:26-28`; `F1 src/shared/middleware/errorHandler.ts:34-43`) |
+
+Não há 429 no legado (ver §5.8).
+
+#### Transporte
+
+- `Set-Cookie: <COOKIE_NAME>=<jwt>; Max-Age=<COOKIE_MAX_AGE em segundos>; Path=/; HttpOnly; SameSite=Lax[; Secure]`
+  (`F1 src/modules/auth/auth.controller.ts:12-17,50,73`).
+- `COOKIE_NAME` default `session_id` (`F1 src/configs.ts:23`). `COOKIE_MAX_AGE` é derivado de
+  `JWT_EXPIRES_IN` (default `1d`) por `jwtExpiryToMs`, que lê o último caractere como unidade `d`/`h`/`m`
+  e, na ausência dessas, trata o valor como segundos (`F1 src/configs.ts:17,22,28-35`). Com o default,
+  `Max-Age=86400`.
+- `httpOnly: true`, `sameSite: "lax"`, `secure: Config.NODE_ENV === "production"`
+  (`F1 src/modules/auth/auth.controller.ts:12-17`). `path` e `domain` não são definidos; o Express usa
+  `Path=/` e sem `Domain`. Um cookie de sessão já existente é sobrescrito pelo novo valor.
+- Payload do JWT: `id`, `name`, `email`, `role`, `password_changed_at` (época em ms) e
+  `scope` (`"session"` ou `"change_password"`) (`F1 src/shared/utils/jwtUtil.ts:9-20`;
+  `F1 src/modules/auth/auth.controller.ts:41-48,64-71`). Assinatura com `JWT_SECRET` e
+  `expiresIn: JWT_EXPIRES_IN`, sem opção de algoritmo explícita
+  (`F1 src/shared/utils/jwtUtil.ts:22-31`).
+- Com `scope: "change_password"`, `requireRole` recusa com
+  `403 "Troca de senha obrigatória antes de continuar"` (exige `req.authScope === "session"`,
+  `F1 src/shared/middleware/requireRole.ts:9-14`); com `scope: "session"` e perfil fora da lista, a
+  mensagem é `403 "Acesso restrito ao perfil <perfis unidos por ' ou '>"` (`F1 src/shared/middleware/requireRole.ts:16-23`).
+- Cookie `HttpOnly` exige `credentials: "include"` do cliente; o CORS responde com
+  `credentials: true` (`F1 src/app.ts:11-17`).
+- O corpo JSON é lido com o limite default do `express.json` (`F1 src/app.ts:26`); acima do limite, o
+  erro do body-parser chega ao `errorHandler` com status 413
+  (`F1 src/shared/middleware/errorHandler.ts:34-43`).
+
+#### Evidência
+
+- `F1 src/modules/auth/auth.router.ts:7`
+- `F1 src/modules/auth/auth.controller.ts:12-17,31-85`
+- `F1 src/modules/auth/auth.service.ts:22-60`
+- `F1 src/modules/auth/auth.schema.ts:4-12`
+- `F1 src/shared/validation/fieldSchemas.ts:20-30`
+- `F1 src/shared/middleware/errorHandler.ts:11-43`
+
+### 5.4 POST /auth/logout
+
+Rota **pública**: não há `authMiddleware` e o handler não lê o cookie nem o token
+(`F1 src/modules/auth/auth.router.ts:8`; `F1 src/modules/auth/auth.controller.ts:26-29`).
+
+#### Request
+
+| Parte   | Conteúdo                                       |
+| ------- | ---------------------------------------------- |
+| Path    | nenhum parâmetro; path completo `/auth/logout` |
+| Query   | nenhuma                                        |
+| Body    | nenhum (o handler não lê `req.body`)           |
+| Headers | cookie é opcional e ignorado                   |
+
+#### Response 2xx
+
+Status `200`, sempre, mesmo sem cookie presente ou com token inválido/expirado
+(`F1 src/modules/auth/auth.controller.ts:26-29`).
+
+| Campo     | Tipo   | Valor                            |
+| --------- | ------ | -------------------------------- |
+| `message` | string | `"Sessão encerrada com sucesso"` |
+
+```json
+{ "message": "Sessão encerrada com sucesso" }
+```
+
+O handler também responde com `Set-Cookie` de expiração para `Config.COOKIE_NAME`
+(`F1 src/modules/auth/auth.controller.ts:27`).
+
+#### Erros
+
+O handler não levanta erro próprio. Uma falha inesperada em `clearCookie`/`res.json` cai no
+`errorHandler` como 500 `"Erro interno do servidor"`
+(`F1 src/shared/middleware/errorHandler.ts:34-43`).
+
+#### Transporte
+
+- `res.clearCookie(Config.COOKIE_NAME, { httpOnly: true })` (`F1 src/modules/auth/auth.controller.ts:27`):
+  o cookie de expiração repete apenas `httpOnly`; `sameSite`, `secure` e `domain` não são reenviados.
+  O Express envia `Path=/` por default na limpeza.
+- O logout **não revoga** o JWT: não há blacklist, tabela de sessão nem alteração de
+  `password_changed_at`. Um cookie copiado antes do logout continua aceito até expirar ou até uma
+  troca/reset de senha (`F1 src/shared/middleware/auth.ts:63-72`).
+- Seguro repetir: qualquer número de chamadas devolve 200.
+
+**Divergente (legado vigente):** `clearCookie` sem os demais atributos da emissão — convenção §5 de
+`docs/04-API-Conventions.md` e issue #15 ("Inconsistências a corrigir"); ver §3.2 deste documento.
+
+#### Evidência
+
+- `F1 src/modules/auth/auth.router.ts:8`
+- `F1 src/modules/auth/auth.controller.ts:26-29`
+- `F1 src/shared/middleware/auth.ts:63-72`
+
+### 5.5 GET /auth/me
+
+Devolve a sessão corrente relendo o banco. Protegida por `authMiddleware`
+(`F1 src/modules/auth/auth.router.ts:9`). É uma das duas rotas liberadas quando
+`users.must_change_password` é verdadeiro (`F1 src/shared/middleware/auth.ts:54-61`).
+
+#### Request
+
+| Parte   | Conteúdo                                   |
+| ------- | ------------------------------------------ |
+| Path    | nenhum parâmetro; path completo `/auth/me` |
+| Query   | nenhuma (ignorada se enviada)              |
+| Body    | nenhum                                     |
+| Headers | cookie `Config.COOKIE_NAME` obrigatório    |
+
+Não há parâmetro de usuário: o id vem de `req.user.id`, preenchido pelo middleware a partir do JWT
+(`F1 src/modules/auth/auth.controller.ts:88`; `F1 src/shared/middleware/auth.ts:77-82`).
+
+#### Response 2xx
+
+Status `200`; corpo `MeResponseDTO` montado a partir de `authService.getSessionUser(userId)`
+(`F1 src/modules/auth/auth.controller.ts:87-101`).
+
+| Campo                | Tipo                                                         | Origem                                   |
+| -------------------- | ------------------------------------------------------------ | ---------------------------------------- |
+| `id`                 | string decimal                                               | `F1 src/modules/auth/auth.service.ts:71` |
+| `name`               | string                                                       | `F1 src/modules/auth/auth.service.ts:72` |
+| `email`              | string                                                       | `F1 src/modules/auth/auth.service.ts:73` |
+| `avatarUrl`          | string ou `null`                                             | `F1 src/modules/auth/auth.service.ts:74` |
+| `role`               | `"Solicitante" \| "Analista" \| "Gestor" \| "Administrador"` | `F1 src/modules/auth/auth.service.ts:75` |
+| `mustChangePassword` | boolean                                                      | `F1 src/modules/auth/auth.service.ts:76` |
+
+```json
+{
+  "id": "42",
+  "name": "Ana Souza",
+  "email": "ana.souza@example.com",
+  "avatarUrl": "/uploads/avatars/ana.png",
+  "role": "Analista",
+  "mustChangePassword": false
+}
+```
+
+Semântica (`F1 src/modules/auth/auth.service.ts:62-79`):
+
+- O corpo é lido **do banco**, não do JWT: `role` vem de `profiles.name` via `resolveRole`,
+  `mustChangePassword` vem de `users.must_change_password` e `avatarUrl` de `users.avatar_url`.
+  Mudança de perfil ou de senha pendente vale imediatamente, mesmo com cookie antigo
+  (`F1 src/shared/middleware/auth.ts:74-82`).
+- Usuário removido, `users.is_active = false` ou `profiles.is_active = false` no intervalo entre o
+  middleware e a leitura produzem `401 "Token inválido ou expirado"`
+  (`F1 src/modules/auth/auth.service.ts:66-68`).
+- A rota responde normalmente com `mustChangePassword: true` e com cookie de escopo
+  `change_password`; o gate de troca obrigatória não a bloqueia
+  (`F1 src/shared/middleware/auth.ts:49-61`).
+- Não há `Set-Cookie` na resposta de sucesso.
+
+#### Erros
+
+| Status | `code` | Mensagem literal                                   | Condição                                                                                                                                                                       |
+| ------ | ------ | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 401    | —      | `"Token não fornecido"`                            | cookie ausente (`F1 src/shared/middleware/auth.ts:25-30`)                                                                                                                      |
+| 401    | —      | `"Token inválido"`                                 | payload do JWT fora da forma esperada (`F1 src/shared/utils/jwtUtil.ts:42-52`)                                                                                                 |
+| 401    | —      | `"Token inválido ou expirado"`                     | assinatura inválida, token expirado, `id` sem usuário, usuário ou perfil inativo (`F1 src/shared/middleware/auth.ts:33-45,87-95`; `F1 src/modules/auth/auth.service.ts:66-68`) |
+| 401    | —      | `"Sua sessão foi revogada. Faça login novamente."` | `password_changed_at` do token difere do banco (`F1 src/shared/middleware/auth.ts:63-72`)                                                                                      |
+| 500    | —      | `"Perfil inválido"`                                | `profiles.name` fora do mapa (`F1 src/shared/utils/roleUtils.ts:14-22`)                                                                                                        |
+
+Não há 403 nesta rota: ela está na allowlist de `must_change_password`
+(`F1 src/shared/middleware/auth.ts:54-61`).
+
+#### Transporte
+
+- Somente leitura: cookie de sessão, corpo JSON, sem datas no wire.
+- O `id` do JWT é convertido com `Number(...)` para consultar o banco
+  (`F1 src/shared/middleware/auth.ts:35`; `F1 src/modules/auth/auth.controller.ts:19-24`); depois de
+  `verifyToken`, o valor não é revalidado como inteiro.
+
+#### Evidência
+
+- `F1 src/modules/auth/auth.router.ts:9`
+- `F1 src/modules/auth/auth.controller.ts:19-24,87-101`
+- `F1 src/modules/auth/auth.service.ts:62-79`
+- `F1 src/shared/middleware/auth.ts:25-97`
+
+### 5.6 PUT /auth/change-password
+
+Troca a senha do próprio usuário autenticado. Protegida por `authMiddleware` e liberada mesmo com
+`must_change_password` verdadeiro (`F1 src/modules/auth/auth.router.ts:10`;
+`F1 src/shared/middleware/auth.ts:54-61`).
+
+#### Request
+
+| Parte   | Conteúdo                                                                                                                                                |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Path    | nenhum parâmetro; path completo `/auth/change-password`                                                                                                 |
+| Query   | nenhuma                                                                                                                                                 |
+| Body    | JSON `{ "currentPassword": string, "newPassword": string, "confirmNewPassword": string }` (`F1 src/modules/DTOs/auth/ChangePasswordRequest.dto.ts:1-5`) |
+| Headers | `Content-Type: application/json`; cookie `Config.COOKIE_NAME` obrigatório                                                                               |
+
+Regras de validação (`F1 src/modules/auth/auth.schema.ts:14-27`):
+
+| Campo                | Regra                                                                            | Mensagem literal                                                                                        |
+| -------------------- | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `currentPassword`    | `maxPasswordBytes`: string, mínimo 1, máximo 72 bytes UTF-8; sem `trim`          | `"Campo obrigatório."`, `"Máximo de 72 bytes."`                                                         |
+| `newPassword`        | `passwordSchema`: string, mínimo 8 caracteres, máximo 72 bytes UTF-8; sem `trim` | `"Mínimo de 8 caracteres."`, `"Máximo de 72 bytes."` (`F1 src/shared/validation/fieldSchemas.ts:27-30`) |
+| `confirmNewPassword` | string, mínimo 1                                                                 | `"Campo obrigatório."`                                                                                  |
+
+Regras de igualdade (refinements, `F1 src/modules/auth/auth.schema.ts:20-27`):
+
+| Regra                                                                       | Mensagem literal                              | Path do erro         |
+| --------------------------------------------------------------------------- | --------------------------------------------- | -------------------- |
+| `newPassword` deve ser igual a `confirmNewPassword`                         | `"As senhas não conferem."`                   | `confirmNewPassword` |
+| `newPassword` deve ser diferente de `currentPassword` (comparação de texto) | `"A nova senha deve ser diferente da atual."` | `newPassword`        |
+
+- A falha de validação usa `formatZodIssues` + `400`, apenas com `message` agregada
+  (`F1 src/modules/auth/auth.controller.ts:104-108`). Exemplos:
+  `"Campos inválidos: confirmNewPassword — As senhas não conferem."`,
+  `"Campos inválidos: newPassword — A nova senha deve ser diferente da atual."`,
+  `"Campos inválidos: newPassword — Mínimo de 8 caracteres."`.
+  Campo ausente entra na outra partição do resumo: `"Campos obrigatórios ausentes: currentPassword"`.
+- Não há regra de complexidade (maiúscula, dígito, símbolo) nem histórico de senhas.
+- Além do Zod, o service compara a senha nova com o hash atual; se forem a mesma senha, responde
+  `400 "A nova senha deve ser diferente da atual."` (`F1 src/modules/auth/auth.service.ts:102-106`).
+- A senha atual é conferida por bcrypt; senha atual errada responde **401**
+  `"Senha atual incorreta"` (`F1 src/modules/auth/auth.service.ts:96-100`).
+
+#### Response 2xx
+
+Status `200`; corpo `ChangePasswordResponseDTO` (`F1 src/modules/auth/auth.controller.ts:124-133`).
+
+| Campo                | Tipo                                                         | Valor                   |
+| -------------------- | ------------------------------------------------------------ | ----------------------- |
+| `id`                 | string decimal                                               | `String(user_id)`       |
+| `name`               | string                                                       | `users.full_name`       |
+| `email`              | string                                                       | `users.email`           |
+| `avatarUrl`          | string ou `null`                                             | `users.avatar_url`      |
+| `role`               | `"Solicitante" \| "Analista" \| "Gestor" \| "Administrador"` | `profiles.name` mapeado |
+| `mustChangePassword` | boolean                                                      | sempre `false`          |
+
+```json
+{
+  "id": "42",
+  "name": "Ana Souza",
+  "email": "ana.souza@example.com",
+  "avatarUrl": null,
+  "role": "Analista",
+  "mustChangePassword": false
+}
+```
+
+O `mustChangePassword: false` é fixo no controller (`F1 src/modules/auth/auth.controller.ts:130`) e o
+banco também grava `must_change_password = false` na mesma atualização
+(`F1 src/modules/auth/auth.repository.ts:77-85`).
+
+#### Erros
+
+| Status | `code` | Mensagem literal                                                                                                                                                                                                                                                              | Condição                                                                                                                                                                                |
+| ------ | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 400    | —      | `"Campos inválidos: confirmNewPassword — As senhas não conferem."` / `"Campos inválidos: newPassword — A nova senha deve ser diferente da atual."` / `"Campos inválidos: newPassword — Mínimo de 8 caracteres."` / `"Campos inválidos: currentPassword — Campo obrigatório."` | body inválido (`F1 src/modules/auth/auth.controller.ts:104-108`)                                                                                                                        |
+| 401    | —      | `"Token não fornecido"`                                                                                                                                                                                                                                                       | cookie ausente (`F1 src/shared/middleware/auth.ts:25-30`)                                                                                                                               |
+| 401    | —      | `"Token inválido"` / `"Token inválido ou expirado"`                                                                                                                                                                                                                           | JWT inválido/expirado ou usuário/perfil inativo (`F1 src/shared/middleware/auth.ts:33-45,87-95`)                                                                                        |
+| 401    | —      | `"Sua sessão foi revogada. Faça login novamente."`                                                                                                                                                                                                                            | `password_changed_at` do token difere do banco (`F1 src/shared/middleware/auth.ts:63-72`)                                                                                               |
+| 401    | —      | `"Senha atual incorreta"`                                                                                                                                                                                                                                                     | `currentPassword` não confere com o hash (`F1 src/modules/auth/auth.service.ts:96-100`)                                                                                                 |
+| 400    | —      | `"A nova senha deve ser diferente da atual."`                                                                                                                                                                                                                                 | `newPassword` corresponde ao hash atual (`F1 src/modules/auth/auth.service.ts:102-106`)                                                                                                 |
+| 401    | —      | `"Token inválido ou expirado"`                                                                                                                                                                                                                                                | usuário ausente em `req.user` ou usuário/perfil desativado entre o middleware e o service (`F1 src/modules/auth/auth.controller.ts:19-24`; `F1 src/modules/auth/auth.service.ts:92-94`) |
+| 404    | —      | `"Usuário não encontrado"`                                                                                                                                                                                                                                                    | linha de `users` inexistente no service ou update sem linhas (`F1 src/modules/auth/auth.service.ts:88-90`; `F1 src/modules/auth/auth.repository.ts:89-91`)                              |
+| 500    | —      | `"Erro ao comparar as senhas"` / `"Erro ao gerar hash da senha"` / `"Perfil inválido"`                                                                                                                                                                                        | falha do bcrypt ou `profiles.name` fora do mapa (`F1 src/shared/utils/passwordHandler.ts:5-25`; `F1 src/shared/utils/roleUtils.ts:14-22`)                                               |
+| 500    | —      | `"Erro interno do servidor"`                                                                                                                                                                                                                                                  | falha da transação/auditoria ou erro não-`AppError` (`F1 src/shared/middleware/errorHandler.ts:34-43`)                                                                                  |
+
+O gate de troca obrigatória não incide aqui: a rota é uma das exceções de
+`F1 src/shared/middleware/auth.ts:54-61`, logo não há 403 por senha pendente.
+
+#### Transporte
+
+- A resposta renova o cookie: `res.cookie(Config.COOKIE_NAME, sessionToken, COOKIE_OPTIONS)` com
+  `scope: "session"`, `password_changed_at` igual ao novo valor do banco
+  (`F1 src/modules/auth/auth.controller.ts:113-122`). Isso vale também para a troca voluntária, não só
+  para a obrigatória.
+- A atualização e o evento de auditoria `user.change_password` ocorrem na mesma transação
+  (`changeOrigin: "user"`, `ipAddress: req.ip`); falha da auditoria desfaz a troca
+  (`F1 src/modules/auth/auth.service.ts:110-125`). `src/app.ts` não configura `trust proxy`
+  (`F1 src/app.ts:9-28`).
+- O update grava `password_hash`, `must_change_password = false`, `password_changed_at = now()` e
+  `updated_at = now()` (`F1 src/modules/auth/auth.repository.ts:77-85`).
+- **Revogação:** todo token emitido antes do novo `password_changed_at` passa a falhar com
+  `401 "Sua sessão foi revogada. Faça login novamente."` na próxima requisição, inclusive em outras
+  abas e dispositivos (`F1 src/shared/middleware/auth.ts:63-72`). O mesmo mecanismo é usado pelo reset
+  administrativo de senha, que grava `must_change_password = true` e avança `password_changed_at`
+  (`F1 src/modules/users/users.repository.ts:468-483`;
+  `F1 src/modules/users/users.service.ts:210-247`).
+- A comparação é de igualdade exata entre o valor em ms embutido no token e
+  `userState.password_changed_at.getTime()` (`F1 src/shared/middleware/auth.ts:66-69`;
+  `F1 src/modules/auth/auth.service.ts:134`).
+
+#### Evidência
+
+- `F1 src/modules/auth/auth.router.ts:10`
+- `F1 src/modules/auth/auth.controller.ts:103-134`
+- `F1 src/modules/auth/auth.service.ts:81-135`
+- `F1 src/modules/auth/auth.schema.ts:14-27`
+- `F1 src/modules/auth/auth.repository.ts:72-94`
+- `F1 src/shared/middleware/auth.ts:54-72`
+
+### 5.7 Visão do consumidor (F2) e drift
+
+Chamadas do frontend (`F2 src/lib/api/auth.api.ts:10-60`):
+
+| Rota                        | Chamada F2                                      | Uso                                                                                                               |
+| --------------------------- | ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `POST /auth/login`          | `login(credentials)` → `LoginResponse`          | formulário de login (`F2 src/lib/api/auth.api.ts:15-26`)                                                          |
+| `POST /auth/logout`         | `logout()` → `unknown`                          | botão de sair; falha é ignorada (`F2 src/lib/api/auth.api.ts:28-36`; `F2 src/lib/services/auth.service.ts:27-33`) |
+| `GET /auth/me`              | `getMe(fetchImpl?, sessionId?)` → `SessionUser` | hook de servidor e pós-login (`F2 src/lib/api/auth.api.ts:41-48`; `F2 src/hooks.server.ts:8-16`)                  |
+| `PUT /auth/change-password` | `changePassword(payload)` → `void`              | página de troca (`F2 src/lib/api/auth.api.ts:50-60`)                                                              |
+
+Convergências:
+
+- `SessionUser` tem exatamente os seis campos do DTO legado, com `id: string`,
+  `avatarUrl: string | null`, `role: UserType` e `mustChangePassword: boolean`
+  (`F2 src/lib/types/auth.ts:8-15`). `UserType` cobre os quatro perfis legados
+  (`F2 src/lib/types/user.ts:3`). Não há `permissions` no tipo nem no consumo.
+- `LoginResponse` é alias de `SessionUser`, refletindo o mesmo corpo flat
+  (`F2 src/lib/types/auth.ts:23-24`).
+- O cliente envia `credentials: 'include'` e lê a mensagem de `body.message || body.error`, o que casa
+  com o envelope legado (`F2 src/lib/api/client.ts:55-66,86-92`).
+- `avatarUrl` é `string | null` nos dois lados (`F2 src/lib/types/auth.ts:12`;
+  `F1 src/modules/DTOs/auth/MeResponse.dto.ts:7`); o FE resolve caminho relativo contra
+  `PUBLIC_API_URL` e aceita URL absoluta, `blob:` e `data:` (`F2 src/lib/utils/api-assets.ts:4-12`).
+- O fluxo de troca redireciona por `mustChangePassword` (`F2 src/lib/services/access.service.ts:129-149`)
+  e chama `GET /auth/me` depois do `PUT` (`F2 src/routes/(app)/redefinir-senha/+page.svelte:69-93`),
+  compatível com a releitura no banco.
+
+Drift anotado (sem decisão):
+
+- `changePassword` é tipado como `void` na API e como `Result<void>` no service
+  (`F2 src/lib/api/auth.api.ts:50-59`; `F2 src/lib/services/auth.service.ts:53-56`), embora o backend
+  devolva `200` com o DTO de sessão. O corpo é descartado pelo consumidor.
+- `logout` é tipado como `unknown` e o corpo `{ message }` não é lido
+  (`F2 src/lib/api/auth.api.ts:28-36`).
+- O login do F2 não usa o corpo de `POST /auth/login` para decidir o destino: chama `GET /auth/me` em
+  seguida e redireciona com o resultado (`F2 src/lib/components/forms/LoginForm.svelte:60-81`).
+- Qualquer `ApiError` no login é convertido em `"Credenciais inválidas."` (com ponto), independente da
+  mensagem do backend, que é `"Credenciais inválidas"` (sem ponto)
+  (`F2 src/lib/services/auth.service.ts:20-22`; `F1 src/modules/auth/auth.service.ts:33`).
+- O nome do cookie é literal `'session_id'` no hook de servidor, não lido de configuração
+  (`F2 src/hooks.server.ts:6,9`), enquanto o backend aceita `COOKIE_NAME`
+  (`F1 src/configs.ts:23`).
+- A validação de cliente da troca exige 8 caracteres em `newPassword` e igualdade de confirmação, mas
+  não verifica o limite de 72 bytes (`F2 src/routes/(app)/redefinir-senha/+page.svelte:28-47`). O login
+  só exige e-mail com formato e senha não vazia (`F2 src/lib/components/forms/LoginForm.svelte:25-38`).
+
+### 5.8 Confronto com `docs/04-API-Conventions.md`
+
+| Item                                | Situação                                                                                                                                                    | Ponteiro                               |
+| ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| Base path `/api/v1`                 | **Divergente (legado vigente):** rotas em `/auth/*`, sem prefixo                                                                                            | §1; §3.1 deste documento               |
+| Envelope de erro legado             | `compatível` com o envelope vigente `{ status, statusCode, message }`, sem `requestId`                                                                      | §2.1; ADR-0005                         |
+| `code` nos erros de `auth`          | `compatível` com o envelope vigente, em que `code` é aditivo; nenhum erro de `auth` o define, então `unauthorized`/`forbidden` do catálogo não aparecem     | §2.1; §2.3                             |
+| Validação                           | **Divergente (legado vigente):** 400 apenas com `message` agregada, sem `code: "validation_error"` e sem `fields`                                           | §3 (C2); #5                            |
+| Sessão e cookie na emissão          | `compatível`: `session_id` configurável, HttpOnly, SameSite=Lax, Secure em produção, TTL 1 dia                                                              | §5                                     |
+| Limpeza do cookie no logout         | **Divergente (legado vigente):** `clearCookie` só com `httpOnly`                                                                                            | §5; #15; §3.2                          |
+| `/auth/me` — DTO                    | **Divergente (legado vigente):** `name`, `email`, `mustChangePassword` e `avatarUrl (string \| null)` coincidem, mas não há `permissions`                   | §7; ADR-0025                           |
+| `/auth/me` — `id`                   | **Divergente (legado vigente):** `id` é string decimal de `users.user_id`, não UUID                                                                         | §7 (exemplo `"uuid"`); §15.1; ADR-0003 |
+| `/auth/me` — `role`                 | **Divergente (legado vigente):** quatro perfis (`Solicitante`, `Analista`, `Gestor`, `Administrador`), sem `Admin Root`; `role` vem do banco a cada request | §6; ADR-0006; ADR-0025                 |
+| Rate limit de login                 | **Divergente (legado vigente):** sem limite e sem 429 na rota                                                                                               | §13; §0.2 #24                          |
+| Idempotência                        | `compatível`: login não idempotente; logout repetível com 200                                                                                               | §8.2                                   |
+| Datas e horas                       | `compatível`/não aplicável: nenhum campo de data nas respostas; `password_changed_at` só existe dentro do JWT                                               | §10                                    |
+| Idioma                              | `compatível`: chaves camelCase, mensagens e valores em pt-BR                                                                                                | §11                                    |
+| 403 de senha pendente               | `compatível` em status (403); a mensagem `"Troca de senha obrigatória antes de continuar"` não traz `code`                                                  | §2.3; §5                               |
+| Revogação por `password_changed_at` | `compatível` com a validação por requisição descrita na convenção                                                                                           | §5                                     |
+
+**Cobertura da seção:** 4 de 4 rotas do inventário.
+
+- `POST /auth/login`
+- `POST /auth/logout`
+- `GET /auth/me`
+- `PUT /auth/change-password`
