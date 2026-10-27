@@ -29,52 +29,60 @@ function toAppErrorFromTransport(error: unknown): AppError | null {
   const type = readString(error, "type");
 
   if (type === "entity.too.large") {
-    return new AppError(
+    return exposed(
       "payload_too_large",
       PAYLOAD_TOO_LARGE_STATUS,
       "Corpo da requisição excede o limite.",
-      {
-        cause: error,
-        expose: true,
-      },
+      error,
     );
   }
   if (type === "entity.parse.failed" || type === "entity.verify.failed") {
-    return new AppError("validation_error", VALIDATION_STATUS, "Corpo da requisição inválido.", {
-      cause: error,
-      expose: true,
-    });
+    return exposed("validation_error", VALIDATION_STATUS, "Corpo da requisição inválido.", error);
   }
   if (type === "charset.unsupported" || type === "encoding.unsupported") {
-    return new AppError(
+    return exposed(
       "invalid_content_type",
       UNSUPPORTED_MEDIA_STATUS,
       "Codificação do corpo não suportada.",
-      {
-        cause: error,
-        expose: true,
-      },
+      error,
     );
   }
 
   if (readString(error, "name") === "MulterError") {
-    return readString(error, "code") === "LIMIT_FILE_SIZE"
-      ? new AppError(
-          "payload_too_large",
-          PAYLOAD_TOO_LARGE_STATUS,
-          "Arquivo excede o limite de tamanho.",
-          {
-            cause: error,
-            expose: true,
-          },
-        )
-      : new AppError("validation_error", VALIDATION_STATUS, "Envio de arquivos inválido.", {
-          cause: error,
-          expose: true,
-        });
+    const code = readString(error, "code");
+
+    if (code === "LIMIT_FILE_SIZE") {
+      return exposed(
+        "payload_too_large",
+        PAYLOAD_TOO_LARGE_STATUS,
+        "Arquivo excede o limite de tamanho.",
+        error,
+      );
+    }
+    // Parte JSON (`payload`/`assets`) acima de 2 MiB: §9 pede 413, não 400.
+    if (code === "LIMIT_FIELD_VALUE") {
+      return exposed(
+        "payload_too_large",
+        PAYLOAD_TOO_LARGE_STATUS,
+        "Campo excede o limite de tamanho.",
+        error,
+      );
+    }
+
+    return exposed("validation_error", VALIDATION_STATUS, "Envio de arquivos inválido.", error);
   }
 
   return null;
+}
+
+/** Erros de transporte que podem ser expostos ao cliente, sempre com a causa preservada. */
+function exposed(
+  code: "payload_too_large" | "validation_error" | "invalid_content_type",
+  status: number,
+  message: string,
+  cause: unknown,
+): AppError {
+  return new AppError(code, status, message, { cause, expose: true });
 }
 
 function readString(source: unknown, key: string): string | undefined {
