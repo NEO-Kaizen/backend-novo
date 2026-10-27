@@ -1,7 +1,8 @@
 # Segredos locais: não versionar; o grep do harness também os ignora em buscas amplas.
+# A exceção é o exemplo exato: `*.env.example` não libera variações como `.env.example.prod`.
 *.env
 *.env.*
-!*.env.example*
+!*.env.example
 
 # Secret local do Context7 MCP.
 .context7API
@@ -11,11 +12,6 @@ node_modules/
 
 # Build output
 dist/
-
-# Environment
-.env
-.env.local
-.env.*.local
 
 # Logs
 *.log
