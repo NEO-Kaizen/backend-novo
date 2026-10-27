@@ -20,6 +20,12 @@ export function createErrorHandler(logger: Logger): ErrorRequestHandler {
       return;
     }
 
+    // Cliente desconectou: não há socket para responder e o request logger já
+    // registra a requisição como abortada. Desconexão é transporte, não entrada.
+    if (req.destroyed || res.destroyed) {
+      return;
+    }
+
     const appError = toAppError(error);
     const fields = {
       correlationId: req.id,
