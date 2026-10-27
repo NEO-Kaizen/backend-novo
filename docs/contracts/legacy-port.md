@@ -6719,3 +6719,112 @@ Sem corpo (`F1 src/modules/internalNotes/internalNotes.controller.ts:75`).
 - `GET /requests/:protocol/internal-notes` (#52)
 - `POST /requests/:protocol/internal-notes` (#53)
 - `PUT /requests/:protocol/internal-notes/read` (#54)
+
+## 18. Cobertura e checklist de aceite
+
+### 18.1 Cobertura por domínio
+
+Contagem de rotas do inventário (§4) e de citações com linha (`arquivo:linha`) nas seções de
+domínio. Citações são contadas como ocorrências, não como linhas únicas; referências sem linha nas
+tabelas de fontes não entram na contagem.
+
+| Domínio                         | Rotas                   | Seção  | Citações F1 | Citações F2 |
+| ------------------------------- | ----------------------- | ------ | ----------- | ----------- |
+| auth                            | 4                       | §5     | 136         | 23          |
+| forms                           | 0 (sem superfície HTTP) | §6     | 116         | 15          |
+| portal-config                   | 8                       | §7     | 175         | 25          |
+| users                           | 10                      | §8     | 189         | 10          |
+| requests                        | 10                      | §9     | 274         | 29          |
+| triage                          | 2                       | §10    | 93          | 16          |
+| mapping                         | 2                       | §11    | 112         | 20          |
+| prioritization                  | 2                       | §12    | 61          | 19          |
+| pending-items                   | 6                       | §13    | 101         | 33          |
+| queue                           | 2                       | §14    | 81          | 12          |
+| reports                         | 2                       | §15    | 84          | 11          |
+| audit                           | 3                       | §16    | 100         | 9           |
+| internal-notes                  | 3                       | §17    | 97          | 10          |
+| **Total das seções de domínio** | **54**                  | §5–§17 | **1.619**   | **232**     |
+
+As seções §2–§3 (fontes e transporte transversal) acrescentam 108 citações `F1` e §18–§20, 1. O
+documento tem **1.960 citações com linha** — 1.728 `F1` e 232 `F2`.
+
+Cada seção de domínio tem as quatro partes exigidas pelo template: Fontes, Rotas, uma subseção por
+rota e as duas leituras finais (consumidor F2 e confronto com as convenções). As três rotas de
+auditoria compartilham a seção §16; as duas de mapping, a §11; as três de internal-notes, a §17.
+
+### 18.2 Checklist dos critérios de aceite
+
+| Critério da issue #35                                                            | Como foi cumprido                                                                                                                               | Evidência                                                                               |
+| -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| Os 13 domínios têm suas rotas vigentes documentadas (request, response, códigos) | 12 domínios com superfície HTTP, 54 rotas, uma subseção por rota; `forms` documentado como gramática de payload (§6) por não ter rota no legado | §5–§17; §18.1                                                                           |
+| Nenhuma rota/campo é alterado em relação ao legado                               | Os paths e nomes de campo são os de `F1`; os deltas intencionais (#15–#27) não foram aplicados nem sugeridos                                    | §4; §19                                                                                 |
+| Cada seção cita arquivo e linha do legado como evidência                         | 1.728 citações `F1` com `caminho:linha`, todas resolvidas no commit fixado                                                                      | §5–§17; verificação abaixo                                                              |
+| Visão do consumidor (frontend) registrada onde houver drift                      | 232 citações `F2` com linha e uma subseção "Visão do consumidor (F2) e drift" por domínio                                                       | §5.7, §6.6, §7.11, §8.13, §9.13, §10.6, §11.5, §12.5, §13.9, §14.5, §15.5, §16.6, §17.6 |
+| Nenhuma contradição com `docs/04-API-Conventions.md`                             | Toda divergência está marcada como `Divergente (legado vigente)` e aponta a convenção/ADR/decisão; nenhuma convenção é redefinida               | §19; subseção "Confronto" de cada domínio                                               |
+
+### 18.3 Verificações executadas
+
+Antes do fechamento do port foram executadas quatro verificações pontuais (scripts descartáveis, não
+versionados):
+
+1. **Paridade de rotas** — extração de todas as chamadas de método nos 10 routers de `F1` e nos
+   `publicVerifyRouter`/`auditLogsRouter`, com a montagem de `F1 src/router.ts:16-32`, comparada ao
+   inventário da §4: **54 registros no legado, 54 linhas no inventário, zero diferenças**.
+2. **Resolução de citações** — leitura de cada `F1 <arquivo>:<linha>`/`F2 <arquivo>:<linha>` no SHA
+   fixado: **1.960 citações, zero arquivos ausentes, zero linhas fora do arquivo e zero citações
+   apontando para linha vazia**.
+3. **Linguagem de decisão** — varredura das seções de domínio por `deveria`, `recomend*`, `propõe`,
+   `decidir` e `decidido` fora dos blocos de confronto e das anotações: nenhuma ocorrência que
+   introduza decisão (as únicas ocorrências descrevem comportamento do legado ou o próprio escopo
+   deste documento).
+4. **Formatação** — `npx prettier --check docs/contracts/legacy-port.md` sem diferenças.
+
+A verificação de paridade não substitui revisão: ela garante que nenhuma rota ficou de fora e que
+nenhuma rota inventada entrou, mas não valida a semântica de cada campo. Campos e regras foram lidos
+no código citado, rota a rota.
+
+## 19. Divergências anotadas (índice)
+
+Este índice não decide nada: ele apenas agrupa, por tema, onde o legado diverge das convenções
+congeladas e onde estão as decisões correspondentes. As tabelas de decisão consolidadas estão no
+comentário de consolidação da issue #35 (deltas herdados de #15–#27); os ADRs estão em `docs/adr/`.
+
+| Tema                      | O que o legado faz                                                                                           | Onde aparece                                 | Ponteiro                                                                       |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------ | -------------------------------------------- | ------------------------------------------------------------------------------ |
+| Base path                 | Rotas na raiz, sem `/api/v1`                                                                                 | §3.1; todas as seções                        | Convenção §1; #19 D14; #24 D-Q15                                               |
+| Envelope de erro          | `{ status, statusCode, message }`, `code` opcional, sem `requestId`                                          | §3.3; todas as seções                        | ADR-0005; convenções §2, §15; #19 D9; #23 D-P18                                |
+| Validação                 | Mistura `400` (mensagem agregada) e `422` (`fields` como objeto)                                             | §3.4; §5.3; §9.12; §10.4; §13                | Convenção §5 (C2); #19 D12                                                     |
+| Paginação                 | Sem convenção única; auditoria usa `{ items, total, page, limit }`; fila usa envelope próprio                | §3.6; §14.4; §16.3                           | Convenção §6; #18 D10; #24 D-Q2; #26 D-A10                                     |
+| Ids                       | Números em auditoria, fila, triagem, priorização, status e portal-config; `id` de sessão como string decimal | §3.2; §5.3; §7.3; §10.3; §12.3; §14.4; §16.3 | ADR-0003; ADR-0021; convenção §18; #17 D8; #20 D4; #22 D10; #24 D-Q3; #26 D-A3 |
+| Status no wire            | Nome ou id numérico; `key` não existe                                                                        | §9; §10; §11; §14; §15; §16                  | ADR-0021; convenções §15.1; #19 D4; #20 D4; #21 D-M3; #24 D-Q6                 |
+| Perfis e autorização      | 4 perfis fixos; sem capabilities; escopo por perfil no service                                               | §3.2; §7; §8; §9; §14; §15; §16              | ADR-0006; ADR-0017; ADR-0025; #15 D1; #18 D2; #20 D1                           |
+| Identidade do solicitante | `X-Requester-Identity` com nome+e-mail; `401`; verify por `POST .../public/verify`                           | §3.9; §9.7; §13.8                            | ADR-0023; convenção §19; #19 D1/D2; #23 D-P11                                  |
+| Multipart e MIME          | `400` para MIME inválido em requests/pendências; `413`/`415` em avatar/assets                                | §3.7; §7.7; §8.5; §9.12; §13.7               | Convenção §9; #17 D6; #18 D9                                                   |
+| Anexos                    | Sem download; limite de 3 anexos só no frontend                                                              | §9.13; §13.9                                 | #19 D10; #23 D-P16                                                             |
+| Prazo e atraso            | `desiredDeadline` e métrica `overdueRequests` tratados como atraso                                           | §9; §14.3; §15                               | ADR-0024; #23 D-P13; #25 D1                                                    |
+| Prioridade                | `requests.priority_id` e avaliação convivem; faixas fixas                                                    | §9; §12; §14                                 | ADR-0016; #22 D8/D11; #24 D5                                                   |
+| Mapeamento                | Rotas sob `/queue`; `PUT` faz merge e `id` seleciona o alvo                                                  | §11                                          | ADR-0001; #21 D-M1/D-M4                                                        |
+| Auditoria                 | `audit_id` numérico, `action_type` composto, 6 entidades efetivas, envelope legado                           | §16                                          | ADR-0020; #26 D-A3/A10                                                         |
+| Notas internas            | Cursor por `(created_at, id)`, `unseenCount` global, eventos normalizados na leitura                         | §17                                          | #27 ON-2/ON-4/ON-5                                                             |
+| Formulário                | Catálogo estático de 33 chaves; sem `GET /forms`; `fieldKey` pontilhado                                      | §6                                           | ADR-0012; ADR-0019; ADR-0022; #16                                              |
+| Portal-config             | `id` numérico e status por nome no payload público; assets como 8 variantes                                  | §7                                           | ADR-0015; ADR-0018; ADR-0021                                                   |
+
+## 20. Como atualizar este port
+
+1. Fixe o novo commit do legado em §2 e, se for o caso, atualize a referência `F1` do Apêndice B de
+   `docs/04-API-Conventions.md` para o mesmo SHA.
+2. Reextraia o inventário da §4 a partir de `src/router.ts` e dos 10 routers de domínio. A contagem
+   esperada é a soma das rotas registradas; qualquer diferença é mudança de contrato, não de
+   documentação.
+3. Atualize as seções afetadas mantendo a regra de citação: `F1 caminho:linha` lido no SHA fixado.
+4. Rode as verificações de §18.3 (paridade, resolução de citações, linguagem de decisão e prettier).
+5. Não promova uma divergência a decisão aqui: o destino é a spec do domínio ou um ADR.
+
+Limitações permanentes deste artefato:
+
+- A visão do consumidor cobre apenas o que está versionado em `F2` (`src/lib`). As cópias de contrato
+  em `frontend/contratos/` não estavam versionadas no commit fixado e não são citadas.
+- Documentos do legado marcados como **Desatualizado no legado** continuam úteis como narrativa, mas
+  não são fonte de contrato: o código no SHA fixado prevalece.
+- Comportamentos que dependem de dados/configuração (por exemplo, o modo de abertura do portal e o
+  conteúdo de `system_settings`) são descritos pela regra do código, não por um estado específico.
