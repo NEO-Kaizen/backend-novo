@@ -136,4 +136,4 @@ Reexecutar o seed não restaura valores editados. Para voltar ao estado de refer
 
 ## Decisões de seed
 
-Não há decisão de seed em aberto: `Admin Root` usa as variáveis de ambiente e a terminalidade segue o v4. As pendências do modelo continuam em [§ 21](../03-Data-Model.md#21-pendências).
+Não há decisão de **valor** de seed em aberto: `Admin Root` usa as variáveis de ambiente, a terminalidade segue o v4 e a ordem e a idempotência estão em [Ordem](#ordem) e [Idempotência](#idempotência). A implementação é o follow-up da [#28](https://github.com/NEO-Kaizen/backend-novo/issues/28). As pendências do modelo continuam em [§ 21](../03-Data-Model.md#21-pendências).
