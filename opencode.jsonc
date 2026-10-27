@@ -4,7 +4,8 @@
     // Base: qualquer comando de shell pede confirmação, salvo as exceções abaixo.
     { "action": "shell", "resource": "*", "effect": "ask" },
 
-    // Inspeção Git sem prompt.
+    // Todo comando Git pede confirmação, exceto a inspeção liberada logo abaixo.
+    { "action": "shell", "resource": "git *", "effect": "ask" },
     { "action": "shell", "resource": "git status *", "effect": "allow" },
     { "action": "shell", "resource": "git diff *", "effect": "allow" },
     { "action": "shell", "resource": "git log *", "effect": "allow" },
@@ -14,8 +15,7 @@
     { "action": "shell", "resource": "npm run *", "effect": "allow" },
     { "action": "shell", "resource": "npm run *env*", "effect": "ask" },
 
-    // Comandos destrutivos ou que alteram o remoto.
-    { "action": "shell", "resource": "git push *", "effect": "ask" },
+    // Outros comandos destrutivos ou que alteram dependências.
     { "action": "shell", "resource": "rm *", "effect": "ask" },
     { "action": "shell", "resource": "mv *", "effect": "ask" },
     { "action": "shell", "resource": "chmod *", "effect": "ask" },
