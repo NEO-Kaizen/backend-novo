@@ -29,7 +29,7 @@ A ordem respeita as FKs do [§ 4](../03-Data-Model.md#4-integridade-referencial-
 
 `code_counters` não é semeado: o contador começa vazio e a primeira emissão consome o valor 1. `pending_batches` e `pending_items` também não são semeados: dependem de uma solicitação. `permissions` e `profile_permissions` só entram quando o RBAC configurável chegar.
 
-A ordem entre domínios não é garantida pelo Knex por padrão: ele ordena os arquivos pelo caminho completo, o que agrupa por diretório. Para respeitar a tabela acima, o `knexfile.ts` lista `seeds.directory` na ordem das dependências e usa `sortDirsSeparately: true`, ou um seed orquestrador chama os seeds de domínio na ordem. Detalhes em [`05-operations.md`](./05-operations.md#ordem-dos-seeds).
+A ordem entre domínios não é garantida pelo Knex por padrão: ele ordena os arquivos pelo caminho completo, o que agrupa por diretório. A configuração do `knexfile.ts` que garante a ordem da tabela acima está em [`05-operations.md` § Ordem dos seeds](./05-operations.md#ordem-dos-seeds).
 
 ## Idempotência
 
@@ -52,7 +52,7 @@ Os valores estão no [Apêndice D](../03-Data-Model.md#25-apêndice-d--seed-de-r
 | --- | --- |
 | Perfis | Cinco nomes; só o `Analista` nasce com `is_assignable_triage` e `is_assignable_mapping` em `true` ([§ 7.6](../03-Data-Model.md#76-atribuibilidade)). |
 | Admin Root | Conta ativa, perfil `Admin Root`, credencial com `must_change_password = true`; e-mail e senha vêm de `ADMIN_ROOT_EMAIL` e `ADMIN_ROOT_PASSWORD` ([§ 25.3](../03-Data-Model.md#253-admin-root)). |
-| Aparências e portal | Dois temas (`Claro`, `Escuro`) com tokens e assets nulos; `portal_settings` com `PUBLIC`, `MAAT`, `MAAT`, apontando os dois slots. |
+| Aparências e portal | Dois temas (`Claro`, `Escuro`) com tokens preenchidos e assets nulos; `portal_settings` com `PUBLIC`, `MAAT`, `MAAT`, apontando os dois slots. |
 | Categorias | Dez ativas, `display_order` 1–10, `form_id` para o formulário `solicitacao`. |
 | Status | Dezessete do v4: 7 core, 2 terminais, 1 restrito (`priorizado`, que exige `request:status_override`). |
 | Critérios | Dez ativos, peso 10, `code` na chave do contrato (`operationalImpact`, …). |
@@ -107,7 +107,7 @@ select sum(weight) from criteria where is_active; -- > 0
 select count(*) from priorities;                  -- 4
 select count(*) from themes;                      -- 2
 select count(*) from portal_settings;             -- 1
-select count(*) from forms where key = 'solicitacao'; -- 1
+select count(*) from forms where forms.key = 'solicitacao'; -- 1
 select count(*) from form_blocks;                 -- 4
 select count(*) from form_fields;                 -- 32
 select count(*) from pending_batches;             -- 0 (seed de referência)

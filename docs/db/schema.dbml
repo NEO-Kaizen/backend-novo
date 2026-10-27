@@ -331,7 +331,7 @@ Table internal_notes {
 Table internal_note_read_states {
   request_id uuid [not null, ref: > requests.id]
   user_id uuid [not null, ref: > users.id]
-  last_read_note_id uuid [not null, ref: > internal_notes.id]
+  last_read_note_id uuid [not null]
   read_at timestamp [not null, default: `now()`]
   indexes {
     (request_id, user_id) [pk, name: 'pk_internal_note_read_states']

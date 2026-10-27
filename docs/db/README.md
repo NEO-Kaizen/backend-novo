@@ -7,7 +7,7 @@ Esta pasta reúne a documentação **derivada** e **operacional** do banco. A es
 | Arquivo | O que é | Normativo? | Para quem |
 | --- | --- | --- | --- |
 | [`01-vocabulary.md`](./01-vocabulary.md) | Índice termo → tabela | Não | Quem está lendo o glossário ou o modelo |
-| [`02-reference.md`](./02-reference.md) | Dicionário de dados: colunas, tipos, nulabilidade, defaults, constraints, índices e FKs | Não — derivado à mão | Quem implementa ou revisa uma tabela |
+| [`02-reference.md`](./02-reference.md) | Referência do Schema: colunas, tipos, nulabilidade, defaults, constraints, índices e FKs | Não — derivado à mão | Quem implementa ou revisa uma tabela |
 | [`03-erd.md`](./03-erd.md) | Mapa completo e diagramas por domínio, com atributos | Não | Quem precisa enxergar as relações |
 | [`schema.dbml`](./schema.dbml) | Schema legível por ferramenta (dbdiagram.io, dbdocs.io) | Não | Quem quer abrir o modelo visualmente |
 | [`04-seeds.md`](./04-seeds.md) | Inventário, ordem e idempotência dos seeds | Não — operacional | Quem implementa ou executa o seed |
@@ -40,13 +40,26 @@ Use antes de abrir ou aprovar um PR que toque o schema:
 
 - [ ] As **29 tabelas** da especificação aparecem nos três derivados (28 de domínio + `code_counters`).
 - [ ] Cada tabela tem a **PK** correta em [`02-reference.md`](./02-reference.md) e em [`schema.dbml`](./schema.dbml); as PKs compostas são `internal_note_read_states` (`request_id`, `user_id`) e a futura `profile_permissions`.
-- [ ] Cada **FK** da especificação tem uma aresta no ERD e um `ref` no DBML. As exceções são as referências polimórficas `audit_entries.entity_id` e `attempts.entity_id`, que não têm FK; `attempts.correlation_id` é correlação HTTP, também sem FK.
+- [ ] Cada **FK** da especificação tem uma aresta no ERD e um `ref` no DBML. As exceções são as referências polimórficas `audit_entries.entity_id` e `attempts.entity_id`, que não têm FK; `attempts.correlation_id` é correlação HTTP, também sem FK; `pending_items.classification_key` é vocabulário, não referência.
 - [ ] Cada **índice/unicidade** nomeado (`uk_`, `idx_`) aparece na referência e no DBML.
 - [ ] Cada **constraint nomeada** (`ck_`, `uk_`, `idx_`, `pk_`) aparece na seção da tabela em [`02-reference.md`](./02-reference.md); nenhum nome é inventado.
 - [ ] Cada mudança de coluna tem o **tipo, a nulabilidade e o default** iguais aos da especificação.
 - [ ] O **Apêndice D** e [`04-seeds.md`](./04-seeds.md) contam a mesma história: mesmas tabelas, mesmas chaves naturais, mesma ordem.
 - [ ] O Mermaid de [`03-erd.md`](./03-erd.md) renderiza e o DBML importa sem erro.
 - [ ] As decisões em aberto de [§ 21](../03-Data-Model.md#21-pendências) não foram resolvidas por conta própria em um derivado.
+- [ ] Os números do checklist batem com os comandos de [Conferência de contagens](#conferência-de-contagens).
+
+## Conferência de contagens
+
+Os números do checklist são reprodutíveis a partir da raiz do repositório:
+
+```bash
+grep -c '^Table ' docs/db/schema.dbml                              # 29 tabelas
+grep -cE '^Ref:|ref:' docs/db/schema.dbml                          # 55 FKs
+awk '/^```mermaid/ { inblock=1; next } inblock && /^```/ { exit } inblock && /--/' docs/db/03-erd.md | wc -l  # 55 arestas
+```
+
+O `awk` conta só o mapa completo, o primeiro bloco Mermaid de [`03-erd.md`](./03-erd.md); os diagramas por domínio repetem arestas.
 
 ## Decisões em aberto
 
