@@ -483,7 +483,7 @@ Adicionar um domínio toca quatro pontos explícitos — `knexfile.ts`, `contain
 Cada domínio expõe uma fábrica que recebe as dependências e devolve o que a aplicação precisa montar. As dependências são divididas por **quem as usa**: a base enxerga só os transversais, o service que autoriza enxerga também `authorization`, e `database` não chega ao service — o container o cria, a fábrica o repassa ao repositório e entrega ao service um recorte sem ele ([§ 7.2](#72-baseservice)). No nível da fábrica, `ModuleDependencies` estende `UseCaseDependencies` com `database`; é o recorte que a fábrica recebe.
 
 ```ts
-// src/core/service/use-case-dependencies.ts — o que o caso de uso que autoriza usa
+// src/core/service/use-case-dependencies.ts — o que o service que autoriza usa
 export interface UseCaseDependencies extends ServiceDependencies {
   readonly authorization: AuthorizationService;
 }
@@ -1572,7 +1572,7 @@ Cada linha aponta a seção que define a regra. Um PR que muda mais de uma camad
 | --- | --- | --- | --- |
 | [ ] | O código pertence a um domínio | [§ 4](#4-estrutura-de-diretórios) | O arquivo está em `src/domains/<domínio>/` |
 | [ ] | Toda dependência externa chega pelo construtor | [§ 8](#8-injeção-de-dependência) | Nenhum import de `platform` dentro de `domains` |
-| [ ] | Service não recebe a porta `Database`; a fábrica retira o banco antes do construtor | [§ 7.2](#72-baseservice) e [§ 8.2](#82-fábrica-de-módulo) | `rg 'new \w+Service\(\{\s*\.\.\.' src/domains` (conferir se o espalhado é um recorte), `rg '\w+: \w*ModuleDependencies' src/domains -g '*.service.ts'` e `rg 'readonly database: Database' src/domains -g '*.service.ts'` sem achados; enquanto `src/domains` não existir, o critério pula (`rg` sai com código 2) |
+| [ ] | Service não recebe a porta `Database`; a fábrica retira o banco antes do construtor | [§ 7.2](#72-baseservice) e [§ 8.2](#82-fábrica-de-módulo) | `rg -e 'new \w+Service\(dependencies' -e 'new \w+Service\(\{\s*\.\.\.' src/domains` é **inspeção**, não "sem achados": o caso legítimo `new XService({ ...serviceDependencies, repository })` aparece. `rg -e 'extends \w*ModuleDependencies' -e '\w+: \w*ModuleDependencies' src/domains -g '*.service.ts'` e `rg 'readonly database: Database' src/domains -g '*.service.ts'` saem vazios; enquanto `src/domains` não existir, o critério pula (`rg` sai com código 2) |
 | [ ] | Nenhum repositório, service ou controller de outro domínio é importado | [§ 19](#19-dependências-permitidas) | Só `import type` de uma `*.port.ts` |
 | [ ] | Regras no service; tradução HTTP no controller; SQL no repository | [§ 6](#6-responsabilidades-de-camada) | O controller não monta query |
 | [ ] | `core` não importa nada de `domains` ou `platform` | [§ 19](#19-dependências-permitidas) | `rg "from \"\.\./(domains\|platform)" src/core` |
@@ -1606,7 +1606,7 @@ As pendências de **schema** estão no [`03-Data-Model.md` § 21](./03-Data-Mode
 | Contratos publicados: ids numéricos e 4 perfis | O frontend atual descarta id que não seja número em categorias e status | Release coordenada; ver § 22.1 |
 | Suíte de testes automatizados | Rede de segurança ausente para a reescrita | Ferramentas de teste decididas |
 | Credencial de runtime e de migração | O append-only por privilégio exige duas credenciais no Postgres/MySQL; hoje o schema de ambiente tem uma | Implementação do deploy |
-| Contrato da API de auditoria | A rota é montada; o formato de resposta não está acordado | Formalização do domínio de auditoria |
+| Contrato da API de auditoria | A rota é montada; o formato de resposta não está acordado. O `Page<AuditEntry>` de [§ 8.2](#82-fábrica-de-módulo) é o contrato do service; a tradução para o formato da rota é do controller ([§ 6](#6-responsabilidades-de-camada)) | Formalização do domínio de auditoria |
 | RBAC configurável | Desenho no Apêndice C; o Apêndice B continua sendo o contrato | Frontend consumir `permissions` |
 
 ### 22.1 Contratos afetados pelo schema
