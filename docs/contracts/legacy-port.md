@@ -62,7 +62,8 @@ Cada domínio (§5 a §17) segue a mesma estrutura:
 3. **Uma subseção por rota** com `Request` (path/query/body e headers quando diferirem do padrão),
    `Response` de sucesso e `Erros` (status, `code` quando houver, mensagem literal e condição).
    `Transporte` e `Evidência` aparecem quando a rota tem particularidade de transporte ou de
-   implementação; fora isso, a evidência fica nas citações do próprio texto.
+   implementação; fora isso, a evidência fica nas citações do próprio texto. A coluna `code` só
+   existe nas tabelas de erro dos domínios que emitem `code`.
 4. **Visão do consumidor (F2)** — o que o frontend chama e onde ele diverge do backend, sem decisão.
 5. **Confronto com `docs/04-API-Conventions.md`** — `compatível` ou `Divergente (legado vigente)`,
    com ponteiro para a convenção, o ADR ou a decisão da issue de origem.
@@ -867,8 +868,6 @@ Drift anotado (sem decisão):
 | 403 de senha pendente               | `compatível` em status (403); a mensagem `"Troca de senha obrigatória antes de continuar"` não traz `code`                                                  | §2.3; §5                               |
 | Revogação por `password_changed_at` | `compatível` com a validação por requisição descrita na convenção                                                                                           | §5                                     |
 
-**Cobertura da seção:** 4 de 4 rotas do inventário.
-
 - `POST /auth/login`
 - `POST /auth/logout`
 - `GET /auth/me`
@@ -1312,8 +1311,6 @@ top-level, fora do formulário; o wire de abertura mantém `demand.category` por
 
 Contexto de delta intencional (ponteiro, sem decisão nesta seção): ADR-0012, ADR-0019 e ADR-0022.
 
-**Cobertura da seção:** 0 rotas (sem superfície HTTP); 33 chaves de campo catalogadas.
-
 ## 7. portal-config
 
 Configuração global e **singleton** do portal: uma leitura pública consolidada e sete escritas
@@ -1752,16 +1749,7 @@ o banco recebe `143` (`F1 src/modules/portalConfig/portalConfig.mappers.ts:128`)
 devolver `143` (`F1 src/modules/portalConfig/portalConfig.mappers.ts:159-161`). Um `theme.light`
 válido enviado com `angle: 200` volta como `200` e é persistido como `200`.
 
-Forma abreviada (as duas paletas voltam completas, com os 13 tokens + `gradient` + `statuses`):
-
-```json
-{
-  "theme": {
-    "light": { "background": "#f0f4f8", "...": "..." },
-    "dark": { "background": "#0b0f1a", "...": "..." }
-  }
-}
-```
+O shape completo do tema está em §7.3; a resposta devolve as duas paletas completas.
 
 #### Erros
 
@@ -2345,8 +2333,6 @@ Não há em F2 rotas alternativas para leitura: o consumidor usa exatamente as 8
 | Paginação                            | não aplicável: a config é singleton e as listas (`categories`, `statuses`) são atômicas, sem envelope paginado                                                                              | convenção §4.3; `F1 docs/portal-config-api-0_4.md` §6–§7                                     |
 | Datas no payload                     | compatível por ausência: a config não expõe timestamps                                                                                                                                      | convenção §10; `F1 src/modules/DTOs/portalConfig/PortalConfigResponse.dto.ts:1-12`           |
 | `requestId`                          | Divergente (legado vigente): ausente em todos os erros da seção                                                                                                                             | convenção §12 e §0 #15; `F1 src/shared/middleware/errorHandler.ts:11-31`                     |
-
-**Cobertura da seção:** 8 de 8 rotas do inventário.
 
 - #5 `GET /portal-config` (§7.3)
 - #6 `PATCH /portal-config/access` (§7.4)
@@ -3209,8 +3195,6 @@ Drift anotado, sem decisão:
 | Idioma                    | §11 — chaves camelCase, valores pt-BR                                                        | Compatível nas chaves; o campo `role` aceita slug minúsculo na escrita e devolve nome capitalizado na leitura (`F1 src/modules/users/users.schema.ts:37`; `F1 src/shared/utils/roleUtils.ts:5-21`)                                         |
 | Idempotência              | §8.2 — `PUT` idempotente, `POST` sem deduplicação                                            | Compatível: `PUT /users/:id` é merge repetível e `POST /users` não deduplica (`F1 src/modules/users/users.service.ts:111-147,449-556`)                                                                                                     |
 | Avatar no `/auth/me`      | §7 — `avatarUrl` `string \| null`                                                            | Compatível: mesmo campo e mesma URL relativa (`F1 src/modules/DTOs/users/UserProfileResponse.dto.ts:9`; `F1 src/modules/users/users.service.ts:301,427-432`)                                                                               |
-
-**Cobertura da seção:** 10 de 10 rotas do inventário.
 
 - `GET /users/analysts`
 - `GET /users/me`
@@ -4324,8 +4308,6 @@ Drift anotado, sem decisão:
 | ADR-0008 máscara de protocolo                               | prefixo `MAAT` fixo no código (§9.12)                                                                | Divergente (legado vigente)                                        |
 | ADR-0017 Gestor somente leitura                             | Gestor recebe `403` ao atribuir e ao trocar status (§9.5, §9.6, §9.8)                                | compatível                                                         |
 
-**Cobertura da seção:** 10 de 10 rotas do inventário.
-
 1. `GET /requests`
 2. `GET /requests/assignees`
 3. `PATCH /requests/:protocol/internal/assignee`
@@ -4338,6 +4320,8 @@ Drift anotado, sem decisão:
 10. `POST /requests`
 
 ## 10. triage
+
+Leitura da triagem vigente e gravação append-only; o veredito move o status da solicitação.
 
 ### 10.1 Fontes
 
@@ -4391,7 +4375,7 @@ O `400` de path é produzido por `formatZodIssues` (`F1 src/modules/requests/tri
 3. `Gestor` acessa qualquer solicitação; `Administrador` e `Analista` passam por `isAdminOrAssignee` (`F1 src/modules/requests/triage/triage.service.ts:16-20,51-55`). Sem custódia (ou solicitação sem responsável) → `403 "Acesso negado a esta solicitação"` (`F1 src/modules/requests/triage/triage.service.ts:53-55`).
 4. A leitura **não** aplica os gates de status terminal ou de status restrito (`Priorizado`) e **não** audita a negação — diferente do POST (`F1 src/modules/requests/triage/triage.service.ts:43-58`).
 
-#### Response `200`
+#### Response 200
 
 `TriageAssessment` da triagem vigente, ou o literal `null` quando a solicitação nunca foi triada (`F1 src/modules/requests/triage/triage.service.ts:57`; `F1 src/modules/requests/triage/triage.controller.ts:46`).
 
@@ -4430,6 +4414,16 @@ O `400` de path é produzido por `formatZodIssues` (`F1 src/modules/requests/tri
 | 500    | `"Erro interno do servidor"`                                      | falha não prevista                                                     | `F1 src/shared/middleware/errorHandler.ts:32-45`            |
 
 O `403` da leitura é `AppError` sem `code` (`F1 src/modules/requests/triage/triage.service.ts:54`), ao contrário do `403` da escrita.
+
+#### Transporte
+
+JSON `200`; sem paginação e sem multipart. O `protocol` vem do path e não há query.
+
+#### Evidência
+
+`F1 src/modules/requests/triage/triage.router.ts:12-16`;
+`F1 src/modules/requests/triage/triage.controller.ts:31-47`;
+`F1 src/modules/requests/triage/triage.service.ts:22-60`.
 
 ### 10.4 POST `/requests/:protocol/triage`
 
@@ -4486,7 +4480,7 @@ Resolvida por nome exato contra `categories` com `status = 'active'` (`F1 src/mo
 
 O comentário de `F1 src/modules/requests/triage/triage.service.ts:133-135` menciona compatibilidade com id numérico, mas a resolução compara apenas `name` (`F1 src/modules/requests/triage/triage.repository.ts:161-167`) — um id numérico não resolve.
 
-#### Response `201`
+#### Response 201
 
 Mesmo shape do GET (`§10.3`), com duas diferenças:
 
@@ -4604,9 +4598,9 @@ O rascunho inicial de `createEmptyTriageAssessment` traz `lastTechnicalMessage: 
 | Request-id          | Divergente (legado vigente): sem `x-request-id` e sem `requestId` no envelope                                                                                                       | #15 / §12                       |
 | Rate limit          | Não se aplica: rota autenticada                                                                                                                                                     | §13                             |
 
-**Cobertura da seção:** 2 de 2 rotas do inventário — `GET /requests/:protocol/triage` (#33) e `POST /requests/:protocol/triage` (#34).
-
 ## 11. mapping
+
+Sessão de mapeamento (participantes, agenda e destino), montada sob `/queue` no legado.
 
 ### 11.1 Fontes
 
@@ -4665,7 +4659,7 @@ O `400` de protocolo não é alcançável pelo roteamento (`/requests/:protocol/
 
 Sem nenhuma linha, a resposta é o estado vazio — `id: null`, todos os campos `null`, `participants: []`, `mappingAssignee: null` (`F1 src/modules/queue/mapping.service.ts:166-180,290-293`). É `200`, não `404`.
 
-#### Response `200`
+#### Response 200
 
 | Campo             | Tipo                                                                                            | Origem/regra                                                                                                                                             |
 | ----------------- | ----------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -4721,6 +4715,17 @@ Sem nenhuma linha, a resposta é o estado vazio — `id: null`, todos os campos 
 | 403    | `"Acesso restrito ao perfil Analista ou Gestor ou Administrador"` | perfil fora da lista                                                   | `F1 src/shared/middleware/requireRole.ts:21-22`    |
 | 404    | `"Solicitação não encontrada"`                                    | protocolo inexistente (sem ponto final)                                | `F1 src/modules/queue/mapping.service.ts:285-288`  |
 | 500    | `"Erro interno do servidor"`                                      | falha não prevista                                                     | `F1 src/shared/middleware/errorHandler.ts:32-45`   |
+
+#### Transporte
+
+JSON `200`; sem paginação e sem multipart. Sem mapeamento, a resposta é o estado vazio (`200`, não
+`404`).
+
+#### Evidência
+
+`F1 src/modules/queue/queue.router.ts:28-33`;
+`F1 src/modules/queue/mapping.controller.ts:23-27`;
+`F1 src/modules/queue/mapping.service.ts:166-180,290-306`.
 
 ### 11.4 PUT `/queue/requests/:protocol/mapping`
 
@@ -4816,7 +4821,7 @@ Regras de completude (rascunho **e** conclusão):
 
 `changeOrigin` das escritas é `"admin"` quando o ator é Administrador e `"internal"` nos demais casos (`F1 src/modules/queue/mapping.service.ts:574`).
 
-#### Response `200`
+#### Response 200
 
 Mesmo shape do GET (`§11.3`), montado a partir dos valores em memória já persistidos (`F1 src/modules/queue/mapping.service.ts:134-164,690-697`). `targetStatus` reflete o destino da conclusão quando houve, senão o valor persistido (`F1 src/modules/queue/mapping.service.ts:693`). A criação também responde `200` (`F1 src/modules/queue/mapping.controller.ts:62`).
 
@@ -4887,8 +4892,6 @@ JSON puro, sem multipart e sem paginação. `scheduledFor` de entrada aceita off
 | Request-id            | Divergente (legado vigente): sem `x-request-id` e sem `requestId` no envelope                                                                                                                          | #15 / §12                        |
 | Rate limit            | Não se aplica: rota autenticada                                                                                                                                                                        | §13                              |
 
-**Cobertura da seção:** 2 de 2 rotas do inventário — `GET /queue/requests/:protocol/mapping` (#35) e `PUT /queue/requests/:protocol/mapping` (#36).
-
 ## 12. prioritization
 
 Duas rotas do inventário (§4, #37 e #38), montadas em `/prioritization` (`F1 src/router.ts:18`). O router aplica `authMiddleware` a todas as rotas (`F1 src/modules/prioritization/prioritization.router.ts:8`); não existe rota pública neste domínio.
@@ -4938,12 +4941,12 @@ Lista os critérios ativos com o peso vigente.
 
 | Parte   | Conteúdo                                    |
 | ------- | ------------------------------------------- |
-| path    | —                                           |
-| query   | —                                           |
-| body    | —                                           |
-| headers | cookie de sessão (`session_id` por default) |
+| Path    | —                                           |
+| Query   | —                                           |
+| Body    | —                                           |
+| Headers | cookie de sessão (`session_id` por default) |
 
-#### Response `200`
+#### Response 200
 
 `ListCriteriaResponse` (`F1 src/modules/DTOs/prioritization/PrioritizationResponse.dto.ts:10-13`):
 
@@ -4995,9 +4998,9 @@ Avalia ou reavalia a priorização de uma solicitação.
 
 | Parte | Campo           | Tipo                            | Obrigatório | Regra                                                                                      |
 | ----- | --------------- | ------------------------------- | ----------- | ------------------------------------------------------------------------------------------ |
-| path  | `protocol`      | string                          | sim         | `trim` com mínimo 1; vazio → `400 "Campos inválidos: protocol — Protocolo é obrigatório."` |
-| body  | `notes`         | objeto `criterion_id` → inteiro | sim         | ao menos uma chave; chave com até 50 caracteres; nota inteira de 1 a 5                     |
-| body  | `justification` | string                          | não         | `trim`; até 500 caracteres; string vazia vira ausência                                     |
+| Path  | `protocol`      | string                          | sim         | `trim` com mínimo 1; vazio → `400 "Campos inválidos: protocol — Protocolo é obrigatório."` |
+| Body  | `notes`         | objeto `criterion_id` → inteiro | sim         | ao menos uma chave; chave com até 50 caracteres; nota inteira de 1 a 5                     |
+| Body  | `justification` | string                          | não         | `trim`; até 500 caracteres; string vazia vira ausência                                     |
 
 Headers: `Cookie: session_id`; `Content-Type: application/json`.
 
@@ -5054,7 +5057,7 @@ Ordem efetiva de avaliação: path (`400`) → corpo (`400`) → existência do 
 - Auditoria: `entityType: "prioritization"`, `entityId: <protocol>`, `actionType: "prioritization.evaluate"`, snapshot anterior e novo (notas, score, classificação) em JSON canônico, `changeOrigin: "manual"`; `justification` vai apenas para o campo `note` da auditoria e **não** é persistida na avaliação nem devolvida na resposta (`F1 src/modules/prioritization/prioritization.service.ts:69-102`; `F1 src/modules/DTOs/prioritization/PrioritizationRequests.dto.ts:9-14`).
 - Reavaliar é o mesmo `PUT`: sobrescreve a linha vigente e acumula um evento em `audit_history`; não há tabela de histórico de notas (`F1 migrations/20260912010000_create_prioritization_evaluations.js:8-10`).
 
-#### Response `200`
+#### Response 200
 
 `EvaluatePrioritizationResponse` (`F1 src/modules/DTOs/prioritization/PrioritizationResponse.dto.ts:15-22`):
 
@@ -5130,8 +5133,6 @@ Evidência: `F1 src/modules/prioritization/prioritization.controller.ts:30-48`; 
 | Idioma           | Chaves `camelCase`; valores de domínio em pt-BR; `id` de critério é um identificador opaco em `snake_case` | Compatível — §11                                                                                                                         |
 | Idempotência     | `PUT` substitui a avaliação vigente                                                                        | Compatível — §8.2                                                                                                                        |
 | Request-id       | Ausente                                                                                                    | **Divergente (legado vigente):** §12; anotado na §3                                                                                      |
-
-**Cobertura da seção:** 2 de 2 rotas do inventário — #37 `GET /prioritization/criteria`; #38 `PUT /prioritization/:protocol/score`.
 
 ## 13. pending-items
 
@@ -5228,7 +5229,7 @@ Regras efetivas:
 - O `batchId` é um UUID novo por chamada; todas as linhas recebem `status: "requested"`, `corrected_value: null`, `response_text: null`, `deadline: null`, `responded_at: null` e `validated_at: null` (`F1 src/modules/pendingItems/pendingItems.service.ts:139-183`; `F1 src/modules/pendingItems/pendingItems.repository.ts:324-343`).
 - Na mesma transação, se o status atual não for `Pendente de informações`, a solicitação passa para esse status e são gravados dois eventos: `pending_item.create` (origem `admin`) e `request.status_change` (origem `system`); se o status já for `Pendente de informações`, grava apenas `pending_item.create`, com `newValue` igual ao `batchId` (`F1 src/modules/pendingItems/pendingItems.repository.ts:349-385`).
 
-#### Response `201`
+#### Response 201
 
 `CreatePendingItemsResponse` (`F1 src/modules/DTOs/pendingItems/PendingItems.dto.ts:59-63`):
 
@@ -5292,12 +5293,12 @@ Lista todas as pendências da solicitação.
 
 | Parte   | Conteúdo                                                                 |
 | ------- | ------------------------------------------------------------------------ |
-| path    | `:protocol`                                                              |
-| query   | nenhuma                                                                  |
-| body    | —                                                                        |
-| headers | cookie de sessão **ou** `X-Requester-Identity: {"name":"…","email":"…"}` |
+| Path    | `:protocol`                                                              |
+| Query   | nenhuma                                                                  |
+| Body    | —                                                                        |
+| Headers | cookie de sessão **ou** `X-Requester-Identity: {"name":"…","email":"…"}` |
 
-#### Response `200`
+#### Response 200
 
 `ListPendingItemsResponse` (`F1 src/modules/DTOs/pendingItems/PendingItems.dto.ts:65-74`):
 
@@ -5312,7 +5313,7 @@ Lista todas as pendências da solicitação.
 Regras efetivas:
 
 - Todos os itens da solicitação, de todos os lotes, são devolvidos em ordem de `created_at` ascendente, sem filtro por status, lote ou visibilidade, e sem paginação (`F1 src/modules/pendingItems/pendingItems.repository.ts:69-78`).
-- Sem nenhum item: `{ "batchId": null, "requestAttachment": false, "items": [] }` (`F1 src/modules/pendingItems/pendingItems.service.ts:245-247`).
+- Sem nenhum item: `{ "batchId": null, "requestAttachment": false, "items": [] }` (`F1 src/modules/pendingItems/pendingItems.service.ts:245-247`). O shape de cada item está em §13.3.
 - `batchId` é o primeiro item, na ordem cronológica, com status `requested` ou `responded`; se não houver, é o último item da lista (`F1 src/modules/pendingItems/pendingItems.service.ts:249-256`).
 - `requestAttachment` é `true` quando qualquer item do lote escolhido tem a flag `true`; a flag é do lote e a resposta devolve apenas a do lote vigente (`F1 src/modules/pendingItems/pendingItems.service.ts:257-261`).
 - Cada item segue `PendingItem` (`F1 src/modules/DTOs/pendingItems/PendingItems.dto.ts:18-33`): `field` é `null` em `observation`; `currentValue` e `correctedValue` são convertidos de JSON quando o valor é escalar; `deadline` é `yyyy-mm-dd` ou `null`; `createdAt`, `respondedAt` e `validatedAt` são ISO-8601 UTC; `responseAttachments` traz `downloadUrl: null` e `canDownload: false` (`F1 src/modules/pendingItems/pendingItems.service.ts:40-77`; `F1 src/modules/pendingItems/pendingItems.repository.ts:744-773`).
@@ -5375,7 +5376,7 @@ Regras efetivas:
 - Se a chamada tiver ao menos um `reopen`, a solicitação passa para `Pendente de informações` com auditoria `request.status_change` e nota `"reopen pending"`; se todas as decisões forem `validate`, o status da solicitação não muda (`F1 src/modules/pendingItems/pendingItems.service.ts:519`; `F1 src/modules/pendingItems/pendingItems.repository.ts:577-591`).
 - Cada decisão nova grava `pending_item.validate` ou `pending_item.reopen` com anterior/novo (`F1 src/modules/pendingItems/pendingItems.repository.ts:542-573`).
 
-#### Response `200`
+#### Response 200
 
 `{ batchId, items }`, com os itens decididos nesta chamada no estado atual; a ordem não é definida pela consulta (`F1 src/modules/pendingItems/pendingItems.service.ts:522-523`; `F1 src/modules/pendingItems/pendingItems.repository.ts:593-598`). A resposta não devolve `solicitationStatus`.
 
@@ -5418,9 +5419,9 @@ Registra a resposta de um item do lote, por identidade pública ou sessão.
 
 | Parte   | Conteúdo                                                                            |
 | ------- | ----------------------------------------------------------------------------------- |
-| path    | `:protocol`, `:pendingItemId`                                                       |
-| body    | `{ correctedValue }` para item `field_edit`; `{ response }` para item `observation` |
-| headers | cookie de sessão **ou** `X-Requester-Identity`                                      |
+| Path    | `:protocol`, `:pendingItemId`                                                       |
+| Body    | `{ correctedValue }` para item `field_edit`; `{ response }` para item `observation` |
+| Headers | cookie de sessão **ou** `X-Requester-Identity`                                      |
 
 Corpo discriminado pelo `type` armazenado (`F1 src/modules/pendingItems/pendingItems.service.ts:284-313`):
 
@@ -5436,7 +5437,7 @@ Corpo discriminado pelo `type` armazenado (`F1 src/modules/pendingItems/pendingI
 - Se não restar nenhum `requested` no lote, a exigência de anexo do lote estiver satisfeita (sem linha com `request_attachment = true` ou com ao menos um anexo no lote) e o status atual não for `Em triagem`, a solicitação passa para `Em triagem`; caso contrário, o status não muda (`F1 src/modules/pendingItems/pendingItems.service.ts:324-330`; `F1 src/modules/pendingItems/pendingItems.repository.ts:433-466`).
 - Auditoria: `pending_item.respond` com origem `admin` quando há cookie de sessão (inclusive `Solicitante` autenticado) e `requester` quando a identidade vem apenas do header; a mudança de status grava `request.status_change` com nota `"pendencia respondida completa"` e origem `system` (`F1 src/modules/pendingItems/pendingItems.controller.ts:59-69`; `F1 src/modules/pendingItems/pendingItems.repository.ts:422-431,456-465`).
 
-#### Response `200`
+#### Response 200
 
 O `PendingItem` atualizado (`F1 src/modules/pendingItems/pendingItems.service.ts:332-333`). A resposta não inclui `solicitationStatus`.
 
@@ -5486,7 +5487,7 @@ Regras efetivas:
 - A gravação usa `uploaded_by: "requester"` e `is_restricted: false`; auditoria `pending_item.attach` com `changeOrigin: "requester"` (`F1 src/modules/pendingItems/pendingItems.repository.ts:480-503`).
 - Não existe `expectedAttachmentType` nem limite de 3 anexos no backend. No legado, a coluna `expected_attachment_type` aparece apenas na documentação de persistência de `requests` (`F1 docs/database/requests-persistence.md:312`), sem uso por este domínio; o limite de 3 existe somente no consumidor (`F2 src/lib/types/request.ts:335`).
 
-#### Response `201`
+#### Response 201
 
 `InternalAttachment` derivado do arquivo salvo (`F1 src/modules/pendingItems/pendingItems.service.ts:383-389`):
 
@@ -5547,7 +5548,7 @@ Ordem efetiva, verificada no controller e no service: rate limit → formato (`4
 - A comparação de nome remove acentos e ignora caixa; a de e-mail faz `trim` e minúsculas (`F1 src/shared/utils/normalizeIdentity.ts:1-11`).
 - A resposta não tem `Set-Cookie`, JWT nem `expiresInMinutes` (`F1 src/modules/pendingItems/pendingItems.controller.ts:124`).
 
-#### Response `200`
+#### Response 200
 
 ```json
 {
@@ -5608,8 +5609,6 @@ O `protocol` ecoado é o do path, já com `trim` (`F1 src/modules/pendingItems/p
 | Idempotência              | `review` ignora reenvio de `id+decision`; `respond` não é idempotente (segunda chamada → `409`); `POST` não deduplica       | Compatível com a tabela da §8.2; a idempotência do `review` é regra do contrato legado (`F1 docs/contract-pendencias_03.md` §7; `D-P23` do contrato de pendências em §12) |
 | Request-id                | Ausente                                                                                                                     | **Divergente (legado vigente):** §12; anotado na §3                                                                                                                       |
 | `deadline` no wire        | A chave é sempre emitida, com `null` quando não há prazo (`F1 src/modules/pendingItems/pendingItems.repository.ts:764-766`) | **Desatualizado no legado:** o contrato marca `deadline` como opcional (`F1 docs/contract-pendencias_03.md` §7)                                                           |
-
-**Cobertura da seção:** 6 de 6 rotas do inventário — #39 `POST /requests/:protocol/pending-items`; #40 `GET /requests/:protocol/pending-items`; #41 `PATCH /requests/:protocol/pending-items/review`; #42 `PATCH /requests/:protocol/pending-items/:pendingItemId`; #43 `POST /requests/:protocol/pending-items/:pendingItemId/attachments`; #44 `POST /requests/:protocol/public/verify`.
 
 ## 14. queue
 
@@ -5767,7 +5766,7 @@ Semântica dos filtros (`F1 src/modules/queue/queue.filters.ts:13-50`):
 | `assigneeId` UUID                              | `requests.professional_id = :assigneeId`                                                                                |
 | escopo do Analista                             | `assignee_user.user_id = :scopedUserId` **ou** `mapping_assignee.user_id = :scopedUserId`                               |
 
-#### Response 200 — envelope
+#### Response 200
 
 ```json
 {
@@ -5926,8 +5925,6 @@ Drift observado:
 - **Compatível:** datas de timestamp em ISO-8601 UTC (§10).
 - Sem conflito registrado: erro de validação em `400` com mensagem agregada (§3 descreve 400 no
   alvo; `fields` não é enviado).
-
-**Cobertura da seção:** 2 de 2 rotas do inventário.
 
 - `GET /queue/metrics` (#45)
 - `GET /queue` (#46)
@@ -6124,7 +6121,7 @@ Validada por `queueFilterQuerySchema` — o schema de filtros da fila **sem** pa
 - **Não** há escopo por Analista no CSV: `applyQueueFilters` é chamado sem `scopedUserId`
   (`F1 src/modules/reports/reports.repository.ts:274`), e a rota já é restrita a Gestor/Administrador.
 
-#### Response 200 — headers
+#### Response 200
 
 ```http
 200 OK
@@ -6142,7 +6139,7 @@ Evidência: `F1 src/modules/reports/reports.controller.ts:27-35`.
 - O corpo é a string CSV entregue por `res.send`; `Content-Length` não é definido pela aplicação
   (`F1 src/modules/reports/reports.controller.ts:35`).
 
-#### Response 200 — conteúdo
+#### Response 200
 
 - UTF-8 com BOM (`\uFEFF`), linhas terminadas em CRLF (`\r\n`), inclusive a última
   (`F1 src/modules/reports/reports.service.ts:166-168`).
@@ -6258,8 +6255,6 @@ CSV (`F2 src/lib/api/report.api.ts:27-39`):
 - Sem conflito registrado: `text/csv` não é tratado pela §9 (que cobre JSON e multipart).
 - Sem conflito registrado: `Cache-Control: no-store` e `X-Content-Type-Options: nosniff` no CSV não
   são previstos nem proibidos pelas convenções.
-
-**Cobertura da seção:** 2 de 2 rotas do inventário.
 
 - `GET /reports/dashboard` (#47)
 - `GET /reports/requests.csv` (#48)
@@ -6473,7 +6468,7 @@ Paginação:
 4. A custódia é do responsável de triagem **ou** do designado de mapeamento, comparados por
    `user_id` da sessão (`F1 src/modules/auditHistory/auditHistory.service.ts:103-115`).
 
-#### Response 200 — array direto
+#### Response 200
 
 `AuditHistoryDetail[]`, sem envelope, na ordem `occurred_at DESC` e, no empate, `audit_id DESC`
 (`F1 src/modules/auditHistory/auditHistory.repository.ts:117-123`). Os campos de cada item são
@@ -6567,8 +6562,6 @@ O contrato registra o mesmo recorte de permissão e de erros
   (`F1 migrations/202609100009_create_audit_history.js:14`), e omite `ip_address` e
   `last_technical_message`, criados depois
   (`F1 migrations/requester_request/20260926000000_complete_status_transition_v4.js:256-260`).
-
-**Cobertura da seção:** 3 de 3 rotas do inventário.
 
 - `GET /audit-history` (#49)
 - `GET /audit-history/:id` (#50)
@@ -6951,8 +6944,6 @@ Sem corpo (`F1 src/modules/internalNotes/internalNotes.controller.ts:75`).
 - **Desatualizado no legado:** `F1 docs/internal-observations.md:597-601` exemplifica o 403 com
   `"Acesso restrito aos perfis internos"` (mensagem do controller, inalcançável); o 403 efetivo de
   perfil vem do `requireRole` (`F1 src/shared/middleware/requireRole.ts:21-22`).
-
-**Cobertura da seção:** 3 de 3 rotas do inventário.
 
 - `GET /requests/:protocol/internal-notes` (#52)
 - `POST /requests/:protocol/internal-notes` (#53)
