@@ -1316,3 +1316,977 @@ ADRs tem 32 campos — as 33 chaves do catálogo legado menos `demand.category`
 (`docs/adr/0012-form-is-a-configurable-entity.md`, "Consequências").
 
 **Cobertura da seção:** 0 rotas (sem superfície HTTP); 33 chaves de campo catalogadas.
+
+## 7. portal-config
+
+Configuração global e **singleton** do portal: uma leitura pública consolidada e sete escritas
+administrativas, uma por seção, com `PATCH` independente (`F1 docs/portal-config-api-0_4.md` §1–§8).
+Não há criação (`POST`) nem exclusão (`DELETE`): a linha `system_settings`/`system_themes` é garantida
+por migration e cada `PATCH` altera apenas a sua seção (`F1 docs/portal-config-api-0_4.md`
+§Observações — "Sem `POST` de config").
+
+### 7.1 Fontes
+
+| Ref | Caminho                                                                                                                             | Uso                                                     |
+| --- | ----------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| F1  | `src/modules/portalConfig/portalConfig.router.ts`                                                                                   | montagem das 8 rotas, guardas                           |
+| F1  | `src/modules/portalConfig/portalConfig.controller.ts`                                                                               | parse, multipart, montagem de URL, respostas            |
+| F1  | `src/modules/portalConfig/portalConfig.service.ts`                                                                                  | projeção do GET e regras por seção                      |
+| F1  | `src/modules/portalConfig/portalConfig.repository.ts`                                                                               | leituras ordenadas, locks, upserts                      |
+| F1  | `src/modules/portalConfig/portalConfig.schema.ts`                                                                                   | validação Zod das 7 seções                              |
+| F1  | `src/modules/portalConfig/portalConfig.mappers.ts`                                                                                  | tema (contrato ↔ colunas planas) e defaults             |
+| F1  | `src/shared/middleware/uploadAssets.ts`                                                                                             | multipart de `/assets`                                  |
+| F1  | `src/shared/types/portalConfig.ts`                                                                                                  | tipos do contrato, allowlists, `CORE_STATUS_IDS`        |
+| F1  | `src/shared/types/systemSettings.ts`, `src/shared/types/systemTheme.ts`, `src/shared/types/criteria.ts`, `src/shared/types/role.ts` | linhas de banco e ponte de critérios/perfis             |
+| F1  | `src/modules/DTOs/portalConfig/PortalConfigResponse.dto.ts`, `src/modules/DTOs/portalConfig/PortalConfigRequests.dto.ts`            | DTOs das respostas e corpos                             |
+| F1  | `docs/portal-config-api-0_4.md`, `docs/portal-config-endpoints.md`, `docs/portal-config-statuses-amend.md`                          | documentos do legado                                    |
+| F2  | `src/lib/config/portal-config.api.ts`                                                                                               | chamadas HTTP por seção                                 |
+| F2  | `src/lib/config/portal-config.service.ts`                                                                                           | sanitize de leitura/escrita, fallback e validação local |
+| F2  | `src/lib/config/portal-config-load.ts`                                                                                              | flag de falha de carregamento                           |
+| F2  | `src/lib/types/portal-config.ts`                                                                                                    | tipos espelhados e aliases legados                      |
+
+Contexto transversal já fixado na §3: envelope de erro (`F1 src/shared/middleware/errorHandler.ts:9-45`),
+validação (`F1 src/shared/validation/zodErrors.ts:89-117`), sessão/cookie e `requireRole`
+(`F1 src/shared/middleware/auth.ts:20-95`; `F1 src/shared/middleware/requireRole.ts:9-23`). O
+`requireAccessMode` lê `solicitation_mode` a cada request (`F1 src/shared/middleware/accessMode.ts:19-41`),
+portanto o valor gravado por `PATCH /portal-config/access` altera o comportamento das rotas de
+`/requests` no request seguinte (`F1 src/modules/requests/requests.service.ts:613`;
+`F1 src/modules/pendingItems/pendingItems.service.ts:532`).
+
+### 7.2 Rotas
+
+| #   | Método | Path                                    | Autenticação/autorização | Handler                       | Sucesso                            | Erros                        |
+| --- | ------ | --------------------------------------- | ------------------------ | ----------------------------- | ---------------------------------- | ---------------------------- |
+| 5   | GET    | `/portal-config`                        | pública                  | `getConfig`                   | 200 `PortalConfig`                 | 500                          |
+| 6   | PATCH  | `/portal-config/access`                 | Administrador            | `updateAccess`                | 200 `AccessSection`                | 400, 401, 403, 500           |
+| 7   | PATCH  | `/portal-config/identity`               | Administrador            | `updateIdentity`              | 200 `IdentitySection`              | 400, 401, 403, 500           |
+| 8   | PATCH  | `/portal-config/theme`                  | Administrador            | `updateTheme`                 | 200 `ThemeSection`                 | 400, 401, 403, 500           |
+| 9   | PATCH  | `/portal-config/assets`                 | Administrador; multipart | `updateAssets`                | 200 `AssetsSection`                | 400, 401, 403, 413, 415, 500 |
+| 10  | PATCH  | `/portal-config/categories`             | Administrador            | `updateCategories`            | 200 `CategoriesSection`            | 400, 401, 403, 500           |
+| 11  | PATCH  | `/portal-config/statuses`               | Administrador            | `updateStatuses`              | 200 `StatusesSection`              | 400, 401, 403, 409, 500      |
+| 12  | PATCH  | `/portal-config/prioritization-weights` | Administrador            | `updatePrioritizationWeights` | 200 `PrioritizationWeightsSection` | 400, 401, 403, 500           |
+
+Montagem: o router é montado em `/portal-config` (`F1 src/router.ts:29`). O `GET "/"` é declarado
+**antes** dos guardas (`F1 src/modules/portalConfig/portalConfig.router.ts:19`); em seguida
+`authMiddleware` e `requireRole("Administrador")` são aplicados por `router.use`, cobrindo todos os
+`PATCH` (`F1 src/modules/portalConfig/portalConfig.router.ts:22-23`).
+
+Transporte comum das rotas JSON:
+
+- `application/json`, sem `Content-Type` alternativo aceito; corpo lido pelo default do Express
+  (`F1 src/app.ts:26`), sem limite explícito próprio.
+- Datas não aparecem no payload: o contrato não expõe `created_at`/`updated_at`/`updated_by`.
+- Não há `Location`, `ETag`, `x-request-id` nem `Cache-Control`.
+- Toda escrita roda em transação com `lockSettings` (e `lockTheme` no tema) e grava auditoria
+  `entityType: "settings"`, `entityId: "settings"`, `actionType: "settings.update"`
+  (`F1 src/modules/portalConfig/portalConfig.service.ts:106-122,135-160,173-191,204-223,236-257,270-346,357-378`).
+- `GET /uploads/*` é `express.static` público sobre `Config.UPLOAD_DIR` com `fallthrough: false`
+  (`F1 src/app.ts:24`): serve os binários de `/assets`, é infraestrutura e **não** integra o
+  inventário da §4 (mesma classificação da §3.1).
+
+**Divergente (legado vigente):** ausência de `/api/v1` nas 8 rotas — convenção §1 de
+`docs/04-API-Conventions.md`.
+
+### 7.3 GET /portal-config
+
+**Request:** sem path param, query, body ou header obrigatório. Antes dos guardas
+(`F1 src/modules/portalConfig/portalConfig.router.ts:19`), portanto anônimo.
+
+**Response 200** — `PortalConfig` (`F1 src/modules/DTOs/portalConfig/PortalConfigResponse.dto.ts:1-2`),
+montado por `getPortalConfig` (`F1 src/modules/portalConfig/portalConfig.service.ts:65-96`):
+
+| Campo                   | Tipo                            | Regra de origem                                                    |
+| ----------------------- | ------------------------------- | ------------------------------------------------------------------ |
+| `platformName`          | string                          | `system_settings.platform_name`                                    |
+| `solicitationMode`      | `"PUBLIC"` \| `"AUTHENTICATED"` | `system_settings.solicitation_mode`                                |
+| `protocolMask`          | string                          | `system_settings.protocol_mask`                                    |
+| `theme`                 | `PortalTheme`                   | `system_themes` (`theme_id = 1`) via `themeFromRow`                |
+| `assets`                | `PortalAssets`                  | colunas de `system_settings`; `NULL` vira `""`                     |
+| `categories`            | `PortalCategory[]`              | `categories` ordenado por `display_order` asc                      |
+| `statuses`              | `PortalStatus[]`                | `statuses` ordenado por `order_number` asc, **incluindo inativos** |
+| `prioritizationWeights` | objeto chave→inteiro            | `criteria` com `active = true`, ordenado por `display_order` asc   |
+
+`theme` nunca é `null`: quando a linha não existe ou a coluna está `NULL`, o valor é o default do
+contrato em `DEFAULT_THEME` (`F1 src/modules/portalConfig/portalConfig.mappers.ts:36-85,146-207`), e
+`backgroundLocked` com coluna `NULL` resulta `false`, não o default do seed
+(`F1 src/modules/portalConfig/portalConfig.mappers.ts:175-177`). A serialização emite os 13 tokens,
+depois `gradient` e depois `statuses` (`F1 src/modules/portalConfig/portalConfig.mappers.ts:181-200`);
+`gradient.angle` é sempre numérico no GET (`F1 src/modules/portalConfig/portalConfig.mappers.ts:159-161`).
+
+`assets` traz as 9 chaves, sempre string/boolean; `NULL` no banco vira string vazia
+(`F1 src/modules/portalConfig/portalConfig.service.ts:31-43`).
+
+`categories`: `description` `NULL` vira `""` e `isActive` é derivado de `status === "active"`
+(`F1 src/modules/portalConfig/portalConfig.service.ts:82-87`).
+
+`statuses`: cada item tem exatamente `id`, `name`, `isCore`, `isPublic`, `isTerminal`,
+`triageMode`, `mappingMode`, `isRestricted`, `tone`, `isActive` — **sem** campo `order`
+(`F1 src/shared/types/portalConfig.ts:133-144`). A ordem de exibição é a posição no array, que vem de
+`statuses.order_number` (`F1 src/modules/portalConfig/portalConfig.repository.ts:56-60`);
+`is_core` é projetado como `isCore` (`F1 src/modules/portalConfig/portalConfig.service.ts:46-59`).
+Campos `NULL` caem em `false`, `"none"` e `isActive: true` (`F1 src/modules/portalConfig/portalConfig.service.ts:50-57`).
+
+`prioritizationWeights`: só critérios ativos entram (`F1 src/modules/portalConfig/portalConfig.repository.ts:68-74`);
+a chave vem de `CRITERION_ID_TO_KEY` e, se o `criterion_id` for desconhecido, o próprio id é usado
+como chave (`F1 src/modules/portalConfig/portalConfig.service.ts:89-94`;
+`F1 src/shared/types/criteria.ts:8-23`).
+
+```json
+{
+  "platformName": "NEO",
+  "solicitationMode": "PUBLIC",
+  "protocolMask": "NEO",
+  "theme": {
+    "light": {
+      "background": "#f0f4f8",
+      "surface": "#fafafa",
+      "border": "#e5e7eb",
+      "textPrimary": "#3c3e47",
+      "textSecondary": "#757682",
+      "heading": "#00236f",
+      "richBlack": "#0f1a2a",
+      "primary": "#00236f",
+      "secondary": "#0058be",
+      "tint": "#d6e7fb",
+      "onPrimary": "#ffffff",
+      "onDark": "#ffffff",
+      "onGradient": "#ffffff",
+      "gradient": { "from": "#002068", "to": "#003399", "angle": 143 },
+      "statuses": {
+        "error": { "color": "#ef4444", "background": "#ef444410", "backgroundLocked": true },
+        "success": { "color": "#10b981", "background": "#10b98110", "backgroundLocked": true },
+        "info": { "color": "#0058be", "background": "#0058be10", "backgroundLocked": true },
+        "warning": { "color": "#956006", "background": "#f59e0b10", "backgroundLocked": true },
+        "neutral": { "color": "#4b5563", "background": "#e5e7eb", "backgroundLocked": true }
+      }
+    },
+    "dark": {
+      "background": "#0b0f1a",
+      "surface": "#141b2e",
+      "border": "#2a3346",
+      "textPrimary": "#e5e7eb",
+      "textSecondary": "#9aa3b2",
+      "heading": "#4c7dff",
+      "richBlack": "#0f1a2a",
+      "primary": "#4c7dff",
+      "secondary": "#5b9bff",
+      "tint": "#1b2942",
+      "onPrimary": "#0b0f1a",
+      "onDark": "#ffffff",
+      "onGradient": "#ffffff",
+      "gradient": { "from": "#002068", "to": "#003399", "angle": 143 },
+      "statuses": {
+        "error": { "color": "#f87171", "background": "#4c0f0a", "backgroundLocked": true },
+        "success": { "color": "#4ade80", "background": "#0f2e1d", "backgroundLocked": true },
+        "info": { "color": "#5b9bff", "background": "#1b2942", "backgroundLocked": true },
+        "warning": { "color": "#fbbf24", "background": "#4a2e0f", "backgroundLocked": true },
+        "neutral": { "color": "#9aa3b2", "background": "#2a3346", "backgroundLocked": true }
+      }
+    }
+  },
+  "assets": {
+    "logoLightUrl": "/uploads/portal/logo-light-00000000-0000-4000-8000-000000000000.svg",
+    "logoDarkUrl": "",
+    "logoUsePrimaryColor": true,
+    "avatarLightUrl": "",
+    "avatarDarkUrl": "",
+    "loginImageLightUrl": "",
+    "loginImageDarkUrl": "",
+    "faviconLightUrl": "",
+    "faviconDarkUrl": ""
+  },
+  "categories": [
+    {
+      "id": 1,
+      "name": "Automação",
+      "description": "Automação de atividades manuais",
+      "isActive": true
+    }
+  ],
+  "statuses": [
+    {
+      "id": 1,
+      "name": "Solicitação enviada",
+      "isCore": true,
+      "isPublic": true,
+      "isTerminal": false,
+      "triageMode": "none",
+      "mappingMode": "none",
+      "isRestricted": false,
+      "tone": "neutral",
+      "isActive": true
+    },
+    {
+      "id": 16,
+      "name": "Concluído",
+      "isCore": true,
+      "isPublic": true,
+      "isTerminal": true,
+      "triageMode": "conclusion_only",
+      "mappingMode": "conclusion_only",
+      "isRestricted": false,
+      "tone": "success",
+      "isActive": true
+    }
+  ],
+  "prioritizationWeights": {
+    "operationalImpact": 10,
+    "operationalRisk": 10,
+    "urgency": 10,
+    "volumetry": 10,
+    "manualEffort": 10,
+    "clientImpact": 10,
+    "regulatoryDeadline": 10,
+    "affectedAreas": 10,
+    "strategicAlignment": 10,
+    "estimatedComplexity": 10
+  }
+}
+```
+
+**Erros**
+
+| Status | `code` | Mensagem                     | Condição                                                                                                                                                                                                                       |
+| ------ | ------ | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 500    | —      | `"Erro interno do servidor"` | falha de banco; singleton `system_settings` ausente lança `Error` (`F1 src/modules/portalConfig/portalConfig.repository.ts:21-29`) e cai no ramo genérico do `errorHandler` (`F1 src/shared/middleware/errorHandler.ts:32-45`) |
+
+O outro único erro possível é o encaminhamento de exceção não prevista pelo `errorHandler`, com a
+mesma mensagem genérica para 5xx. Não há 401/403 nesta rota.
+
+**Transporte:** JSON; resposta completa `200` (sem `201`/`204`); nenhum header de cache.
+
+**Evidência:** `F1 src/modules/portalConfig/portalConfig.router.ts:19`;
+`F1 src/modules/portalConfig/portalConfig.controller.ts:50-53`;
+`F1 src/modules/portalConfig/portalConfig.service.ts:65-96`;
+`F1 src/modules/portalConfig/portalConfig.repository.ts:21-74`.
+
+### 7.4 PATCH /portal-config/access
+
+**Request** (`F1 src/modules/portalConfig/portalConfig.schema.ts:70-76`):
+
+| Campo              | Tipo                            | Regra                           |
+| ------------------ | ------------------------------- | ------------------------------- |
+| `solicitationMode` | `"PUBLIC"` \| `"AUTHENTICATED"` | obrigatório; objeto `.strict()` |
+
+```http
+PATCH /portal-config/access HTTP/1.1
+Content-Type: application/json
+Cookie: session_id=<sessão de Administrador>
+
+{ "solicitationMode": "AUTHENTICATED" }
+```
+
+**Response 200** — `AccessSection`, eco do valor gravado
+(`F1 src/modules/portalConfig/portalConfig.service.ts:123`):
+
+| Campo              | Tipo                            | Regra                |
+| ------------------ | ------------------------------- | -------------------- |
+| `solicitationMode` | `"PUBLIC"` \| `"AUTHENTICATED"` | mesmo valor recebido |
+
+```json
+{ "solicitationMode": "AUTHENTICATED" }
+```
+
+Efeitos: `system_settings.solicitation_mode`, `updated_by`, `updated_at`
+(`F1 src/modules/portalConfig/portalConfig.repository.ts:92-102`), além do evento de auditoria com
+`previousValue`/`newValue` (`F1 src/modules/portalConfig/portalConfig.service.ts:110-121`).
+
+**Erros**
+
+| Status | `code` | Mensagem                                                                                            | Condição                                                                                                                                               |
+| ------ | ------ | --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 400    | —      | `"Campos inválidos: solicitationMode — Modo de acesso inválido — opções: PUBLIC ou AUTHENTICATED."` | ausência **ou** valor fora da allowlist — o enum responde a mesma mensagem nos dois casos (`F1 src/modules/portalConfig/portalConfig.schema.ts:72-74`) |
+| 400    | —      | `"Campos inválidos: payload — Unrecognized key: \"modo\""`                                          | chave desconhecida (objeto `.strict()`; issue sem path é rotulada `payload` — `F1 src/shared/validation/zodErrors.ts:74,89-91`)                        |
+| 401    | —      | `"Token não fornecido"`                                                                             | sem cookie de sessão (`F1 src/shared/middleware/auth.ts:27-31`)                                                                                        |
+| 401    | —      | `"Token inválido ou expirado"`                                                                      | token inválido/expirado, usuário inativo ou sessão revogada (`F1 src/shared/middleware/auth.ts:37-52,68-76`)                                           |
+| 403    | —      | `"Troca de senha obrigatória antes de continuar"`                                                   | `must_change_password` (`F1 src/shared/middleware/auth.ts:39-42`)                                                                                      |
+| 403    | —      | `"Acesso restrito ao perfil Administrador"`                                                         | perfil diferente de Administrador (`F1 src/shared/middleware/requireRole.ts:21-22`)                                                                    |
+| 500    | —      | `"Erro interno do servidor"`                                                                        | falha não prevista                                                                                                                                     |
+
+O 400 de validação **não** traz `code` nem `fields`: a mensagem vai agregada em `message`
+(`F1 src/modules/portalConfig/portalConfig.controller.ts:60-63`;
+`F1 src/shared/validation/zodErrors.ts:89-91`).
+
+**Transporte:** JSON; resposta `200` com a seção; o cookie é o único estado de sessão.
+
+**Evidência:** `F1 src/modules/portalConfig/portalConfig.router.ts:25`;
+`F1 src/modules/portalConfig/portalConfig.controller.ts:59-67`;
+`F1 src/modules/portalConfig/portalConfig.service.ts:102-125`.
+
+### 7.5 PATCH /portal-config/identity
+
+**Request** (`F1 src/modules/portalConfig/portalConfig.schema.ts:78-100`):
+
+| Campo          | Tipo   | Regra                                                                                                                                  |
+| -------------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `platformName` | string | opcional; `trim`, 1..80 — `"Campo obrigatório."`, `"Máximo de 80 caracteres."`                                                         |
+| `protocolMask` | string | opcional; `trim`, `^[A-Za-z0-9]+$`, ≤ 10 — `"Máscara do protocolo deve conter apenas letras e números."`, `"Máximo de 10 caracteres."` |
+
+O body é parcial (envie só o que muda), mas exige **ao menos um** dos dois campos; objeto `.strict()`
+(`F1 src/modules/portalConfig/portalConfig.schema.ts:92-100`). `protocolMask` é apenas o bloco inicial
+do protocolo (`F1 src/shared/types/portalConfig.ts:78-80`).
+
+```http
+PATCH /portal-config/identity HTTP/1.1
+Content-Type: application/json
+Cookie: session_id=<sessão de Administrador>
+
+{ "platformName": "NEO" }
+```
+
+**Response 200** — `IdentitySection`, **relido** do banco após o update, portanto sempre com os dois
+campos (`F1 src/modules/portalConfig/portalConfig.service.ts:146-161`):
+
+| Campo          | Tipo   | Regra            |
+| -------------- | ------ | ---------------- |
+| `platformName` | string | valor persistido |
+| `protocolMask` | string | valor persistido |
+
+```json
+{ "platformName": "NEO", "protocolMask": "NEO" }
+```
+
+**Erros**
+
+| Status | `code` | Mensagem                                                                                       | Condição                                                                                                          |
+| ------ | ------ | ---------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| 400    | —      | `"Campos inválidos: platformName — Informe ao menos um campo."`                                | body `{}` (o `refine` aponta o path `platformName` — `F1 src/modules/portalConfig/portalConfig.schema.ts:94-100`) |
+| 400    | —      | `"Campos inválidos: platformName — Campo obrigatório."`                                        | `platformName` só com espaços/inválido (`F1 src/modules/portalConfig/portalConfig.schema.ts:80-84`)               |
+| 400    | —      | `"Campos inválidos: protocolMask — Máscara do protocolo deve conter apenas letras e números."` | caractere fora de `[A-Za-z0-9]` (`F1 src/modules/portalConfig/portalConfig.schema.ts:86-90`)                      |
+| 400    | —      | mensagem agregada do Zod em `payload`                                                          | chave desconhecida (`.strict()`)                                                                                  |
+| 401    | —      | `"Token não fornecido"` / `"Token inválido ou expirado"`                                       | ausência/invalidade de sessão (`F1 src/shared/middleware/auth.ts:27-45,68-76`)                                    |
+| 403    | —      | `"Acesso restrito ao perfil Administrador"`                                                    | perfil diferente de Administrador (`F1 src/shared/middleware/requireRole.ts:21-22`)                               |
+| 403    | —      | `"Troca de senha obrigatória antes de continuar"`                                              | `must_change_password` (`F1 src/shared/middleware/auth.ts:39-42`)                                                 |
+| 500    | —      | `"Erro interno do servidor"`                                                                   | falha não prevista                                                                                                |
+
+**Transporte:** JSON; `updated_by`/`updated_at` gravados em `system_settings`
+(`F1 src/modules/portalConfig/portalConfig.repository.ts:104-117`), sem exposição no payload.
+
+**Evidência:** `F1 src/modules/portalConfig/portalConfig.router.ts:26`;
+`F1 src/modules/portalConfig/portalConfig.controller.ts:73-81`;
+`F1 src/modules/portalConfig/portalConfig.service.ts:131-163`.
+
+### 7.6 PATCH /portal-config/theme
+
+**Request** (`F1 src/modules/portalConfig/portalConfig.schema.ts:17-68`) — **atômico**: as duas
+paletas completas, sem merge por token. Objetos `.strict()` em todos os níveis.
+
+| Campo                     | Tipo          | Regra                                                                                                                                                                                                                                                                                            |
+| ------------------------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `theme.light`             | `ThemeTokens` | obrigatório                                                                                                                                                                                                                                                                                      |
+| `theme.dark`              | `ThemeTokens` | obrigatório                                                                                                                                                                                                                                                                                      |
+| `<paleta>.<token>`        | string hex    | os 13 `THEME_TOKEN_KEYS` obrigatórios: `background`, `surface`, `border`, `textPrimary`, `textSecondary`, `heading`, `richBlack`, `primary`, `secondary`, `tint`, `onPrimary`, `onDark`, `onGradient` (`F1 src/shared/types/portalConfig.ts:55-71`); regex `^#([0-9A-Fa-f]{6}\|[0-9A-Fa-f]{8})$` |
+| `<paleta>.gradient.from`  | string hex    | obrigatório                                                                                                                                                                                                                                                                                      |
+| `<paleta>.gradient.to`    | string hex    | obrigatório                                                                                                                                                                                                                                                                                      |
+| `<paleta>.gradient.angle` | inteiro       | opcional; 0..360 — `"Ângulo deve ser inteiro."`, `"Ângulo mínimo de 0."`, `"Ângulo máximo de 360."`                                                                                                                                                                                              |
+| `<paleta>.statuses.<tom>` | objeto        | os 5 tons `error`, `success`, `info`, `warning`, `neutral`; cada um com `color`, `background` (hex) e `backgroundLocked` (boolean)                                                                                                                                                               |
+
+```http
+PATCH /portal-config/theme HTTP/1.1
+Content-Type: application/json
+Cookie: session_id=<sessão de Administrador>
+
+{ "theme": { "light": { "background": "#f0f4f8", "surface": "#fafafa", "border": "#e5e7eb",
+  "textPrimary": "#3c3e47", "textSecondary": "#757682", "heading": "#00236f", "richBlack": "#0f1a2a",
+  "primary": "#00236f", "secondary": "#0058be", "tint": "#d6e7fb", "onPrimary": "#ffffff",
+  "onDark": "#ffffff", "onGradient": "#ffffff",
+  "gradient": { "from": "#002068", "to": "#003399" },
+  "statuses": {
+    "error": { "color": "#ef4444", "background": "#ef444410", "backgroundLocked": true },
+    "success": { "color": "#10b981", "background": "#10b98110", "backgroundLocked": true },
+    "info": { "color": "#0058be", "background": "#0058be10", "backgroundLocked": true },
+    "warning": { "color": "#956006", "background": "#f59e0b10", "backgroundLocked": true },
+    "neutral": { "color": "#4b5563", "background": "#e5e7eb", "backgroundLocked": true } } },
+  "dark": { "background": "#0b0f1a", "surface": "#141b2e", "border": "#2a3346",
+  "textPrimary": "#e5e7eb", "textSecondary": "#9aa3b2", "heading": "#4c7dff", "richBlack": "#0f1a2a",
+  "primary": "#4c7dff", "secondary": "#5b9bff", "tint": "#1b2942", "onPrimary": "#0b0f1a",
+  "onDark": "#ffffff", "onGradient": "#ffffff",
+  "gradient": { "from": "#002068", "to": "#003399" },
+  "statuses": {
+    "error": { "color": "#f87171", "background": "#4c0f0a", "backgroundLocked": true },
+    "success": { "color": "#4ade80", "background": "#0f2e1d", "backgroundLocked": true },
+    "info": { "color": "#5b9bff", "background": "#1b2942", "backgroundLocked": true },
+    "warning": { "color": "#fbbf24", "background": "#4a2e0f", "backgroundLocked": true },
+    "neutral": { "color": "#9aa3b2", "background": "#2a3346", "backgroundLocked": true } } } } }
+```
+
+**Response 200** — `ThemeSection`, **eco do body recebido**
+(`F1 src/modules/portalConfig/portalConfig.service.ts:192`):
+
+| Campo                       | Tipo          | Regra                        |
+| --------------------------- | ------------- | ---------------------------- |
+| `theme.light`, `theme.dark` | `ThemeTokens` | exatamente o que foi enviado |
+
+O eco tem uma consequência observável: `gradient.angle` omitido **não** aparece na resposta, enquanto
+o banco recebe `143` (`F1 src/modules/portalConfig/portalConfig.mappers.ts:128`) e o `GET` passa a
+devolver `143` (`F1 src/modules/portalConfig/portalConfig.mappers.ts:159-161`). Um `theme.light`
+válido enviado com `angle: 200` volta como `200` e é persistido como `200`.
+
+Forma abreviada (as duas paletas voltam completas, com os 13 tokens + `gradient` + `statuses`):
+
+```json
+{
+  "theme": {
+    "light": { "background": "#f0f4f8", "...": "..." },
+    "dark": { "background": "#0b0f1a", "...": "..." }
+  }
+}
+```
+
+**Erros**
+
+| Status | `code` | Mensagem                                                                                        | Condição                                                                                                                                                                 |
+| ------ | ------ | ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 400    | —      | `"Campos obrigatórios ausentes: theme.dark.background, theme.dark.surface, …"`                  | paleta ausente: a mensagem lista **todas** as folhas faltantes daquela paleta (issue de tipo sem valor → `missing`, `F1 src/shared/validation/zodErrors.ts:28-31,65-70`) |
+| 400    | —      | `"Campos inválidos: theme.light.background — Cor inválida — use #RRGGBB ou #RRGGBBAA."`         | hex fora do formato (`F1 src/modules/portalConfig/portalConfig.schema.ts:18-20`)                                                                                         |
+| 400    | —      | `"Campos inválidos: theme.light.gradient.angle — Ângulo máximo de 360."`                        | `angle > 360` (`F1 src/modules/portalConfig/portalConfig.schema.ts:26-31`)                                                                                               |
+| 400    | —      | `"Campos inválidos: theme.dark.statuses.info — Cor inválida — use #RRGGBB ou #RRGGBBAA."`       | hex inválido em um tom (`F1 src/modules/portalConfig/portalConfig.schema.ts:35-45`)                                                                                      |
+| 400    | —      | `"Campos inválidos: theme.light.gradient — Deve ser um objeto."`                                | `gradient` com tipo errado (tradução de tipo em `F1 src/shared/validation/zodErrors.ts:3-8,33-37`)                                                                       |
+| 400    | —      | mensagem agregada do Zod em `payload`                                                           | token/chave desconhecida (`.strict()` em todos os níveis)                                                                                                                |
+| 401    | —      | `"Token não fornecido"` / `"Token inválido ou expirado"`                                        | ausência/invalidade de sessão                                                                                                                                            |
+| 403    | —      | `"Acesso restrito ao perfil Administrador"` / `"Troca de senha obrigatória antes de continuar"` | perfil ou `must_change_password`                                                                                                                                         |
+| 500    | —      | `"Erro interno do servidor"`                                                                    | falha não prevista                                                                                                                                                       |
+
+**Transporte:** JSON; `themeToColumns` grava colunas planas em `system_themes` (`theme_id = 1`) e
+`updated_at`, além de `updated_by`/`updated_at` em `system_settings`
+(`F1 src/modules/portalConfig/portalConfig.mappers.ts:118-139`;
+`F1 src/modules/portalConfig/portalConfig.repository.ts:119-135`).
+
+**Evidência:** `F1 src/modules/portalConfig/portalConfig.router.ts:27`;
+`F1 src/modules/portalConfig/portalConfig.controller.ts:87-95`;
+`F1 src/modules/portalConfig/portalConfig.service.ts:169-194`.
+
+### 7.7 PATCH /portal-config/assets
+
+**Request** — `multipart/form-data` com uma parte JSON opcional e até 8 partes de arquivo
+(`F1 src/shared/middleware/uploadAssets.ts:100-110`):
+
+| Parte                | Tipo                      | Regra                                                      |
+| -------------------- | ------------------------- | ---------------------------------------------------------- |
+| `assets`             | JSON (`application/json`) | 1 campo, ≤ 2 MiB (`fieldSize`); opcional quando há arquivo |
+| `logoLightUrl`       | arquivo                   | 1 por chave                                                |
+| `logoDarkUrl`        | arquivo                   | 1 por chave                                                |
+| `avatarLightUrl`     | arquivo                   | 1 por chave                                                |
+| `avatarDarkUrl`      | arquivo                   | 1 por chave                                                |
+| `loginImageLightUrl` | arquivo                   | 1 por chave                                                |
+| `loginImageDarkUrl`  | arquivo                   | 1 por chave                                                |
+| `faviconLightUrl`    | arquivo                   | 1 por chave                                                |
+| `faviconDarkUrl`     | arquivo                   | 1 por chave                                                |
+
+Limites globais do multer: `fileSize` = 5 MiB (maior regra), `files: 8`, `fields: 1`,
+`fieldSize` = 2 MiB (`F1 src/shared/middleware/uploadAssets.ts:57-67`).
+
+Regras por chave (`ASSET_FILE_RULES` — `F1 src/shared/middleware/uploadAssets.ts:11-55`):
+
+| Chaves                                    | MIME aceitos                                 | Extensões                        | Máx. |
+| ----------------------------------------- | -------------------------------------------- | -------------------------------- | ---- |
+| `logoLightUrl`, `logoDarkUrl`             | `image/png`, `image/svg+xml`                 | `.png`, `.svg`                   | 2 MB |
+| `avatarLightUrl`, `avatarDarkUrl`         | `image/jpeg`, `image/png`                    | `.jpg`, `.jpeg`, `.png`          | 2 MB |
+| `faviconLightUrl`, `faviconDarkUrl`       | `image/x-icon`, `image/svg+xml`, `image/png` | `.ico`, `.svg`, `.png`           | 1 MB |
+| `loginImageLightUrl`, `loginImageDarkUrl` | `image/jpeg`, `image/png`, `image/webp`      | `.jpg`, `.jpeg`, `.png`, `.webp` | 5 MB |
+
+Parte JSON (`portalAssetsPatchSchema` — `F1 src/modules/portalConfig/portalConfig.schema.ts:261-288`):
+objeto `.partial().strict()` com as 8 chaves de URL (`F1 src/shared/types/portalConfig.ts:33-44`) mais
+`logoUsePrimaryColor` booleano; cada URL `trim` 1..500 e precisa começar com `/` ou casar
+`^https?://` (`"URL de asset deve ser relativa do app ou http(s)."`); exige ao menos uma chave
+(`"Informe ao menos uma chave de asset."`).
+
+```http
+PATCH /portal-config/assets HTTP/1.1
+Content-Type: multipart/form-data; boundary=----X
+Cookie: session_id=<sessão de Administrador>
+
+------X
+Content-Disposition: form-data; name="assets"
+Content-Type: application/json
+
+{"logoUsePrimaryColor":true}
+------X
+Content-Disposition: form-data; name="logoLightUrl"; filename="logo.png"
+Content-Type: image/png
+
+<binário>
+------X--
+```
+
+Ordem de processamento: `authMiddleware` → `requireRole("Administrador")` → `uploadAssetFields`
+(multer) → `validateAssetSizes` → `updateAssets` (`F1 src/modules/portalConfig/portalConfig.router.ts:22-28`).
+Portanto um request sem sessão recebe 401 antes de qualquer leitura de multipart.
+
+O controller monta o patch efetivo assim (`F1 src/modules/portalConfig/portalConfig.controller.ts:106-166`):
+
+1. `rawAssets = req.body?.assets`; `req.files` é objeto (possivelmente vazio).
+2. Sem JSON e sem nenhum arquivo → 400 `"Envie ao menos uma chave de asset (JSON ou arquivo)."`.
+3. JSON como string é `JSON.parse`; falha → 400 `"JSON inválido na parte \`assets\`."`.
+4. JSON validado pelo schema; falha → 400 com `formatZodIssues(error, "assets")`.
+5. Binários são gravados em `Config.UPLOAD_DIR/portal` com prefixo da variante
+   (`ASSET_KEY_TO_URL_PATH`: `logo-light`, `logo-dark`, `avatar-light`, `avatar-dark`,
+   `login-light`, `login-dark`, `favicon-light`, `favicon-dark`) e nome
+   `{prefixo}-{uuid}{extensão}` (`F1 src/shared/storage/fileStorage.ts:31`), resultando em
+   `/uploads/portal/{arquivo}` (`F1 src/modules/portalConfig/portalConfig.controller.ts:145-158`).
+6. Merge: **binário tem precedência** sobre a URL do JSON para a mesma chave; `logoUsePrimaryColor`
+   só vem do JSON (`F1 src/modules/portalConfig/portalConfig.controller.ts:161-163`).
+7. Falha após gravar binário → os arquivos salvos são removidos
+   (`F1 src/modules/portalConfig/portalConfig.controller.ts:167-173`).
+
+**Response 200** — `AssetsSection`, **relido** do banco (todas as 9 chaves, inclusive as não
+enviadas) (`F1 src/modules/portalConfig/portalConfig.service.ts:212-224`):
+
+| Campo                        | Tipo    | Regra                                                |
+| ---------------------------- | ------- | ---------------------------------------------------- |
+| `assets.logoLightUrl`        | string  | URL relativa do app ou `http(s)`; `""` quando `NULL` |
+| `assets.logoDarkUrl`         | string  | idem                                                 |
+| `assets.logoUsePrimaryColor` | boolean | flag persistido                                      |
+| `assets.avatarLightUrl`      | string  | idem                                                 |
+| `assets.avatarDarkUrl`       | string  | idem                                                 |
+| `assets.loginImageLightUrl`  | string  | idem                                                 |
+| `assets.loginImageDarkUrl`   | string  | idem                                                 |
+| `assets.faviconLightUrl`     | string  | idem                                                 |
+| `assets.faviconDarkUrl`      | string  | idem                                                 |
+
+```json
+{
+  "assets": {
+    "logoLightUrl": "/uploads/portal/logo-light-00000000-0000-4000-8000-000000000000.png",
+    "logoDarkUrl": "/uploads/portal/logo-dark-00000000-0000-4000-8000-000000000001.png",
+    "logoUsePrimaryColor": true,
+    "avatarLightUrl": "",
+    "avatarDarkUrl": "",
+    "loginImageLightUrl": "",
+    "loginImageDarkUrl": "",
+    "faviconLightUrl": "",
+    "faviconDarkUrl": ""
+  }
+}
+```
+
+**Erros**
+
+| Status | `code` | Mensagem                                                                                        | Condição                                                                                                                                                               |
+| ------ | ------ | ----------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 400    | —      | `"Envie ao menos uma chave de asset (JSON ou arquivo)."`                                        | sem parte `assets` e sem arquivo (`F1 src/modules/portalConfig/portalConfig.controller.ts:109-111`)                                                                    |
+| 400    | —      | ``"JSON inválido na parte `assets`."``                                                          | `assets` string não é JSON (`F1 src/modules/portalConfig/portalConfig.controller.ts:116-120`)                                                                          |
+| 400    | —      | `"Campos inválidos: logoLightUrl — URL de asset deve ser relativa do app ou http(s)."`          | URL fora da regra (`F1 src/modules/portalConfig/portalConfig.schema.ts:261-269`; rótulo raiz `assets` em `F1 src/modules/portalConfig/portalConfig.controller.ts:123`) |
+| 400    | —      | `"Campos inválidos: assets — Informe ao menos uma chave de asset."`                             | JSON `{}` (`F1 src/modules/portalConfig/portalConfig.schema.ts:285-288`)                                                                                               |
+| 400    | —      | `"Máximo de 1 arquivo por chave de asset."`                                                     | `LIMIT_FILE_COUNT` (`F1 src/shared/middleware/uploadAssets.ts:112-134`)                                                                                                |
+| 400    | —      | `"Parte de arquivo inesperada na requisição."`                                                  | `LIMIT_UNEXPECTED_FILE` (`F1 src/shared/middleware/uploadAssets.ts:112-134`)                                                                                           |
+| 400    | —      | `"Erro ao processar o upload."`                                                                 | qualquer outro `MulterError` não mapeado — inclusive `LIMIT_FIELD_VALUE` da parte JSON acima de 2 MiB (`F1 src/shared/middleware/uploadAssets.ts:112-134`)             |
+| 401    | —      | `"Token não fornecido"` / `"Token inválido ou expirado"`                                        | ausência/invalidade de sessão                                                                                                                                          |
+| 403    | —      | `"Acesso restrito ao perfil Administrador"` / `"Troca de senha obrigatória antes de continuar"` | perfil ou `must_change_password`                                                                                                                                       |
+| 413    | —      | `"Arquivo excede o tamanho máximo permitido para esta chave."`                                  | arquivo acima de 5 MiB (limite global `fileSize`; `F1 src/shared/middleware/uploadAssets.ts:130-134`)                                                                  |
+| 413    | —      | `"Arquivo \"logo.png\" (faviconLightUrl) excede 1.0MB."`                                        | arquivo acima do máximo da chave (`F1 src/shared/middleware/uploadAssets.ts:146-166`)                                                                                  |
+| 415    | —      | `"Campo de arquivo inesperado: \"logo\"."`                                                      | `fieldname` fora das 8 chaves (`F1 src/shared/middleware/uploadAssets.ts:68-73`)                                                                                       |
+| 415    | —      | `"Extensão \".gif\" não permitida para logoLightUrl. Aceitas: .png, .svg."`                     | extensão fora da regra da chave (`F1 src/shared/middleware/uploadAssets.ts:75-84`)                                                                                     |
+| 415    | —      | `"MIME \"image/gif\" não permitido para logoLightUrl. Aceitos: image/png, image/svg+xml."`      | MIME fora da regra da chave (`F1 src/shared/middleware/uploadAssets.ts:86-94`)                                                                                         |
+| 500    | —      | `"Erro interno do servidor"`                                                                    | falha não prevista                                                                                                                                                     |
+
+Notas de comportamento verificáveis:
+
+- A checagem "ao menos uma chave" roda **depois** do multer: multipart vazio chega ao controller e
+  recebe 400; multipart com chave de arquivo inválida recebe 415 antes disso.
+- Um corpo `application/json` **plano** (chaves `logoLightUrl` etc. no topo, como nos curls de
+  `F1 docs/portal-config-endpoints.md`) não define `req.body.assets` e não tem arquivos → 400
+  `"Envie ao menos uma chave de asset (JSON ou arquivo)."`. Um corpo JSON com
+  `{ "assets": { ... } }` é aceito, porque o controller usa o objeto quando não é string
+  (`F1 src/modules/portalConfig/portalConfig.controller.ts:106-126`).
+- `logoUsePrimaryColor` não pode ser alterado por binário, apenas pela parte JSON.
+- Nenhum endpoint separado de upload existe; o commit do binário e da config é a mesma chamada.
+
+**Transporte:** `multipart/form-data`; binários em `uploads/portal/`; URLs relativas
+`/uploads/portal/{variante}-{uuid}.{ext}`, servidas por `express.static` público
+(`F1 src/app.ts:24`; `F1 docs/portal-config-endpoints.md` §"Decisões de produto").
+
+**Evidência:** `F1 src/modules/portalConfig/portalConfig.router.ts:28`;
+`F1 src/modules/portalConfig/portalConfig.controller.ts:101-174`;
+`F1 src/shared/middleware/uploadAssets.ts:11-166`;
+`F1 src/modules/portalConfig/portalConfig.repository.ts:137-160`.
+
+### 7.8 PATCH /portal-config/categories
+
+**Request** (`F1 src/modules/portalConfig/portalConfig.schema.ts:102-139`) — lista **atômica**:
+
+| Campo                      | Tipo    | Regra                                                                     |
+| -------------------------- | ------- | ------------------------------------------------------------------------- |
+| `categories`               | array   | 1..50 — `"Informe ao menos uma categoria."`, `"Máximo de 50 categorias."` |
+| `categories[].id`          | inteiro | positivo — `"Id deve ser inteiro."`, `"Id deve ser positivo."`            |
+| `categories[].name`        | string  | `trim` 1..40 — `"Campo obrigatório."`, `"Máximo de 40 caracteres."`       |
+| `categories[].description` | string  | obrigatório no PATCH, ≤ 200 — `"Máximo de 200 caracteres."`               |
+| `categories[].isActive`    | boolean | obrigatório                                                               |
+
+Regras de conjunto: nomes únicos ignorando caixa/espaços —
+`"Nomes de categorias devem ser únicos (ignora maiúsculas/minúsculas)."` — e ao menos uma categoria
+ativa — `"Ao menos uma categoria deve estar ativa."`
+(`F1 src/modules/portalConfig/portalConfig.schema.ts:117-137`). Objetos `.strict()`.
+
+```http
+PATCH /portal-config/categories HTTP/1.1
+Content-Type: application/json
+Cookie: session_id=<sessão de Administrador>
+
+{ "categories": [
+  { "id": 1, "name": "Automação", "description": "Automação de atividades manuais", "isActive": true },
+  { "id": 2, "name": "Indicador", "description": "Criação de métrica operacional", "isActive": true }
+] }
+```
+
+**Response 200** — `CategoriesSection`, **eco da lista enviada**
+(`F1 src/modules/portalConfig/portalConfig.service.ts:258`):
+
+| Campo        | Tipo               | Regra                                  |
+| ------------ | ------------------ | -------------------------------------- |
+| `categories` | `PortalCategory[]` | mesma lista do request, na mesma ordem |
+
+```json
+{
+  "categories": [
+    {
+      "id": 1,
+      "name": "Automação",
+      "description": "Automação de atividades manuais",
+      "isActive": true
+    },
+    {
+      "id": 2,
+      "name": "Indicador",
+      "description": "Criação de métrica operacional",
+      "isActive": true
+    }
+  ]
+}
+```
+
+Persistência (`F1 src/modules/portalConfig/portalConfig.repository.ts:166-199`): `upsert` por
+`category_id`; `display_order` = posição no array (ordem de exibição); `description` vazia
+vira `NULL`; categorias existentes e ativas que **não** vieram na lista passam a `inactive`; a
+sequence `categories_category_id_seq` é realinhada ao maior id. Categorias omitidas não voltam na
+resposta (o eco é a lista enviada) mas aparecem no `GET` seguinte com `isActive: false`.
+
+**Erros**
+
+| Status | `code` | Mensagem                                                                                                                             | Condição                                                                                                                 |
+| ------ | ------ | ------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
+| 400    | —      | `"Campos inválidos: categories — Informe ao menos uma categoria.; categories.categories — Ao menos uma categoria deve estar ativa."` | lista vazia: o `min(1)` e o `superRefine` disparam juntos (`F1 src/modules/portalConfig/portalConfig.schema.ts:111-137`) |
+| 400    | —      | `"Campos inválidos: categories — Máximo de 50 categorias."`                                                                          | mais de 50 itens                                                                                                         |
+| 400    | —      | `"Campos inválidos: categories.0.id — Id deve ser positivo."`                                                                        | `id` ≤ 0 no primeiro item                                                                                                |
+| 400    | —      | `"Campos inválidos: categories.1.name — Nomes de categorias devem ser únicos (ignora maiúsculas/minúsculas)."`                       | nome repetido no segundo item                                                                                            |
+| 400    | —      | `"Campos inválidos: categories.categories — Ao menos uma categoria deve estar ativa."`                                               | todas inativas (o path do `superRefine` é relativo ao array, por isso o prefixo duplicado)                               |
+| 400    | —      | `"Campos inválidos: categories.0 — Unrecognized key: \"x\""`                                                                         | item/chave desconhecida (`.strict()`)                                                                                    |
+| 401    | —      | `"Token não fornecido"` / `"Token inválido ou expirado"`                                                                             | ausência/invalidade de sessão                                                                                            |
+| 403    | —      | `"Acesso restrito ao perfil Administrador"` / `"Troca de senha obrigatória antes de continuar"`                                      | perfil ou `must_change_password`                                                                                         |
+| 500    | —      | `"Erro interno do servidor"`                                                                                                         | falha não prevista                                                                                                       |
+
+**Transporte:** JSON; o `id` de item novo é gerado pelo cliente (maior id + 1) e aceito pelo backend
+(`F1 src/shared/types/portalConfig.ts:104-112`).
+
+**Evidência:** `F1 src/modules/portalConfig/portalConfig.router.ts:29`;
+`F1 src/modules/portalConfig/portalConfig.controller.ts:180-188`;
+`F1 src/modules/portalConfig/portalConfig.service.ts:232-260`.
+
+### 7.9 PATCH /portal-config/statuses
+
+**Request** (`F1 src/modules/portalConfig/portalConfig.schema.ts:141-221`) — lista **atômica**, sem
+campo `order`:
+
+| Campo                     | Tipo                                                               | Regra                                                                                                                   |
+| ------------------------- | ------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------- |
+| `statuses`                | array                                                              | 1..50 — `"Informe ao menos um status."`, `"Máximo de 50 status."`                                                       |
+| `statuses[].id`           | inteiro                                                            | 1..50 — `"Id deve ser inteiro."`, `"Id mínimo de 1."`, `"Id máximo de 50."`                                             |
+| `statuses[].name`         | string                                                             | `trim` 1..40 — `"Campo obrigatório."`, `"Máximo de 40 caracteres."`                                                     |
+| `statuses[].isCore`       | boolean                                                            | só `true` nos ids `1, 3, 4, 6, 7, 16, 17` — `"isCore só é permitido nos status de núcleo (ids 1, 3, 4, 6, 7, 16, 17)."` |
+| `statuses[].isPublic`     | boolean                                                            | —                                                                                                                       |
+| `statuses[].isTerminal`   | boolean                                                            | —                                                                                                                       |
+| `statuses[].triageMode`   | `"none"` \| `"free"` \| `"conclusion_only"`                        | `"Modo inválido — opções: none, free ou conclusion_only."`                                                              |
+| `statuses[].mappingMode`  | idem                                                               | idem                                                                                                                    |
+| `statuses[].isRestricted` | boolean                                                            | `true` exige ambos os modos `none`                                                                                      |
+| `statuses[].tone`         | `"error"` \| `"success"` \| `"info"` \| `"warning"` \| `"neutral"` | `"Tom inválido — opções: error, success, info, warning ou neutral."`                                                    |
+| `statuses[].isActive`     | boolean                                                            | —                                                                                                                       |
+
+Regras de conjunto (`F1 src/modules/portalConfig/portalConfig.schema.ts:165-219`):
+
+- nomes únicos ignorando caixa/espaços — `"Nomes de status devem ser únicos (ignora maiúsculas/minúsculas)."`;
+- `isCore && !isActive` → `"Os statuses núcleo não podem ser desativados."` (path `isActive`);
+- `isRestricted && (triageMode !== "none" || mappingMode !== "none")` →
+  `"Status restrito só aceita modos none (bloqueia triagem e mapeamento)."` (path `isRestricted`);
+- ao menos um ativo → `"Ao menos um status deve estar ativo."`.
+
+`CORE_STATUS_IDS = [1, 3, 4, 6, 7, 16, 17]` (`F1 src/shared/types/portalConfig.ts:123`). A ordem de
+exibição é a **posição no array**; não existe `order` no payload (`F1 src/shared/types/portalConfig.ts:125-133`).
+
+```http
+PATCH /portal-config/statuses HTTP/1.1
+Content-Type: application/json
+Cookie: session_id=<sessão de Administrador>
+
+{ "statuses": [
+  { "id": 1, "name": "Solicitação enviada", "isCore": true, "isPublic": true, "isTerminal": false,
+    "triageMode": "none", "mappingMode": "none", "isRestricted": false, "tone": "neutral", "isActive": true },
+  { "id": 3, "name": "Em triagem", "isCore": true, "isPublic": true, "isTerminal": false,
+    "triageMode": "free", "mappingMode": "none", "isRestricted": false, "tone": "info", "isActive": true }
+] }
+```
+
+**Response 200** — `StatusesSection`, **eco da lista enviada**
+(`F1 src/modules/portalConfig/portalConfig.service.ts:345`):
+
+| Campo      | Tipo             | Regra                                  |
+| ---------- | ---------------- | -------------------------------------- |
+| `statuses` | `PortalStatus[]` | mesma lista do request, na mesma ordem |
+
+```json
+{
+  "statuses": [
+    {
+      "id": 1,
+      "name": "Solicitação enviada",
+      "isCore": true,
+      "isPublic": true,
+      "isTerminal": false,
+      "triageMode": "none",
+      "mappingMode": "none",
+      "isRestricted": false,
+      "tone": "neutral",
+      "isActive": true
+    },
+    {
+      "id": 3,
+      "name": "Em triagem",
+      "isCore": true,
+      "isPublic": true,
+      "isTerminal": false,
+      "triageMode": "free",
+      "mappingMode": "none",
+      "isRestricted": false,
+      "tone": "info",
+      "isActive": true
+    }
+  ]
+}
+```
+
+Exemplo abreviado: como a lista é atômica e os sete ids de núcleo são obrigatórios, uma lista real
+precisa conter `1, 3, 4, 6, 7, 16, 17` — a ausência de qualquer um responde
+409 `core_status_removed` (`F1 src/modules/portalConfig/portalConfig.service.ts:288-295`).
+
+Persistência (`F1 src/modules/portalConfig/portalConfig.repository.ts:205-260`): `upsert` por
+`status_id` com `order_number` = índice no array; status existentes **não enviados** são renumerados
+para depois dos enviados (preservando a ordem relativa) e ficam `is_active = false`; a sequence
+`statuses_status_id_seq` é realinhada. Não há exclusão de linha.
+
+Antes do upsert, o service valida os status de núcleo **na ordem**
+`1, 3, 4, 6, 7, 16, 17` (`F1 src/modules/portalConfig/portalConfig.service.ts:278-332`):
+
+| Status | `code`                        | Mensagem                                                                                                        | Condição                                                                                       |
+| ------ | ----------------------------- | --------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| 409    | `core_status_missing`         | `"O status de núcleo com id 6 não existe. Execute a migration de status v4 antes de atualizar a configuração."` | id de núcleo ausente no banco                                                                  |
+| 409    | `core_status_removed`         | `"Não é possível remover o status de núcleo \"Mapeamento agendado\" (id 6 — referenciado pelo fluxo)."`         | id de núcleo ausente da lista enviada                                                          |
+| 409    | `core_status_renamed`         | `"Não é possível renomear o status de núcleo \"Mapeamento agendado\" (id 6)."`                                  | `name` diferente do persistido                                                                 |
+| 409    | `core_status_forced`          | `"Não é possível redefinir o status de núcleo \"Mapeamento agendado\" como não-núcleo (id 6)."`                 | item de núcleo enviado com `isCore: false`                                                     |
+| 409    | `core_status_forced_inactive` | `"Não é possível desativar o status de núcleo \"Mapeamento agendado\" (id 6)."`                                 | `isActive: false` em status de núcleo                                                          |
+| 409    | `core_status_locked`          | `"Flags/modos do status de núcleo \"Mapeamento agendado\" (id 6) são imutáveis."`                               | `isPublic`, `isTerminal`, `isRestricted`, `triageMode` ou `mappingMode` divergem do persistido |
+
+Os exemplos usam o id 6 (`Mapeamento agendado`) porque ele é o núcleo além dos seis demais; as
+mensagens interpolam `existing.name` e `coreId` (`F1 src/modules/portalConfig/portalConfig.service.ts:281-331`).
+A comparação de `isPublic` usa `existing.is_public ?? false` e as demais flags comparam com o valor da
+linha (`F1 src/modules/portalConfig/portalConfig.service.ts:319-325`).
+
+Não alcançável por HTTP no commit fixado: `core_status_forced_inactive` fica atrás de duas barreiras —
+`isCore: true` + `isActive: false` já é 400 pelo schema (`F1 src/modules/portalConfig/portalConfig.schema.ts:194-200`)
+e `isCore: false` dispara `core_status_forced` antes da checagem de `isActive`
+(`F1 src/modules/portalConfig/portalConfig.service.ts:303-316`).
+
+**Erros**
+
+| Status | `code`          | Mensagem                                                                                                               | Condição                                                    |
+| ------ | --------------- | ---------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| 400    | —               | `"Campos inválidos: statuses — Informe ao menos um status.; statuses.statuses — Ao menos um status deve estar ativo."` | lista vazia: o `min(1)` e o `superRefine` disparam juntos   |
+| 400    | —               | `"Campos inválidos: statuses.1.name — Nomes de status devem ser únicos (ignora maiúsculas/minúsculas)."`               | nome repetido no segundo item                               |
+| 400    | —               | `"Campos inválidos: statuses.0.isCore — isCore só é permitido nos status de núcleo (ids 1, 3, 4, 6, 7, 16, 17)."`      | `isCore: true` em id fora da lista                          |
+| 400    | —               | `"Campos inválidos: statuses.0.isRestricted — Status restrito só aceita modos none (bloqueia triagem e mapeamento)."`  | restrito com modo não `none`                                |
+| 400    | —               | `"Campos inválidos: statuses.0.isActive — Os statuses núcleo não podem ser desativados."`                              | `isCore: true` com `isActive: false`                        |
+| 400    | —               | `"Campos inválidos: statuses.statuses — Ao menos um status deve estar ativo."`                                         | todos inativos (path do `superRefine` relativo ao array)    |
+| 400    | —               | `"Campos inválidos: statuses.0 — Unrecognized key: \"order\""`                                                         | chave desconhecida no item, inclusive `order` (`.strict()`) |
+| 401    | —               | `"Token não fornecido"` / `"Token inválido ou expirado"`                                                               | ausência/invalidade de sessão                               |
+| 403    | —               | `"Acesso restrito ao perfil Administrador"` / `"Troca de senha obrigatória antes de continuar"`                        | perfil ou `must_change_password`                            |
+| 409    | `core_status_*` | ver tabela acima                                                                                                       | violação de status de núcleo                                |
+| 500    | —               | `"Erro interno do servidor"`                                                                                           | falha não prevista                                          |
+
+**Transporte:** JSON; os `code` de 409 são o único uso de `code` na seção (aditivo no envelope,
+`F1 src/shared/middleware/errorHandler.ts:18-21`).
+
+**Evidência:** `F1 src/modules/portalConfig/portalConfig.router.ts:30`;
+`F1 src/modules/portalConfig/portalConfig.controller.ts:194-202`;
+`F1 src/modules/portalConfig/portalConfig.service.ts:266-347`;
+`F1 src/modules/portalConfig/portalConfig.repository.ts:205-260`.
+
+**Desatualizado no legado:** `F1 docs/portal-config-api-0_4.md` §7 e o changelog "0_4 → v4"
+declaram o campo `order` em `PortalStatus`, aliases legados normalizados pelo schema
+(`normalizeStatusLegacy`) e `isCore` = ids `1,3,4,7,16,17`; no commit fixado não há `order` no tipo
+nem no schema (`.strict()` rejeita a chave) e o schema de statuses não tem normalizador de aliases
+(`F1 src/shared/types/portalConfig.ts:133-144`; `F1 src/modules/portalConfig/portalConfig.schema.ts:145-164`).
+O conjunto de núcleo tem sete ids, incluindo `6` (`F1 src/shared/types/portalConfig.ts:123`). Os códigos de erro documentados
+(`core_status_name_locked`, `core_status_order_locked`, `core_status_flag_locked`,
+`restricted_status_mode_invalid`, `inactive_core_status`) também não existem: os efetivos são
+`core_status_missing`, `core_status_removed`, `core_status_renamed`, `core_status_forced`,
+`core_status_forced_inactive` e `core_status_locked`
+(`F1 src/modules/portalConfig/portalConfig.service.ts:281-331`). `F1 docs/portal-config-endpoints.md`
+§"Decisões de produto" ainda fala em "8 nomes hardcoded", resquício do
+`PROTECTED_STATUS_NAMES` citado em `F1 docs/portal-config-statuses-amend.md:35`.
+
+### 7.10 PATCH /portal-config/prioritization-weights
+
+**Request** (`F1 src/modules/portalConfig/portalConfig.schema.ts:228-253`) — **objeto atômico** com
+todas as chaves de `PRIORITIZATION_CRITERIA` (`F1 src/shared/types/portalConfig.ts:147-158`):
+
+| Campo                                       | Tipo    | Regra                                                      |
+| ------------------------------------------- | ------- | ---------------------------------------------------------- |
+| `prioritizationWeights`                     | objeto  | obrigatório; chaves da allowlist; cada valor inteiro 1..10 |
+| `prioritizationWeights.operationalImpact`   | inteiro | 1..10                                                      |
+| `prioritizationWeights.operationalRisk`     | inteiro | 1..10                                                      |
+| `prioritizationWeights.urgency`             | inteiro | 1..10                                                      |
+| `prioritizationWeights.volumetry`           | inteiro | 1..10                                                      |
+| `prioritizationWeights.manualEffort`        | inteiro | 1..10                                                      |
+| `prioritizationWeights.clientImpact`        | inteiro | 1..10                                                      |
+| `prioritizationWeights.regulatoryDeadline`  | inteiro | 1..10                                                      |
+| `prioritizationWeights.affectedAreas`       | inteiro | 1..10                                                      |
+| `prioritizationWeights.strategicAlignment`  | inteiro | 1..10                                                      |
+| `prioritizationWeights.estimatedComplexity` | inteiro | 1..10                                                      |
+
+Mensagens por peso: `"Peso deve ser inteiro."`, `"Peso mínimo de 1."`, `"Peso máximo de 10."`
+(`F1 src/modules/portalConfig/portalConfig.schema.ts:228-232`). O `z.record` com chave enum é
+exaustivo: critério faltando gera uma issue `missing` por chave e chave fora da allowlist vira
+`Unrecognized key` — o `superRefine` que produz `"Critérios obrigatórios ausentes: <chaves>."` e a
+mensagem de enum `"Critério desconhecido."` não chegam ao wire, porque o parse base já falhou antes
+(`F1 src/modules/portalConfig/portalConfig.schema.ts:234-253`). Objetos `.strict()`.
+
+```http
+PATCH /portal-config/prioritization-weights HTTP/1.1
+Content-Type: application/json
+Cookie: session_id=<sessão de Administrador>
+
+{ "prioritizationWeights": {
+  "operationalImpact": 8, "operationalRisk": 7, "urgency": 9, "volumetry": 5, "manualEffort": 6,
+  "clientImpact": 8, "regulatoryDeadline": 10, "affectedAreas": 4, "strategicAlignment": 7,
+  "estimatedComplexity": 5
+} }
+```
+
+**Response 200** — `PrioritizationWeightsSection`, **eco do objeto enviado**
+(`F1 src/modules/portalConfig/portalConfig.service.ts:379`):
+
+| Campo                   | Tipo                 | Regra                                 |
+| ----------------------- | -------------------- | ------------------------------------- |
+| `prioritizationWeights` | objeto chave→inteiro | as 10 chaves, com os valores enviados |
+
+```json
+{
+  "prioritizationWeights": {
+    "operationalImpact": 8,
+    "operationalRisk": 7,
+    "urgency": 9,
+    "volumetry": 5,
+    "manualEffort": 6,
+    "clientImpact": 8,
+    "regulatoryDeadline": 10,
+    "affectedAreas": 4,
+    "strategicAlignment": 7,
+    "estimatedComplexity": 5
+  }
+}
+```
+
+Persistência: `criteria.weight` por `criterion_id` traduzido por `CRITERION_KEY_TO_ID`
+(`F1 src/shared/types/criteria.ts:8-19`; `F1 src/modules/portalConfig/portalConfig.repository.ts:266-277`).
+Critérios com `active = false` não aparecem no `GET` e não recebem peso por esta rota
+(`F1 src/modules/portalConfig/portalConfig.repository.ts:68-74`).
+
+**Erros**
+
+| Status | `code` | Mensagem                                                                                         | Condição                                                                                                     |
+| ------ | ------ | ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
+| 400    | —      | `"Campos obrigatórios ausentes: prioritizationWeights.urgency, prioritizationWeights.volumetry"` | chaves faltando: `z.record` com chave enum é exaustivo, então cada critério ausente vira uma issue `missing` |
+| 400    | —      | `"Campos inválidos: prioritizationWeights — Unrecognized key: \"foo\""`                          | chave fora da allowlist (o `z.record` reporta a chave no path do objeto)                                     |
+| 400    | —      | `"Campos inválidos: prioritizationWeights.urgency — Peso máximo de 10."`                         | peso acima de 10                                                                                             |
+| 400    | —      | `"Campos inválidos: prioritizationWeights.operationalImpact — Peso deve ser inteiro."`           | valor fracionário                                                                                            |
+| 400    | —      | mensagem agregada do Zod em `payload`                                                            | chave desconhecida no nível do objeto (`.strict()`)                                                          |
+| 401    | —      | `"Token não fornecido"` / `"Token inválido ou expirado"`                                         | ausência/invalidade de sessão                                                                                |
+| 403    | —      | `"Acesso restrito ao perfil Administrador"` / `"Troca de senha obrigatória antes de continuar"`  | perfil ou `must_change_password`                                                                             |
+| 500    | —      | `"Erro interno do servidor"`                                                                     | falha não prevista                                                                                           |
+
+O schema rejeita pesos `< 1` mesmo o `CHECK` de banco aceitando `0`
+(`F1 src/modules/portalConfig/portalConfig.schema.ts:10-15`; `F1 docs/portal-config-endpoints.md`
+§"Decisões de produto").
+
+**Transporte:** JSON; sem paginação; no máximo 10 chaves.
+
+**Evidência:** `F1 src/modules/portalConfig/portalConfig.router.ts:31`;
+`F1 src/modules/portalConfig/portalConfig.controller.ts:208-222`;
+`F1 src/modules/portalConfig/portalConfig.service.ts:353-381`.
+
+### 7.11 Visão do consumidor (F2) e drift
+
+Leitura: `hooks.server.ts` carrega a config em todas as rotas via `loadPortalConfig`
+(`F2 src/hooks.server.ts:18`; `F2 src/lib/config/portal-config.service.ts:75-83`), que chama
+`fetchPortalConfig` → `GET /portal-config` com `credentials: "include"`
+(`F2 src/lib/config/portal-config.api.ts:28-35`; `F2 src/lib/api/client.ts:55-58`). Falha de rede cai
+nos defaults locais sem propagar erro (`F2 src/lib/config/portal-config.service.ts:79-82`). A tela de
+configurações usa `loadPortalConfigStrict`, que **não** cai em default e devolve `Result` de falha
+(`F2 src/lib/config/portal-config.service.ts:89-101`; `F2 src/routes/(admin)/configuracoes/+page.server.ts:14-18`);
+nesse estado, `portalConfigLoadError` bloqueia edição e salvamento
+(`F2 src/lib/config/portal-config-load.ts:18-20`).
+
+Escrita: uma função por seção, `PATCH /portal-config/{access|identity|theme|assets|categories|statuses|prioritization-weights}`
+(`F2 src/lib/config/portal-config.api.ts:39-132`). `assets` é o único `FormData`
+(`F2 src/lib/config/portal-config.api.ts:78-102`); o cliente não define `Content-Type` quando o corpo é
+`FormData` (`F2 src/lib/api/client.ts:53-61`). Erros são convertidos em `Result`, preservando a
+`message` da API (`F2 src/lib/config/portal-config.service.ts:106-121`).
+
+O consumidor mantém cópias locais do contrato, e não só tipos: `src/lib/types/portal-config.ts`
+(espelho), `src/lib/config/portal-defaults.ts` (defaults), `src/lib/utils/validations.ts` (limites e
+`ASSET_FILE_RULES`) e `src/lib/mocks/portal-config.mock.ts` (mock de dev).
+
+Drift observável entre F1 e F2:
+
+| #   | Drift                                                                                                                                                                                                                    | Evidência                                                                                                                                                       |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | F2 aceita aliases legados `visibility`, `closesRequest` e `isTriageExit` na leitura e os remove antes de escrever; o backend não os devolve nem os aceita (schema `.strict()`, sem normalizador)                         | `F2 src/lib/types/portal-config.ts:151-166`; `F2 src/lib/config/portal-config.service.ts:459-484`; `F1 src/modules/portalConfig/portalConfig.schema.ts:145-164` |
+| 2   | F2 aceita `blob:` na sanitize de URL de asset (preview de dev); o backend rejeita qualquer esquema que não seja `/…` ou `http(s)`                                                                                        | `F2 src/lib/config/portal-config.service.ts:382-391`; `F1 src/modules/portalConfig/portalConfig.schema.ts:261-269`                                              |
+| 3   | F2 declara `statuses` antes de `gradient` em `ThemeTokens`; o backend serializa `gradient` antes de `statuses`. A ordem de chaves é comparada por `JSON.stringify` no rascunho dos cards                                 | `F2 src/lib/types/portal-config.ts:127-130`; `F1 src/modules/portalConfig/portalConfig.mappers.ts:181-200`; `F2 src/lib/config/portal-config.service.ts:66-71`  |
+| 4   | F2 sanitiza categorias/status e **descarta** itens inválidos antes do `PATCH`; a lista enviada pode ser menor que a da tela, e o backend inativa os ids omitidos                                                         | `F2 src/lib/config/portal-config.service.ts:397-426,434-512`; `F1 src/modules/portalConfig/portalConfig.repository.ts:188-194,238-255`                          |
+| 5   | F2 trata `isActive` ausente como `true` na leitura (`item.isActive !== false`); o backend sempre envia o boolean da coluna                                                                                               | `F2 src/lib/config/portal-config.service.ts:452`; `F1 src/modules/portalConfig/portalConfig.service.ts:57`                                                      |
+| 6   | F2 reproduz literalmente o 400 do backend quando não há parte alguma no `PATCH assets` e evita enviar multipart vazio                                                                                                    | `F2 src/lib/config/portal-config.api.ts:83-85`; `F1 src/modules/portalConfig/portalConfig.controller.ts:109-111`                                                |
+| 7   | F2 valida tipo/tamanho de arquivo localmente com regras e mensagens próprias (`"Arquivo excede o tamanho máximo permitido."`, `"Tipo de arquivo não permitido para este asset."`), diferentes das do backend             | `F2 src/lib/config/portal-config.service.ts:163-179`; `F2 src/lib/utils/validations.ts:59-77`; `F1 src/shared/middleware/uploadAssets.ts:112-166`               |
+| 8   | O mock de F2 devolve `URL.createObjectURL` (`blob:`) para arquivo enviado e não reproduz o multipart; o backend devolve `/uploads/portal/…` e exige multipart                                                            | `F2 src/lib/mocks/portal-config.mock.ts:126-130`; `F1 src/modules/portalConfig/portalConfig.controller.ts:154-158`                                              |
+| 9   | O mock de F2 usa mensagens que não existem no backend (`"Modo de solicitação inválido."`, `"Informe ao menos um campo da identidade."`, `"Nome da plataforma deve ter entre 1 e 80 caracteres (após remover espaços)."`) | `F2 src/lib/mocks/portal-config.mock.ts:86-104`; `F1 src/modules/portalConfig/portalConfig.schema.ts:70-100`                                                    |
+| 10  | F2 não tem `order` em `PortalStatus` e não o envia: a ordem é a do array, igual ao backend                                                                                                                               | `F2 src/lib/types/portal-config.ts:142-161`; `F1 src/shared/types/portalConfig.ts:125-144`                                                                      |
+
+Não há em F2 rotas alternativas para leitura: o consumidor usa exatamente as 8 rotas desta seção.
+
+### 7.12 Confronto com docs/04-API-Conventions.md
+
+| Tema                                 | Situação                                                                                                                                                                                    | Ponteiro                                                                                     |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| Base path das 8 rotas                | divergente (legado vigente): `/portal-config` e `/portal-config/*`, sem `/api/v1`                                                                                                           | convenção §1; `F1 src/router.ts:29`                                                          |
+| Envelope de erro                     | compatível com o envelope legado de `{ status, statusCode, message }`                                                                                                                       | convenção §2.1; `F1 src/shared/middleware/errorHandler.ts:11-31`                             |
+| Erro de validação das 7 seções       | divergente (legado vigente): 400 com mensagem agregada, sem `code` e sem `fields`                                                                                                           | convenção §3 (C2) e #5; `F1 src/shared/validation/zodErrors.ts:89-91`                        |
+| `code` em 409 de statuses            | compatível com o uso aditivo de `code` snake_case de domínio                                                                                                                                | convenção §2.3 e §11; `F1 src/modules/portalConfig/portalConfig.service.ts:281-331`          |
+| Autorização dos `PATCH`              | divergente (legado vigente): perfil `Administrador` via `requireRole`, não capability key                                                                                                   | convenção §6; ADR-0025; ADR-0006; `F1 src/modules/portalConfig/portalConfig.router.ts:22-23` |
+| `id` numérico de status no wire      | divergente (legado vigente): `statuses[].id` inteiro 1..50 é a referência; a convenção pede `key` varchar e nenhum id numérico de status no wire                                            | convenção §0 #18 e §15.1; ADR-0021; `F1 src/shared/types/portalConfig.ts:133-144`            |
+| Chaves de JSON                       | compatível: camelCase em inglês, valores de domínio em pt-BR                                                                                                                                | convenção §11; `F1 src/shared/types/portalConfig.ts:1-11`                                    |
+| Corpo JSON                           | divergente (legado vigente): `express.json()` sem limite explícito (default do Express), sem `JSON_BODY_MAX_BYTES` de 1 MiB                                                                 | convenção §9; `F1 src/app.ts:26`                                                             |
+| `PATCH /assets` — limites            | compatível: 8 arquivos, favicon 1 MiB, logo/avatar 2 MiB, imagem de login 5 MiB, parte JSON de 2 MiB                                                                                        | convenção §9; `F1 src/shared/middleware/uploadAssets.ts:11-67`                               |
+| `PATCH /assets` — erros de multipart | divergente (legado vigente): 413/415 sem `code` (`payload_too_large`, `invalid_content_type`) e parte JSON acima de 2 MiB respondendo **400** `"Erro ao processar o upload."` em vez de 413 | convenção §9 e §2.3; `F1 src/shared/middleware/uploadAssets.ts:112-134`                      |
+| Códigos de sucesso                   | compatível: `200` em leitura e em todas as atualizações                                                                                                                                     | convenção §0 #20 e §15.4                                                                     |
+| Paginação                            | não aplicável: a config é singleton e as listas (`categories`, `statuses`) são atômicas, sem envelope paginado                                                                              | convenção §4.3; `F1 docs/portal-config-api-0_4.md` §6–§7                                     |
+| Datas no payload                     | compatível por ausência: a config não expõe timestamps                                                                                                                                      | convenção §10; `F1 src/modules/DTOs/portalConfig/PortalConfigResponse.dto.ts:1-12`           |
+| `requestId`                          | divergente (legado vigente): ausente em todos os erros da seção                                                                                                                             | convenção §12 e §0 #15; `F1 src/shared/middleware/errorHandler.ts:11-31`                     |
+
+**Cobertura da seção:** 8 de 8 rotas do inventário.
+
+- #5 `GET /portal-config` (§7.3)
+- #6 `PATCH /portal-config/access` (§7.4)
+- #7 `PATCH /portal-config/identity` (§7.5)
+- #8 `PATCH /portal-config/theme` (§7.6)
+- #9 `PATCH /portal-config/assets` (§7.7)
+- #10 `PATCH /portal-config/categories` (§7.8)
+- #11 `PATCH /portal-config/statuses` (§7.9)
+- #12 `PATCH /portal-config/prioritization-weights` (§7.10)
