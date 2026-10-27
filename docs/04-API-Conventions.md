@@ -35,21 +35,21 @@ divergência exige emenda aqui e emenda ao ADR correspondente.
 | 12 | Content types | decidido | JSON 1 MiB; multipart em §9; 400/413/415 | `02-Architecture.md` §15; este §9 | Backend |
 | 13 | Datas e horas | decidido | ISO-8601 UTC para timestamps; `yyyy-mm-dd` para datas puras; tipo único via `dialect.timestampType()` | F1 (`docs/solicitations-api-requests-0_4.md` §1; `docs/requests-internal-query-contract.md`); `03-Data-Model.md` §2.5 (tipo do banco) | Backend + FE |
 | 14 | Idioma | decidido | Chaves EN camelCase; valores pt-BR; `code` em snake_case; exceção legada de auditoria em §11 | C14; `GLOSSARY.md` | Backend + FE |
-| 15 | Request-id | decidido | `x-request-id` UUID, echo e log; `correlationId` (HTTP) × `requestId` (solicitação); exceção do envelope legado em §2.2 | C11; `02-Architecture.md` §9.4/§17 | Backend |
-| 16 | Rate limiting (verify público) | decidido | 10 req/10 min por IP+protocolo; 429 `rate_limited`; `Retry-After`; storage compartilhado; login em §0.2 | C12; `02-Architecture.md` §14.2; F1 (`docs/contract-pendencias_03.md` §7) | Backend + Infra |
+| 15 | Request-id | decidido | `x-request-id` UUID, echo e log; `correlationId` (HTTP) × `requestId` (solicitação); exceção do envelope de erro em §2.2 | C11; `02-Architecture.md` §9.4/§17 | Backend |
+| 16 | Rate limiting (verify público) | decidido | 10 req/10 min por IP+protocolo; 429 `rate_limited`; `Retry-After`; storage compartilhado; login em §0.2 | C12; `02-Architecture.md` §14.2; F1 (`docs/contract-pendencias_03.md` §3) | Backend + Infra |
 | 17 | CORS | decidido | Origens explícitas, `credentials`, `exposedHeaders` (`Content-Disposition`, `x-request-id`), sem wildcard | C13; `02-Architecture.md` §15 | Backend + Infra |
 | 18 | Ids e `key` de status | decidido | PKs de entidade em UUID v4 gerado pela app; `status.key` `varchar(50)` UNIQUE e imutável; referências a status usam `key`, e id numérico de status não vai ao wire | ADR-0003; ADR-0021; `02-Architecture.md` §10.4/§22.1 | Backend + FE |
 | 19 | Header do solicitante | decidido | Aceitar `X-Requester-Email` e `X-Requester-Identity` por uma release; depois só Email; o header não autentica | C10; ADR-0023 | Backend + FE |
 | 20 | Códigos de sucesso | decidido | 200 leitura/atualização; 201 criação; 204 sem corpo | F1 (contratos legados: 200/201/204) | Backend |
 | 21 | Envelope de auditoria (legado) | decidido | `{ items, total, page, limit }`; item com `audit_id` numérico, `entity_type_label` e `action_type`; mantido até a migração | `02-Architecture.md` §22.1; F1 (`docs/audit-history-contract.md`); F2 (`src/lib/types/audit.ts`) | Backend + FE |
-| 22 | Multipart — limites por rota | decidido | requests 5 × 10 MiB (50 MiB no total); pendências 1 × 10 MiB; avatar 1 × 2 MiB; assets 8 arquivos, 20 MiB no total, com 1/2/5 MiB por chave | F1 (`src/shared/middleware/upload*.ts`; `docs/solicitations-api-requests-0_4.md`; `docs/contract-pendencias_03.md`; `docs/portal-config-api-0_4.md`); este §9 | Backend |
+| 22 | Multipart — limites por rota | decidido | Limites por rota e total em §9; nenhum outro limite é válido | F1; este §9 | Backend |
 
 ### 0.2 Decisões abertas
 
 | # | Convenção | Status | Recomendação | Citação | Dono | Destino | Prazo/gatilho |
 |---|---|---|---|---|---|---|---|
 | 23 | Envelope de auditoria (alvo) | conflito | Envelope padrão camelCase; `id` UUID; `action` separado de `entityType`; `entity_type_label` a definir | `02-Architecture.md` §22/§22.1; `03-Data-Model.md` §15.1; F1 (`docs/audit-history-contract.md`); F2 (`src/lib/types/audit.ts`) | Backend + FE | Spec de auditoria | Antes de congelar a spec de auditoria |
-| 24 | Rate limiting de login | decisão necessária | 10 req/min por IP+e-mail; `rate_limited` + `Retry-After`; registrar janela e chave na spec | C15 (novo); F1 (`docs/contract-pendencias_03.md` §7 — verify); o legado não limita login | Backend + Infra | Spec de `auth` | Antes de congelar a spec de `auth` |
+| 24 | Rate limiting de login | decisão necessária | 10 req/min por IP+e-mail; `rate_limited` + `Retry-After`; registrar janela e chave na spec | C15 (novo); F1 (`docs/contract-pendencias_03.md` §3 — verify); o legado não limita login | Backend + Infra | Spec de `auth` | Antes de congelar a spec de `auth` |
 
 ## 1. Base path e versionamento
 
@@ -125,7 +125,6 @@ divergência exige emenda aqui e emenda ao ADR correspondente.
 
 - `totalPages = ceil(total / pageSize)`; quando `total = 0`, `totalPages = 0` (não 1).
 - `page` é 1-based.
-- Sem resultados, a resposta canônica é `page = 1` e `totalPages = 0`.
 
 ### 4.2 Limites e clamp
 
@@ -135,16 +134,17 @@ divergência exige emenda aqui e emenda ao ADR correspondente.
 - Nenhum repositório consulta sem `limit`; toda listagem é paginada.
 - Exceções: ver a tabela de §4.3.
 
-### 4.3 Defaults por endpoint
+### 4.3 Exceções à regra global
 
 - **Regra global:** todo endpoint de listagem usa default **20**, máximo **100** e clamp de página. O valor de cada endpoint é a regra global; não há uma tabela por endpoint repetindo o mesmo número.
 - A tabela abaixo é o **registro de exceções**. Um endpoint com default, máximo ou clamp diferente só existe se estiver aqui; a spec de domínio lista seus endpoints e marca cada um como “global” ou cita a linha da exceção.
 
 | Endpoint / grupo | Default | Máximo | Clamp | Dono | Destino | Prazo/gatilho |
 |---|---|---|---|---|---|---|
-| Linha do tempo | 20 (`limit`) | 50 | keyset (`cursor`/`nextCursor`) | Backend | Spec de `requests` | Antes de congelar a spec de `requests` |
+| Linha do tempo (`GET /api/v1/requests/:protocol/internal-notes`) | 20 (`limit`) | 50 | keyset (`cursor`/`nextCursor`) | Backend | Spec de `requests` | Antes de congelar a spec de `requests` (F1, `docs/internal-observations.md` §4) |
 | Auditoria (legado) | 20 (`limit`) | 100 | não no legado | Backend + FE | Spec de auditoria | Antes de congelar a spec de auditoria |
-| Demais listagens | 20 | 100 | sim | Backend | — | Regra global |
+
+Os valores 20/100 da auditoria são os globais; a exceção é o parâmetro `limit` e a ausência de `totalPages`.
 
 - **Migração dos contratos legados:** `GET /requests` usa default 10/máximo 10; `GET /users` usa 10/50; `GET /queue` exige `page` e `pageSize` e só ele faz clamp; a auditoria usa `limit` e não devolve `totalPages`. A v1 unifica em 20/100 e clamp de página; os valores legados não são herdados. A spec de domínio registra apenas desvios desta convenção.
 
@@ -209,7 +209,7 @@ divergência exige emenda aqui e emenda ao ADR correspondente.
 | `DELETE` (quando existir) | sim | 204/404; o efeito é o mesmo |
 | `POST` de criação | não | não há deduplicação no v1 |
 
-- `POST /api/v1/auth/login` cria sessão e emite cookie; a autenticação vai para o log de segurança, não para a auditoria (`03-Data-Model.md` §15.1). Não é idempotente e não é deduplicado.
+- `POST /api/v1/auth/login` cria sessão e emite cookie; a falha de autenticação (401) vai para o log de segurança, não para a auditoria (`03-Data-Model.md` §15.1). Não é idempotente e não é deduplicado.
 - `POST /api/v1/auth/logout` limpa o cookie e é seguro repetir (200), mas é `POST` e não entra na deduplicação.
 - Cada spec de domínio referencia esta tabela e lista os endpoints que se aplicam; não redefine idempotência.
 
@@ -220,7 +220,7 @@ divergência exige emenda aqui e emenda ao ADR correspondente.
 - `Content-Type` inesperado → **415** com `code: "invalid_content_type"`.
 - Corpo acima do limite → **413** com `code: "payload_too_large"`.
 - Multipart malformado, parte obrigatória ausente, parte de arquivo inesperada ou quantidade de arquivos acima do limite → **400** com `code: "validation_error"`.
-- MIME ou extensão de arquivo não permitido → **415** com `code: "invalid_content_type"`; o legado de requests usava 400 para o mesmo caso, e a convenção harmoniza em 415.
+- MIME ou extensão de arquivo não permitido → **415** com `code: "invalid_content_type"`.
 - Parte JSON do multipart (`payload`/`assets`) acima de 2 MiB → **413** com `code: "payload_too_large"`.
 
 **Limites por rota:**
@@ -234,7 +234,7 @@ divergência exige emenda aqui e emenda ao ADR correspondente.
 
 - O total é a soma dos máximos da rota; o multer limita a contagem e o tamanho de cada arquivo.
 - JSON body: 1 MiB (`express.json({ limit: "1mb" })`); quando a rota tiver parte JSON no multipart (`payload` ou `assets`), o limite da parte é 2 MiB.
-- **Harmonização registrada:** o legado de requests e de pendências devolvia 400 para arquivo acima do tamanho; a convenção nova devolve **413**. O FE lê `message`, então a mudança de status não quebra a renderização.
+- **Harmonização registrada:** o legado de requests/pendências devolvia 400 para tamanho e o de requests para MIME; a convenção nova usa **413** para tamanho e **415** para MIME. O FE lê `message`, então a mudança de status não quebra a renderização.
 - Rotas multipart: requests (anexos), pendências (anexos), avatar do usuário e assets do portal.
 - Fontes dos limites: F1 (`src/shared/middleware/upload*.ts`; `docs/solicitations-api-requests-0_4.md` §1; `docs/contract-pendencias_03.md` §7; `docs/portal-config-api-0_4.md` §5; `docs/users-api-profile-0_1.md` — avatar).
 
@@ -244,7 +244,7 @@ divergência exige emenda aqui e emenda ao ADR correspondente.
 - Datas puras (ex.: `desiredDeadline`): `yyyy-mm-dd`.
 - O banco usa **um único tipo de timestamp**, via `dialect.timestampType()`, e `date` para datas puras; não há tipo fixo por engine.
 - `occurred_at` é tempo de negócio, não ordem de commit (ADR-0007).
-- Citação: `03-Data-Model.md` §2.5.
+- Citação: F1 (contratos legados: ISO-8601 e `yyyy-mm-dd`); `03-Data-Model.md` §2.5 (tipo do banco).
 
 ## 11. Idioma (C14)
 
@@ -257,12 +257,9 @@ divergência exige emenda aqui e emenda ao ADR correspondente.
 
 ## 12. Request-id (C11)
 
-- Header: `x-request-id` (minúsculo na entrada; echo no response).
-- Aceito apenas se for UUID válido; senão o servidor gera um.
-- Echo no header de resposta e no corpo do erro (campo `requestId`, aditivo ao envelope legado).
-- O log estruturado usa `correlationId` em todo log de requisição.
-- Naming interno: `correlationId` = id HTTP (`req.id`); `requestId` = id da solicitação de negócio. `AttemptRecord.correlationId` é sempre o `req.id`.
-- **Exceção do envelope legado:** no corpo de erro, `requestId` carrega o id HTTP por compatibilidade (§2.2); fora do envelope, `requestId` é o id de negócio e o log usa `correlationId`.
+- Header: `x-request-id` (minúsculo na entrada; echo no response). Aceito apenas se for UUID válido; senão o servidor gera um.
+- Naming: `correlationId` = id HTTP (`req.id`), usado no log estruturado; `requestId` = id da solicitação de negócio. `AttemptRecord.correlationId` é sempre o `req.id`.
+- **Exceção do envelope de erro:** no corpo do erro (legado e alvo), `requestId` carrega o id HTTP; fora dele, `requestId` é o id de negócio.
 - Citação: `02-Architecture.md` §9.4, §17.
 
 ## 13. Rate limiting (C12)
@@ -276,7 +273,7 @@ divergência exige emenda aqui e emenda ao ADR correspondente.
 - Storage compartilhado entre instâncias (Redis quando disponível; em dev, in-memory).
 - Headers opcionais: `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`.
 - O legado do verify usa 10 tentativas/10 min por IP+protocolo, em memória e sem headers; a convenção nova mantém a janela e acrescenta o código, os headers e o storage compartilhado.
-- `GET /api/v1/requests/:protocol/tracking` não tem limite próprio: o gate é o `verify` (F1, `docs/contract-pendencias_03.md` §7); não é rota anônima independente.
+- `GET /api/v1/requests/:protocol/tracking` não tem limite próprio: o gate é o `verify` (F1, `docs/contract-pendencias_03.md` §7; rate limit em §3); não é rota anônima independente.
 - Novas rotas públicas só entram com uma linha nesta tabela; não há limite implícito.
 
 ## 14. CORS (C13)
@@ -301,7 +298,7 @@ divergência exige emenda aqui e emenda ao ADR correspondente.
 **Legado (vigente até a migração):**
 
 - `GET /audit-history` → `{ items, total, page, limit }`; sem `totalPages` (o FE deriva `Math.ceil(total / limit)`).
-- Item: `audit_id` (number, bigint), `entity_type`, `entity_type_label`, `action_type`, `actor { kind, userId, displayName }`, `occurred_at`.
+- Item: `audit_id` (number; bigint no banco), `entity_type`, `entity_type_label`, `action_type`, `actor { kind, userId, displayName }`, `occurred_at`.
 - Detalhe acrescenta `entity_id`, `previous_value`, `new_value`, `note`, `change_origin`, `last_technical_message` e `ip_address`.
 - O FE em F2 (`src/lib/types/audit.ts`) consome o subconjunto de lista e de detalhe que usa; `GET /audit-history/:id` recebe id numérico. **Não renomear até a migração da auditoria.**
 
@@ -344,23 +341,23 @@ Uma spec de domínio só vira `frozen` se todas as caixas abaixo estiverem marca
 
 ## Apêndice A — Decisões C1–C15 (rastreio)
 
-| ID | Questão | Linha em §0 | Status |
-|---|---|---|---|
-| C1 | `requestId` aditivo no envelope legado? | #2 | decidido |
-| C2 | Validação `400` × `422`; `fields` × `details` | #5 | decidido |
-| C3 | `pageSize` default/máximo por rota | #6 | decidido |
-| C4 | Página > `totalPages` | #6 | decidido |
-| C5 | Exceções de paginação (auditoria, timeline) | #6 | decidido |
-| C6 | Cookie: nome/TTL/atributos e env vars | #7 | decidido |
-| C7 | `avatarUrl` no `SessionUser` | #9 | decidido |
-| C8 | Status de destino e precondição no wire (`targetStatusKey` + `expectedStatusKey`) | #10 | decidido |
-| C9 | `Idempotency-Key` no v1 | #11 | decidido |
-| C10 | Header do solicitante | #19 | decidido |
-| C11 | `requestId` = id HTTP ou da solicitação | #15 | decidido |
-| C12 | 429: código e headers (verify) | #16 | decidido |
-| C13 | CORS `exposedHeaders` | #17 | decidido |
-| C14 | Chaves de auditoria (legado) | #14, #21 | decidido |
-| C15 | Rate limit de login (novo) | #24 | decisão necessária |
+| ID | Questão | Linha em §0 |
+|---|---|---|
+| C1 | `requestId` aditivo no envelope legado? | #2 |
+| C2 | Validação `400` × `422`; `fields` × `details` | #5 |
+| C3 | `pageSize` default/máximo por rota | #6 |
+| C4 | Página > `totalPages` | #6 |
+| C5 | Exceções de paginação (auditoria, timeline) | #6 |
+| C6 | Cookie: nome/TTL/atributos e env vars | #7 |
+| C7 | `avatarUrl` no `SessionUser` | #9 |
+| C8 | Status de destino e precondição no wire (`targetStatusKey` + `expectedStatusKey`) | #10 |
+| C9 | `Idempotency-Key` no v1 | #11 |
+| C10 | Header do solicitante | #19 |
+| C11 | `requestId` = id HTTP ou da solicitação | #15 |
+| C12 | 429: código e headers (verify) | #16 |
+| C13 | CORS `exposedHeaders` | #17 |
+| C14 | Chaves de auditoria (legado) | #14, #21 |
+| C15 | Rate limit de login (novo) | #24 |
 
 > C14: o alvo da auditoria está aberto na §0.2 #23; a linha acima cobre a regra de idioma e o contrato legado.
 
@@ -368,7 +365,10 @@ Uma spec de domínio só vira `frozen` se todas as caixas abaixo estiverem marca
 
 `F1` e `F2` são proveniência de contrato legado, não código deste repositório. Os commits são fixos para a citação continuar verificável.
 
-| Ref | Repositório | Commit | Arquivos usados |
-|---|---|---|---|
-| F1 | `NEO-Kaizen/backend` — https://github.com/NEO-Kaizen/backend/tree/70acc02c89c58d9b0056f9f1615502212873c7e2 | `70acc02c89c58d9b0056f9f1615502212873c7e2` | `src/configs.ts`; `src/modules/auth/auth.controller.ts`; `src/shared/middleware/upload.ts`; `src/shared/middleware/uploadAvatar.ts`; `src/shared/middleware/uploadAssets.ts`; `src/modules/pendingItems/pendingItems.router.ts`; `docs/solicitations-api-requests-0_4.md`; `docs/contract-pendencias_03.md`; `docs/portal-config-api-0_4.md`; `docs/users-api-profile-0_1.md`; `docs/audit-history-contract.md`; `docs/requests-internal-query-contract.md` |
-| F2 | `NEO-Kaizen/frontend` — https://github.com/NEO-Kaizen/frontend/tree/ca80eec6cf12a38046d89933b5107b7fcc4acf13 | `ca80eec6cf12a38046d89933b5107b7fcc4acf13` | `src/lib/types/audit.ts`; `src/lib/types/auth.ts` |
+| Ref | Repositório |
+|---|---|
+| F1 | `NEO-Kaizen/backend` — https://github.com/NEO-Kaizen/backend/tree/70acc02c89c58d9b0056f9f1615502212873c7e2 |
+| F2 | `NEO-Kaizen/frontend` — https://github.com/NEO-Kaizen/frontend/tree/ca80eec6cf12a38046d89933b5107b7fcc4acf13 |
+
+- **F1** (`70acc02c89c58d9b0056f9f1615502212873c7e2`): `src/configs.ts`; `src/modules/auth/auth.controller.ts`; `src/shared/middleware/upload.ts`; `src/shared/middleware/uploadAvatar.ts`; `src/shared/middleware/uploadAssets.ts`; `docs/solicitations-api-requests-0_4.md`; `docs/contract-pendencias_03.md`; `docs/portal-config-api-0_4.md`; `docs/users-api-profile-0_1.md`; `docs/audit-history-contract.md`; `docs/requests-internal-query-contract.md`; `docs/internal-observations.md`.
+- **F2** (`ca80eec6cf12a38046d89933b5107b7fcc4acf13`): `src/lib/types/audit.ts`; `src/lib/types/auth.ts`.

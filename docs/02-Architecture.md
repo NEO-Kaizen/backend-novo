@@ -1358,7 +1358,13 @@ export function createApp(container: Container): Express {
   app.use(requestIdMiddleware);
   app.use(express.json({ limit: "1mb" }));
   app.use(cookieParser());
-  app.use(cors({ origin: container.config.cors.origins, credentials: true }));
+  app.use(
+    cors({
+      origin: container.config.cors.origins,
+      credentials: true,
+      exposedHeaders: ["Content-Disposition", "x-request-id"],
+    }),
+  );
 
   app.use("/api/v1/auth", container.modules.auth.router);
   app.use("/api/v1/requests", container.modules.requests.router);

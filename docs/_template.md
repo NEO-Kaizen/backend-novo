@@ -18,7 +18,7 @@ Ver [`docs/04-API-Conventions.md`](./04-API-Conventions.md). Esta spec apenas re
 
 ## 6. Paginação
 
-- default/máximo/exceção por endpoint (ou "não paginado" justificado).
+- cada endpoint de listagem marcado como “global” ou citando a exceção de §4.3; “não paginado” justificado.
 
 ## 7. Erros
 

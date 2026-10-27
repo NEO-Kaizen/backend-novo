@@ -156,7 +156,7 @@ if (!parsed.success) {
       requestId: req.id,
       fields: parsed.error.issues.map((i) => ({
         path: i.path.join("."),
-        message: "Campo inválido.", // em produção, use a mensagem pt-BR do catálogo
+        message: "Campo inválido.", // em produção, use a mensagem pt-BR do campo
       })),
     },
   });
@@ -218,7 +218,7 @@ const errorHandler: ErrorRequestHandler = (err, req, res, next) => {
 **Sempre** use o logger da aplicação; `console.log` não é logging de produção.
 
 - Log estruturado (JSON), com nível e campos estáveis.
-- Request ID: aceite `x-request-id` só se for UUID válido; senão gere um; devolva no header.
+- Header `x-request-id`: aceite só se for UUID válido; senão gere um; devolva no header.
 - Logue método, rota, status, duração e correlation ID (`correlationId`). Não logue body por default.
 - Redija `authorization`, `cookie`, `set-cookie`, `password`, `token` e `secret`.
 - Não logue PII.
