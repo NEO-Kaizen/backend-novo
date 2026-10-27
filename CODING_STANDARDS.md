@@ -87,7 +87,10 @@ import type { User } from "./user.ts";
 - Evite `await` em loop para I/O independente; paralelize com limite.
 
 ```ts
-const [user, orders] = await Promise.all([users.findById(id), orders.listByUser(id)]);
+const [user, orders] = await Promise.all([
+  users.findById(id),
+  orders.listByUser(id),
+]);
 ```
 
 ## 5. Erros
@@ -132,7 +135,7 @@ export class AppError extends Error {
 - `params`, `query`, `body` e headers relevantes passam por schema (Zod ou equivalente).
 - Use `strictObject` para rejeitar campos desconhecidos e limite strings, arrays, números e profundidade.
 - `safeParse` → 400 `validation_error` com detalhes por campo; `Content-Type` errado → 415.
-- Mensagens de validação vêm de um catálogo pt-BR por campo; não use a mensagem default do Zod (inglês) nem um texto genérico para todos os campos.
+- Mensagens de validação vêm de um catálogo pt-BR por campo, tipado pelo schema (`satisfies Record<keyof z.infer<...>, string>`); `unrecognized_keys` (path vazio) e corpo não-objeto têm mensagem própria. Não use a mensagem default do Zod (inglês) nem um texto genérico para todos os campos.
 - Normalize antes de comparar. Valide formato; não “sanitize” substituindo caracteres — encode na saída.
 - Não faça mass assignment: mapeie os campos validados explicitamente para o input do domínio.
 - SQL sempre parametrizado (`$1`, `?`); nunca interpole valor em string.
@@ -146,17 +149,23 @@ const CreateUser = z.strictObject({
   name: z.string().min(1).max(120),
 });
 
-// Catálogo pt-BR: todo campo do schema precisa de uma mensagem própria.
-const fieldMessages: Record<string, string> = {
+type CreateUserField = keyof z.infer<typeof CreateUser>;
+
+// Catálogo pt-BR: `satisfies` exige uma mensagem para cada campo do schema.
+const fieldMessages = {
   email: "Informe um e-mail válido.",
   name: "Informe o nome.",
-};
+} satisfies Record<CreateUserField, string>;
 
-const fieldMessage = (issue: { path: PropertyKey[] }): string => {
-  const key = issue.path.join(".");
-  const message = fieldMessages[key];
-  if (message === undefined) throw new Error(`mensagem pt-BR ausente: ${key}`);
-  return message;
+const toFieldError = (issue: z.ZodIssue): { path: string; message: string } => {
+  const path = issue.path.join(".");
+  if (issue.code === "unrecognized_keys") {
+    return { path, message: "Campo não permitido." };
+  }
+  if (path === "") {
+    return { path, message: "Corpo da requisição inválido." };
+  }
+  return { path, message: fieldMessages[path as CreateUserField] ?? "Valor inválido." };
 };
 
 const parsed = CreateUser.safeParse(req.body);
@@ -166,14 +175,13 @@ if (!parsed.success) {
       code: "validation_error",
       message: "Dados inválidos.",
       requestId: req.id,
-      fields: parsed.error.issues.map((i) => ({
-        path: i.path.join("."),
-        message: fieldMessage(i), // catálogo pt-BR por campo
-      })),
+      fields: parsed.error.issues.map(toFieldError),
     },
   });
 }
 ```
+
+`strictObject` emite `unrecognized_keys` com `path: []`; o helper trata esse caso e o catálogo `satisfies` falha no type-check se um campo do schema ficar sem mensagem.
 
 ## 7. Express
 
@@ -190,10 +198,7 @@ if (!parsed.success) {
 - Use `res.status(...).json(...)`; não responda duas vezes.
 
 ```ts
-const getUser: RequestHandler<{ id: string }, UserDto, never, never, AppLocals> = async (
-  req,
-  res,
-) => {
+const getUser: RequestHandler<{ id: string }, UserDto, never, never, AppLocals> = async (req, res) => {
   const user = await users.findById(req.params.id);
   res.status(200).json(user);
 };

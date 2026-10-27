@@ -19,37 +19,37 @@ divergência exige emenda aqui e emenda ao ADR correspondente.
 
 ### 0.1 Congeladas
 
-| #   | Convenção                      | Status   | Decisão (resumo)                                                                                                                                                                              | Citação                                                                                                                                        | Dono            |
-| --- | ------------------------------ | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | --------------- |
-| 1   | Base path e versionamento      | decidido | `/api/v1` para todos os endpoints; sem prefixo em v2 por ora                                                                                                                                  | `02-Architecture.md` §15; `01-Overview.md` §3                                                                                                  | Backend         |
-| 2   | Envelope de erro (legado)      | decidido | `{ status, statusCode, message }` + `code` e `requestId` aditivos; vigente até a migração                                                                                                     | ADR-0005; `02-Architecture.md` §12.5                                                                                                           | Backend + FE    |
-| 3   | Envelope de erro (alvo)        | decidido | `{ error: { code, message, requestId } }`, em cutover coordenado                                                                                                                              | `CODING_STANDARDS.md` §5; ADR-0005                                                                                                             | Backend + FE    |
-| 4   | Catálogo de códigos            | decidido | snake_case; 400/401/403/404/409/413/415/429/500; regra de `expose`                                                                                                                            | `02-Architecture.md` §12.2/§12.4/§12.6 (seis códigos base); 413/415/429: extensão (§2.3)                                                       | Backend         |
-| 5   | Validação (400)                | decidido | 400 + `validation_error` + mensagem pt-BR + `fields: [{ path, message }]`; o legado misto (422/objeto no fluxo de requests e 400/mensagem em outros endpoints) é unificado                    | `CODING_STANDARDS.md` §6; C2                                                                                                                   | Backend + FE    |
-| 6   | Paginação                      | decidido | `{ data, page, pageSize, total, totalPages }`; default 20, máximo 100, clamp de página; `totalPages: 0` quando vazio; exceções em §4.3                                                        | `02-Architecture.md` §10.6; C3/C4/C5                                                                                                           | Backend         |
-| 7   | Sessão e cookie                | decidido | `session_id`, HttpOnly, SameSite=Lax, Secure em produção, TTL 1 dia; env `COOKIE_NAME` e `JWT_EXPIRES_IN` (implementação pendente)                                                            | C6; `02-Architecture.md` §14.1; F1 (`src/configs.ts`; `src/modules/auth/auth.controller.ts`)                                                   | Backend + Infra |
-| 8   | Autorização                    | decidido | 26 keys; escopo `none`/`owner` (`own`/`all`); atribuibilidade; 5 perfis; FE por perfil                                                                                                        | ADR-0025; `02-Architecture.md` §14.4–§14.6                                                                                                     | Backend + FE    |
-| 9   | `/auth/me` — DTO               | decidido | `id, name, email, role, permissions?, mustChangePassword, avatarUrl (string ou null)`                                                                                                         | C7; `02-Architecture.md` §14.4; F2 (`src/lib/types/auth.ts`)                                                                                   | Backend + FE    |
-| 10  | Concorrência                   | decidido | `PATCH` de status com `targetStatusKey` (destino) e `expectedStatusKey` (precondição); 409 com `currentStatusKey` e `currentStatusId?` no corpo do erro; leitura e escrita na mesma transação | C8; `02-Architecture.md` §11.1                                                                                                                 | Backend + FE    |
-| 11  | Idempotência                   | decidido | Sem `Idempotency-Key` no v1; tabela de operações em §8.2                                                                                                                                      | C9                                                                                                                                             | Backend         |
-| 12  | Content types                  | decidido | JSON 1 MiB; multipart em §9; 400/413/415                                                                                                                                                      | `02-Architecture.md` §15; este §9                                                                                                              | Backend         |
-| 13  | Datas e horas                  | decidido | ISO-8601 UTC para timestamps; `yyyy-mm-dd` para datas puras; tipo único via `dialect.timestampType()`                                                                                         | F1 (`docs/solicitations-api-requests-0_4.md` §1; `docs/requests-internal-query-contract.md`); `03-Data-Model.md` §2.5 (tipo do banco)          | Backend + FE    |
-| 14  | Idioma                         | decidido | Chaves EN camelCase; valores pt-BR; `code` em snake_case; exceção legada de auditoria em §11                                                                                                  | C14; `GLOSSARY.md`                                                                                                                             | Backend + FE    |
-| 15  | Request-id                     | decidido | `x-request-id` UUID, echo e log; `correlationId` é o id HTTP no log e `requestId` é o id de negócio fora do envelope; no envelope de erro, `requestId` é o id HTTP (emenda ao C11 em §12)     | C11 (emenda em §12); `02-Architecture.md` §9.4/§17                                                                                             | Backend         |
-| 16  | Rate limiting (verify público) | decidido | 10 req/10 min por IP+protocolo; 429 `rate_limited`; `Retry-After`; storage compartilhado; login em §0.2                                                                                       | C12; `02-Architecture.md` §14.2 (gate por IP+protocolo); F1 (`docs/contract-pendencias_03.md` §3 — janela 10 min e limite 10)                  | Backend + Infra |
-| 17  | CORS                           | decidido | Origens explícitas, `credentials`, `exposedHeaders` (`Content-Disposition`, `x-request-id`), sem wildcard                                                                                     | C13; `02-Architecture.md` §15                                                                                                                  | Backend + Infra |
-| 18  | Ids e `key` de status          | decidido | PKs de entidade em UUID v4 gerado pela app; `status.key` `varchar(50)` UNIQUE e imutável; referências a status usam `key`, e id numérico de status não vai ao wire                            | ADR-0003; ADR-0021; `02-Architecture.md` §10.4/§22.1                                                                                           | Backend + FE    |
-| 19  | Header do solicitante          | decidido | Aceitar `X-Requester-Email` e `X-Requester-Identity` por uma release; depois só Email; o header não autentica                                                                                 | C10; ADR-0023                                                                                                                                  | Backend + FE    |
-| 20  | Códigos de sucesso             | decidido | 200 leitura/atualização; 201 criação; 204 sem corpo                                                                                                                                           | F1 (`docs/solicitations-api-requests-0_4.md` §1 — 201; `docs/audit-history-contract.md` §1–§3 — 200; `docs/internal-observations.md` §7 — 204) | Backend         |
-| 21  | Envelope de auditoria (legado) | decidido | `{ items, total, page, limit }`; item com `audit_id` numérico, `entity_type_label` e `action_type`; mantido até a migração                                                                    | `02-Architecture.md` §22.1; F1 (`docs/audit-history-contract.md`); F2 (`src/lib/types/audit.ts`)                                               | Backend + FE    |
-| 22  | Multipart — limites por rota   | decidido | Limites por rota e total em §9; nenhum outro limite é válido                                                                                                                                  | F1; este §9                                                                                                                                    | Backend         |
+| # | Convenção | Status | Decisão (resumo) | Citação | Dono |
+|---|---|---|---|---|---|
+| 1 | Base path e versionamento | decidido | `/api/v1` para todos os endpoints; sem prefixo em v2 por ora | `02-Architecture.md` §15; `01-Overview.md` §3 | Backend |
+| 2 | Envelope de erro (legado) | decidido | `{ status, statusCode, message }` + `code` e `requestId` aditivos; vigente até a migração | ADR-0005; `02-Architecture.md` §12.5 | Backend + FE |
+| 3 | Envelope de erro (alvo) | decidido | `{ error: { code, message, requestId } }`, em cutover coordenado | `CODING_STANDARDS.md` §5; ADR-0005 | Backend + FE |
+| 4 | Catálogo de códigos | decidido | snake_case; 400/401/403/404/409/413/415/429/500; regra de `expose` | `02-Architecture.md` §12.2/§12.4/§12.6 (seis códigos base); 413/415/429: extensão (§2.3) | Backend |
+| 5 | Validação (400) | decidido | 400 + `validation_error` + mensagem pt-BR + `fields: [{ path, message }]`; o legado misto (422/objeto no fluxo de requests e 400/mensagem em outros endpoints) é unificado | `CODING_STANDARDS.md` §6; C2 | Backend + FE |
+| 6 | Paginação | decidido | `{ data, page, pageSize, total, totalPages }`; default 20, máximo 100, clamp de página; `totalPages: 0` quando vazio; exceções em §4.3 | `02-Architecture.md` §10.6; C3/C4/C5 | Backend |
+| 7 | Sessão e cookie | decidido | `session_id`, HttpOnly, SameSite=Lax, Secure em produção, TTL 1 dia; env `COOKIE_NAME` e `JWT_EXPIRES_IN` (implementação pendente) | C6; `02-Architecture.md` §14.1; F1 (`src/configs.ts`; `src/modules/auth/auth.controller.ts`) | Backend + Infra |
+| 8 | Autorização | decidido | 26 keys; escopo `none`/`owner` (`own`/`all`); atribuibilidade; 5 perfis; FE por perfil | ADR-0025; `02-Architecture.md` §14.4–§14.6 | Backend + FE |
+| 9 | `/auth/me` — DTO | decidido | `id, name, email, role, permissions?, mustChangePassword, avatarUrl (string ou null)` | C7; `02-Architecture.md` §14.4; F2 (`src/lib/types/auth.ts`) | Backend + FE |
+| 10 | Concorrência | decidido | `PATCH` de status com `targetStatusKey` (destino) e `expectedStatusKey` (precondição); 409 com `currentStatusKey` e `currentStatusId?` no corpo do erro; leitura e escrita na mesma transação | C8; `02-Architecture.md` §11.1 | Backend + FE |
+| 11 | Idempotência | decidido | Sem `Idempotency-Key` no v1; tabela de operações em §8.2 | C9 | Backend |
+| 12 | Content types | decidido | JSON 1 MiB; multipart em §9; 400/413/415 | `02-Architecture.md` §15; este §9 | Backend |
+| 13 | Datas e horas | decidido | ISO-8601 UTC para timestamps; `yyyy-mm-dd` para datas puras; tipo único via `dialect.timestampType()` | F1 (`docs/solicitations-api-requests-0_4.md` §1; `docs/requests-internal-query-contract.md`); `03-Data-Model.md` §2.5 (tipo do banco) | Backend + FE |
+| 14 | Idioma | decidido | Chaves EN camelCase; valores pt-BR; `code` em snake_case; exceção legada de auditoria em §11 | C14; `GLOSSARY.md` | Backend + FE |
+| 15 | Request-id | decidido | `x-request-id` UUID, echo e log; `correlationId` é o id HTTP no log e `requestId` é o id de negócio fora do envelope; no envelope de erro, `requestId` é o id HTTP (emenda ao C11 em §12) | C11 (emenda em §12); `02-Architecture.md` §9.4/§17 | Backend |
+| 16 | Rate limiting (verify público) | decidido | 10 req/10 min por IP+protocolo; 429 `rate_limited`; `Retry-After`; storage compartilhado; login em §0.2 | C12; `02-Architecture.md` §14.2 (gate por IP+protocolo); F1 (`docs/contract-pendencias_03.md` §3 — janela 10 min e limite 10) | Backend + Infra |
+| 17 | CORS | decidido | Origens explícitas, `credentials`, `exposedHeaders` (`Content-Disposition`, `x-request-id`), sem wildcard | C13; `02-Architecture.md` §15 | Backend + Infra |
+| 18 | Ids e `key` de status | decidido | PKs de entidade em UUID v4 gerado pela app; `status.key` `varchar(50)` UNIQUE e imutável; referências a status usam `key`, e id numérico de status não vai ao wire | ADR-0003; ADR-0021; `02-Architecture.md` §10.4/§22.1 | Backend + FE |
+| 19 | Header do solicitante | decidido | Aceitar `X-Requester-Email` e `X-Requester-Identity` por uma release; depois só Email; o header não autentica | C10; ADR-0023 | Backend + FE |
+| 20 | Códigos de sucesso | decidido | 200 leitura/atualização; 201 criação; 204 sem corpo | F1 (`docs/solicitations-api-requests-0_4.md` §1 — 201; `docs/audit-history-contract.md` §1–§3 — 200; `docs/internal-observations.md` §7 — 204) | Backend |
+| 21 | Envelope de auditoria (legado) | decidido | `{ items, total, page, limit }`; item com `audit_id` numérico, `entity_type_label` e `action_type`; mantido até a migração | `02-Architecture.md` §22.1; F1 (`docs/audit-history-contract.md`); F2 (`src/lib/types/audit.ts`) | Backend + FE |
+| 22 | Multipart — limites por rota | decidido | Limites por rota, por arquivo e total de arquivos em §9; nenhum outro limite é válido | F1; este §9 | Backend |
 
 ### 0.2 Decisões abertas
 
-| #   | Convenção                    | Status             | Recomendação                                                                                           | Citação                                                                                                                        | Dono            | Destino           | Prazo/gatilho                         |
-| --- | ---------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ | --------------- | ----------------- | ------------------------------------- |
-| 23  | Envelope de auditoria (alvo) | conflito           | Envelope padrão camelCase; `id` UUID; `action` separado de `entityType`; `entity_type_label` a definir | `02-Architecture.md` §22/§22.1; `03-Data-Model.md` §15.1; F1 (`docs/audit-history-contract.md`); F2 (`src/lib/types/audit.ts`) | Backend + FE    | Spec de auditoria | Antes de congelar a spec de auditoria |
-| 24  | Rate limiting de login       | decisão necessária | 10 req/min por IP+e-mail; `rate_limited` + `Retry-After`; registrar janela e chave na spec             | C15 (novo); F1 (`docs/contract-pendencias_03.md` §3 — só o verify, 10/10 min; login sem limite no legado)                      | Backend + Infra | Spec de `auth`    | Antes de congelar a spec de `auth`    |
+| # | Convenção | Status | Recomendação | Citação | Dono | Destino | Prazo/gatilho |
+|---|---|---|---|---|---|---|---|
+| 23 | Envelope de auditoria (alvo) | conflito | Envelope padrão camelCase; `id` UUID; `action` separado de `entityType`; `entity_type_label` a definir | `02-Architecture.md` §22/§22.1; `03-Data-Model.md` §15.1; F1 (`docs/audit-history-contract.md`); F2 (`src/lib/types/audit.ts`) | Backend + FE | Spec de auditoria | Antes de congelar a spec de auditoria |
+| 24 | Rate limiting de login | decisão necessária | 10 req/min por IP+e-mail; `rate_limited` + `Retry-After`; registrar janela e chave na spec | C15 (novo); F1 (`docs/contract-pendencias_03.md` §3 — só o verify, 10/10 min; login sem limite no legado) | Backend + Infra | Spec de `auth` | Antes de congelar a spec de `auth` |
 
 ## 1. Base path e versionamento
 
@@ -78,13 +78,7 @@ divergência exige emenda aqui e emenda ao ADR correspondente.
 ### 2.2 Alvo (pós-migração)
 
 ```json
-{
-  "error": {
-    "code": "not_found",
-    "message": "Solicitação não encontrada.",
-    "requestId": "b3f1…-uuid"
-  }
-}
+{ "error": { "code": "not_found", "message": "Solicitação não encontrada.", "requestId": "b3f1…-uuid" } }
 ```
 
 - Migração coordenada (ver ADR-0005 §Gatilho da migração).
@@ -92,18 +86,18 @@ divergência exige emenda aqui e emenda ao ADR correspondente.
 
 ### 2.3 Catálogo de códigos
 
-| Código                                                       | Status HTTP         | Exposto?          | Uso                                                                 |
-| ------------------------------------------------------------ | ------------------- | ----------------- | ------------------------------------------------------------------- |
-| `validation_error`                                           | 400                 | sim               | entrada inválida na borda                                           |
-| `unauthorized`                                               | 401                 | sim               | sem sessão / sessão inválida                                        |
-| `forbidden`                                                  | 403                 | sim               | capability ausente                                                  |
-| `not_found`                                                  | 404                 | sim               | recurso inexistente (também para protocolo não encontrado, sem 403) |
-| `conflict`                                                   | 409                 | sim               | concorrência / estado incompatível                                  |
-| `payload_too_large`                                          | 413                 | sim               | corpo acima do limite                                               |
-| `invalid_content_type`                                       | 415                 | sim               | `Content-Type` inesperado                                           |
-| `rate_limited`                                               | 429                 | sim               | limite de taxa excedido                                             |
-| `internal_error`                                             | 500                 | não (genérico)    | falha inesperada                                                    |
-| (domínio) `not_the_assignee`, `invalid_status_transition`, … | conforme mapeamento | conforme `expose` | regras de negócio                                                   |
+| Código | Status HTTP | Exposto? | Uso |
+|---|---|---|---|
+| `validation_error` | 400 | sim | entrada inválida na borda |
+| `unauthorized` | 401 | sim | sem sessão / sessão inválida |
+| `forbidden` | 403 | sim | capability ausente |
+| `not_found` | 404 | sim | recurso inexistente (também para protocolo não encontrado, sem 403) |
+| `conflict` | 409 | sim | concorrência / estado incompatível |
+| `payload_too_large` | 413 | sim | corpo acima do limite |
+| `invalid_content_type` | 415 | sim | `Content-Type` inesperado |
+| `rate_limited` | 429 | sim | limite de taxa excedido |
+| `internal_error` | 500 | não (genérico) | falha inesperada |
+| (domínio) `not_the_assignee`, `invalid_status_transition`, … | conforme mapeamento | conforme `expose` | regras de negócio |
 
 - Códigos estáveis em `snake_case`, registrados em `core/errors/error-codes.ts` (expostos) e `core/errors/internal-codes.ts` (internos, nunca expostos).
 - Regra de `expose`: `expose: true` envia a mensagem; `expose: false` (padrão) envia `internal_error` com mensagem genérica. Stack, SQL, nome de tabela, path e versão interna **nunca** saem do servidor.
@@ -144,13 +138,14 @@ divergência exige emenda aqui e emenda ao ADR correspondente.
 
 - **Regra global:** todo endpoint de listagem usa default **20**, máximo **100** e clamp de página. O valor de cada endpoint é a regra global; não há uma tabela por endpoint repetindo o mesmo número.
 - **Emenda ao critério de aceite da #30:** o default 20, o máximo 100 e o clamp são globais; este registro de exceções atende ao requisito “por endpoint” e não há tabela repetindo os mesmos valores.
-- **Listagem não paginada:** também é exceção e só existe com uma linha nesta tabela, citada pela spec; sem linha, a listagem é paginada. A linha traz o endpoint em `Endpoint / grupo` e `—` em `Default`, `Máximo` e `Clamp`.
+- **Listagem não paginada:** também é exceção e só existe com uma linha nesta tabela, citada pela spec; sem linha, a listagem é paginada. A linha traz o endpoint em `Endpoint / grupo` e `—` em `Default`, `Máximo` e `Clamp`; `—` significa “sem paginação”, não “sem limite”: a spec declara o `LIMIT` interno da consulta.
 - A tabela abaixo é o **registro de exceções**. Um endpoint com default, máximo ou clamp diferente só existe se estiver aqui; a spec de domínio lista seus endpoints e marca cada um como “global” ou cita a linha da exceção.
 
-| Endpoint / grupo                                                 | Default      | Máximo | Clamp                          | Dono         | Destino            | Prazo/gatilho                                                                                                               |
-| ---------------------------------------------------------------- | ------------ | ------ | ------------------------------ | ------------ | ------------------ | --------------------------------------------------------------------------------------------------------------------------- |
-| Linha do tempo (`GET /api/v1/requests/:protocol/internal-notes`) | 20 (`limit`) | 50     | keyset (`cursor`/`nextCursor`) | Backend      | Spec de `requests` | Antes de congelar a spec de `requests` (F1, `docs/internal-observations.md` §4 — exceção keyset; §7 — default 20/máximo 50) |
-| Auditoria (legado)                                               | 20 (`limit`) | 100    | não no legado                  | Backend + FE | Spec de auditoria  | Antes de congelar a spec de auditoria                                                                                       |
+| Endpoint / grupo | Default | Máximo | Clamp | Dono | Destino | Prazo/gatilho |
+|---|---|---|---|---|---|---|
+| Linha do tempo (`GET /api/v1/requests/:protocol/internal-notes`) | 20 (`limit`) | 50 | keyset (`cursor`/`nextCursor`) | Backend | Spec de `requests` | Antes de congelar a spec de `requests` (F1, `docs/internal-observations.md` §4 — exceção keyset; §7 — default 20/máximo 50) |
+| Auditoria (legado) | 20 (`limit`) | 100 | não no legado | Backend + FE | Spec de auditoria | Antes de congelar a spec de auditoria |
+| Pendências (`GET /api/v1/requests/:protocol/pending-items`) | — | — | — | Backend | Spec de `pending-items` | Antes de congelar a spec de `pending-items` (F1, `docs/contract-pendencias_03.md` §4 — sem envelope paginado) |
 
 Os valores 20/100 da auditoria são os globais; a exceção é o parâmetro `limit` e a ausência de `totalPages`.
 
@@ -208,14 +203,14 @@ Os valores 20/100 da auditoria são os globais; a exceção é o parâmetro `lim
 - Sem header `Idempotency-Key` no v1.
 - Classificação de idempotência:
 
-| Operação                                                      | Idempotente? | Observação                                                      |
-| ------------------------------------------------------------- | ------------ | --------------------------------------------------------------- |
-| `GET`/`HEAD`                                                  | sim          | leitura sem efeito colateral                                    |
-| `PUT`                                                         | sim          | substitui o recurso                                             |
-| `PATCH` de status com `targetStatusKey` + `expectedStatusKey` | condicional  | repetir depois do sucesso devolve 409 (o estado já mudou)       |
-| `PATCH` que não seja de status                                | não          | salvo indicação em contrário na spec; não há deduplicação no v1 |
-| `DELETE` (quando existir)                                     | sim          | 204/404; o efeito é o mesmo                                     |
-| `POST` de criação                                             | não          | não há deduplicação no v1                                       |
+| Operação | Idempotente? | Observação |
+|---|---|---|
+| `GET`/`HEAD` | sim | leitura sem efeito colateral |
+| `PUT` | sim | substitui o recurso |
+| `PATCH` de status com `targetStatusKey` + `expectedStatusKey` | condicional | repetir depois do sucesso devolve 409 (o estado já mudou) |
+| `PATCH` que não seja de status | não | salvo indicação em contrário na spec; não há deduplicação no v1 |
+| `DELETE` (quando existir) | sim | 204/404; o efeito é o mesmo |
+| `POST` de criação | não | não há deduplicação no v1 |
 
 - `POST /api/v1/auth/login` cria sessão e emite cookie; a falha de autenticação (401) vai para o log de segurança, não para a auditoria (`03-Data-Model.md` §15.1). Não é idempotente e não é deduplicado.
 - `POST /api/v1/auth/logout` limpa o cookie e é seguro repetir (200), mas é `POST` e não entra na deduplicação.
@@ -233,15 +228,16 @@ Os valores 20/100 da auditoria são os globais; a exceção é o parâmetro `lim
 
 **Limites por rota:**
 
-| Rota                                                                       | Arquivos | Limite por arquivo                                        | Total máximo | MIME                                         |
-| -------------------------------------------------------------------------- | -------- | --------------------------------------------------------- | ------------ | -------------------------------------------- |
-| `POST /api/v1/requests` (anexos)                                           | 5        | 10 MiB                                                    | 50 MiB       | PDF, DOCX, XLSX, PNG, JPEG                   |
-| `POST /api/v1/requests/:protocol/pending-items/:pendingItemId/attachments` | 1        | 10 MiB                                                    | 10 MiB       | PDF, DOCX, XLSX, PNG, JPEG                   |
-| `PUT /api/v1/users/me` (avatar)                                            | 1        | 2 MiB                                                     | 2 MiB        | JPEG, PNG                                    |
-| `PATCH /api/v1/portal-config/assets`                                       | 8        | favicon 1 MiB; logo e avatar 2 MiB; imagem de login 5 MiB | 20 MiB       | conforme a chave (PNG, SVG, ICO, JPEG, WebP) |
+| Rota | Arquivos | Limite por arquivo | Total de arquivos | MIME |
+|---|---|---|---|---|
+| `POST /api/v1/requests` (anexos) | 5 | 10 MiB | 50 MiB | PDF, DOCX, XLSX, PNG, JPEG |
+| `POST /api/v1/requests/:protocol/pending-items/:pendingItemId/attachments` | 1 | 10 MiB | 10 MiB | PDF, DOCX, XLSX, PNG, JPEG |
+| `PUT /api/v1/users/me` (avatar) | 1 | 2 MiB | 2 MiB | JPEG, PNG |
+| `PATCH /api/v1/portal-config/assets` | 8 | favicon 1 MiB; logo e avatar 2 MiB; imagem de login 5 MiB | 20 MiB | conforme a chave (PNG, SVG, ICO, JPEG, WebP) |
 
-- O multer limita a contagem de arquivos e o tamanho de cada arquivo; o **Total máximo** é o teto da requisição inteira e prevalece quando a soma dos máximos por arquivo o exceder (em assets, 8 arquivos e teto de 20 MiB).
-- JSON body: 1 MiB (`express.json({ limit: "1mb" })`); quando a rota tiver parte JSON no multipart (`payload` ou `assets`), o limite da parte é 2 MiB.
+- O **Total de arquivos** é a soma dos máximos por arquivo e não é validado como um limite único: o multer limita a contagem e o tamanho de cada arquivo; em assets, o `fileSize` global é 5 MiB e o limite por chave (`validateAssetSizes`) roda depois do multer. O 413 vem do arquivo que exceder o seu limite, não da soma.
+- A parte JSON (`payload`/`assets`) tem limite próprio de 2 MiB e não entra no total de arquivos; com todos os máximos, a requisição pode chegar a 52 MiB em requests (2 + 50) e 22 MiB em assets (2 + 20).
+- JSON body: 1 MiB por default (`JSON_BODY_MAX_BYTES`, aplicado em `express.json`); quando a rota tiver parte JSON no multipart (`payload` ou `assets`), o limite da parte é 2 MiB.
 - **Harmonização registrada:** o legado de requests/pendências devolvia 400 para tamanho e o de requests para MIME; a convenção nova usa **413** para tamanho e **415** para MIME. O FE lê `message`, então a mudança de status não quebra a renderização.
 - Rotas multipart: requests (anexos), pendências (anexos), avatar do usuário e assets do portal.
 - Fontes dos limites: F1 (`src/shared/middleware/upload*.ts`; `docs/solicitations-api-requests-0_4.md` §1; `docs/contract-pendencias_03.md` §7; `docs/portal-config-api-0_4.md` §5; `docs/users-api-profile-0_1.md` — avatar).
@@ -272,10 +268,10 @@ Os valores 20/100 da auditoria são os globais; a exceção é o parâmetro `lim
 
 ## 13. Rate limiting (C12)
 
-| Rota                                            | Janela | Limite | Chave          |
-| ----------------------------------------------- | ------ | ------ | -------------- |
-| `POST /api/v1/requests/:protocol/public/verify` | 10 min | 10     | IP + protocolo |
-| `POST /api/v1/auth/login`                       | —      | —      | ver §0.2 #24   |
+| Rota | Janela | Limite | Chave |
+|---|---|---|---|
+| `POST /api/v1/requests/:protocol/public/verify` | 10 min | 10 | IP + protocolo |
+| `POST /api/v1/auth/login` | — | — | ver §0.2 #24 |
 
 - Verificação pública: **429** com `code: "rate_limited"` e header `Retry-After` (segundos).
 - Storage compartilhado entre instâncias (Redis quando disponível; em dev, in-memory).
@@ -337,7 +333,7 @@ Uma spec de domínio só vira `frozen` se todas as caixas abaixo estiverem marca
 - [ ] Paginação: cada endpoint de listagem listado e marcado como “global” ou com a exceção de §4.3; “não paginado” só com linha em §4.3.
 - [ ] Erros: códigos do catálogo + códigos de domínio registrados em `error-codes.ts` (a implementar).
 - [ ] Validação: campos, limites e mensagens pt-BR.
-- [ ] Multipart: rota, quantidade, tamanho, MIME e 400/413/415 coerentes com §9.
+- [ ] Multipart: rota, quantidade, tamanho por arquivo, total de arquivos, MIME e 400/413/415 coerentes com §9.
 - [ ] Concorrência: operações com `targetStatusKey` e `expectedStatusKey` listadas e corpo do 409.
 - [ ] Idempotência: endpoints classificados pela tabela de §8.2.
 - [ ] Datas: tipo (timestamp vs data pura) por campo, com o tipo único do dialeto.
@@ -349,23 +345,23 @@ Uma spec de domínio só vira `frozen` se todas as caixas abaixo estiverem marca
 
 ## Apêndice A — Decisões C1–C15 (rastreio)
 
-| ID  | Questão                                                                           | Linha em §0 |
-| --- | --------------------------------------------------------------------------------- | ----------- |
-| C1  | `requestId` aditivo no envelope legado?                                           | #2          |
-| C2  | Validação `400` × `422`; `fields` × `details`                                     | #5          |
-| C3  | `pageSize` default/máximo e exceções (global 20/100)                              | #6          |
-| C4  | Página > `totalPages`                                                             | #6          |
-| C5  | Exceções de paginação (auditoria, timeline)                                       | #6          |
-| C6  | Cookie: nome/TTL/atributos e env vars                                             | #7          |
-| C7  | `avatarUrl` no `SessionUser`                                                      | #9          |
-| C8  | Status de destino e precondição no wire (`targetStatusKey` + `expectedStatusKey`) | #10         |
-| C9  | `Idempotency-Key` no v1                                                           | #11         |
-| C10 | Header do solicitante                                                             | #19         |
-| C11 | `requestId` = id HTTP ou da solicitação (emenda em §12)                           | #15         |
-| C12 | 429: código e headers (verify)                                                    | #16         |
-| C13 | CORS `exposedHeaders`                                                             | #17         |
-| C14 | Chaves de auditoria (legado)                                                      | #14, #21    |
-| C15 | Rate limit de login (novo)                                                        | #24         |
+| ID | Questão | Linha em §0 |
+|---|---|---|
+| C1 | `requestId` aditivo no envelope legado? | #2 |
+| C2 | Validação `400` × `422`; `fields` × `details` | #5 |
+| C3 | `pageSize` default/máximo e exceções (global 20/100) | #6 |
+| C4 | Página > `totalPages` | #6 |
+| C5 | Exceções de paginação (auditoria, timeline) | #6 |
+| C6 | Cookie: nome/TTL/atributos e env vars | #7 |
+| C7 | `avatarUrl` no `SessionUser` | #9 |
+| C8 | Status de destino e precondição no wire (`targetStatusKey` + `expectedStatusKey`) | #10 |
+| C9 | `Idempotency-Key` no v1 | #11 |
+| C10 | Header do solicitante | #19 |
+| C11 | `requestId` = id HTTP ou da solicitação (emenda em §12) | #15 |
+| C12 | 429: código e headers (verify) | #16 |
+| C13 | CORS `exposedHeaders` | #17 |
+| C14 | Chaves de auditoria (legado) | #14, #21 |
+| C15 | Rate limit de login (novo) | #24 |
 
 > C14: o alvo da auditoria está aberto na §0.2 #23; a linha acima cobre a regra de idioma e o contrato legado.
 >
@@ -375,10 +371,10 @@ Uma spec de domínio só vira `frozen` se todas as caixas abaixo estiverem marca
 
 `F1` e `F2` são proveniência de contrato legado, não código deste repositório. Os commits são fixos para a citação continuar verificável.
 
-| Ref | Repositório                                                                                                  |
-| --- | ------------------------------------------------------------------------------------------------------------ |
-| F1  | `NEO-Kaizen/backend` — https://github.com/NEO-Kaizen/backend/tree/70acc02c89c58d9b0056f9f1615502212873c7e2   |
-| F2  | `NEO-Kaizen/frontend` — https://github.com/NEO-Kaizen/frontend/tree/ca80eec6cf12a38046d89933b5107b7fcc4acf13 |
+| Ref | Repositório |
+|---|---|
+| F1 | `NEO-Kaizen/backend` — https://github.com/NEO-Kaizen/backend/tree/70acc02c89c58d9b0056f9f1615502212873c7e2 |
+| F2 | `NEO-Kaizen/frontend` — https://github.com/NEO-Kaizen/frontend/tree/ca80eec6cf12a38046d89933b5107b7fcc4acf13 |
 
 - **F1** (`70acc02c89c58d9b0056f9f1615502212873c7e2`): `src/configs.ts`; `src/modules/auth/auth.controller.ts`; `src/shared/middleware/upload.ts`; `src/shared/middleware/uploadAvatar.ts`; `src/shared/middleware/uploadAssets.ts`; `docs/solicitations-api-requests-0_4.md`; `docs/contract-pendencias_03.md`; `docs/portal-config-api-0_4.md`; `docs/users-api-profile-0_1.md`; `docs/audit-history-contract.md`; `docs/requests-internal-query-contract.md`; `docs/internal-observations.md`.
 - **F2** (`ca80eec6cf12a38046d89933b5107b7fcc4acf13`): `src/lib/types/audit.ts`; `src/lib/types/auth.ts`.
