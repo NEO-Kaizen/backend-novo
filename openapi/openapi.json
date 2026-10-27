@@ -95,12 +95,14 @@
           },
           "page": {
             "type": "integer",
-            "minimum": 1
+            "minimum": 1,
+            "description": "Página efetiva (1-based). Acima de `totalPages`, é ajustada para `totalPages`; com `total` 0, volta 1 (§4.2)."
           },
           "pageSize": {
             "type": "integer",
             "minimum": 1,
-            "description": "Tamanho efetivo da página; default 20 e máximo 100 na convenção."
+            "maximum": 100,
+            "description": "Tamanho efetivo da página. Sem default próprio: o default 20 e o máximo 100 são do parâmetro de request `PageSize`; acima do máximo a request recebe 400 validation_error (§4.2)."
           },
           "total": {
             "type": "integer",
