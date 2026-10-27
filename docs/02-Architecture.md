@@ -778,7 +778,7 @@ export function createErrorHandler(dependencies: {
         });
       } catch (recordError) {
         // A recusa aconteceu; falhar ao gravá-la não bloqueia a resposta.
-        dependencies.logger.error({ err: recordError, requestId: req.id }, "attempt not recorded");
+        dependencies.logger.error({ err: recordError, correlationId: req.id }, "attempt not recorded");
       }
     }
 
@@ -1451,8 +1451,8 @@ export interface Logger {
 | Regra | Motivo |
 | --- | --- |
 | Log estruturado em JSON, com nível e campos estáveis | Parseável |
-| **Request id** em todo log, aceito de `x-request-id` apenas se for UUID válido | Correlação entre requisição e erro |
-| Campos, não concatenação: `logger.info({ requestId, userId }, "request loaded")` | Busca por campo funciona |
+| **Correlation id** (`correlationId`) em todo log, aceito de `x-request-id` apenas se for UUID válido | Correlação entre requisição e erro |
+| Campos, não concatenação: `logger.info({ correlationId, userId }, "request loaded")` | Busca por campo funciona |
 | Redação de `authorization`, `cookie`, `set-cookie`, `password`, `token` e `secret` | Segredo não vaza em log |
 | PII não entra em log | Dado pessoal não é log |
 | A causa de um erro é logada **uma vez**, na borda | Camada interna não faz log-and-rethrow |

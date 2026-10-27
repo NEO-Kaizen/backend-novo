@@ -154,7 +154,10 @@ if (!parsed.success) {
       code: "validation_error",
       message: "Dados inválidos.",
       requestId: req.id,
-      fields: parsed.error.issues.map((i) => ({ path: i.path.join("."), message: i.message })),
+      fields: parsed.error.issues.map((i) => ({
+        path: i.path.join("."),
+        message: "Campo inválido.", // em produção, use a mensagem pt-BR do catálogo
+      })),
     },
   });
 }
@@ -216,7 +219,7 @@ const errorHandler: ErrorRequestHandler = (err, req, res, next) => {
 
 - Log estruturado (JSON), com nível e campos estáveis.
 - Request ID: aceite `x-request-id` só se for UUID válido; senão gere um; devolva no header.
-- Logue método, rota, status, duração e request ID. Não logue body por default.
+- Logue método, rota, status, duração e correlation ID (`correlationId`). Não logue body por default.
 - Redija `authorization`, `cookie`, `set-cookie`, `password`, `token` e `secret`.
 - Não logue PII.
 - Logue a causa do erro uma vez, na borda; não faça log-and-rethrow.
@@ -265,7 +268,7 @@ describe("POST /api/v1/users", () => {
 - [ ] Erros tipados com `cause`; sem swallow; sem stack/PII na resposta.
 - [ ] Entrada validada; SQL parametrizado; autorização no servidor.
 - [ ] Sem segredo/PII em código, log ou fixture; sem `eval`/`exec` com input.
-- [ ] Logs estruturados, com request ID e redaction.
+- [ ] Logs estruturados, com `correlationId` e redaction.
 - [ ] Testes cobrem comportamento e caminhos de erro; determinísticos e isolados.
 - [ ] Sem N+1, query sem limite ou payload sem paginação.
 - [ ] Comentários explicam o porquê; sem código morto.

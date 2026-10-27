@@ -26,7 +26,7 @@ Ver [`docs/04-API-Conventions.md`](./04-API-Conventions.md). Esta spec apenas re
 
 ## 8. Validação
 
-- campos, limites e mensagens pt-BR (ver §3 daquele documento).
+- campos, limites e mensagens pt-BR (ver §3 daquele documento e [CODING_STANDARDS.md](../CODING_STANDARDS.md) §6).
 
 ## 9. Multipart
 
