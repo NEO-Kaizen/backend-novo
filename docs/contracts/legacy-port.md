@@ -4378,3 +4378,284 @@ O rascunho inicial de `createEmptyTriageAssessment` traz `lastTechnicalMessage: 
 | Rate limit          | Não se aplica: rota autenticada                                                                                                                                                     | §13                             |
 
 **Cobertura da seção:** 2 de 2 rotas do inventário — `GET /requests/:protocol/triage` (#33) e `POST /requests/:protocol/triage` (#34).
+
+## 11. mapping
+
+### 11.1 Fontes
+
+| Ref | Caminho                                                                        | Uso                                                                 |
+| --- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------- |
+| F1  | `src/modules/queue/queue.router.ts`                                            | montagem, autenticação e perfis                                     |
+| F1  | `src/modules/queue/mapping.controller.ts`                                      | handlers, protocolo e precedência de autenticação sobre validação   |
+| F1  | `src/modules/queue/mapping.schemas.ts`                                         | forma do payload do PUT                                             |
+| F1  | `src/modules/queue/mapping.service.ts`                                         | autorização, merge, conclusão, efeitos e auditoria                  |
+| F1  | `src/modules/queue/mapping.repository.ts`                                      | consultas de mapeamento, participantes, designado e contexto        |
+| F1  | `src/modules/DTOs/queue/mapping.dto.ts`                                        | `MappingResponseDTO`, `MappingPayloadDTO`, `MappingAssignee`        |
+| F1  | `src/modules/requests/statusTransition.ts`                                     | transição de status na conclusão                                    |
+| F1  | `src/modules/requests/requests.repository.ts`                                  | `ASSIGNABLE_PROFILES`                                               |
+| F1  | `docs/contract-assign-action.md`                                               | documento do legado sobre atribuição (não é contrato de mapeamento) |
+| F1  | `docs/internal-observations.md`                                                | histórico `mappings[]` (§1 do documento)                            |
+| F2  | `src/lib/api/mapping.api.ts`                                                   | chamadas HTTP                                                       |
+| F2  | `src/lib/types/mapping.ts`                                                     | tipos, constantes de UI e `MAPPING_SCHEDULED_STATUS_ID`             |
+| F2  | `src/lib/services/mapping.service.ts`                                          | montagem do payload, conversão de data e tradução de erro           |
+| F2  | `src/routes/(admin)/fila/[protocolo]/components/mapping/mapping-validation.ts` | espelho da validação no cliente                                     |
+| F2  | `src/routes/(admin)/fila/[protocolo]/components/mapping/MappingSection.svelte` | consumo do GET/PUT e modo readonly                                  |
+
+**Não existe contrato de mapeamento no legado:** nenhum arquivo em `F1 docs/` descreve `GET`/`PUT /queue/requests/:protocol/mapping`. O comentário de `F1 src/modules/DTOs/queue/mapping.dto.ts:2` cita `contrato-mapeamento.md` (issue #86), que não está versionado em F1. O único documento próximo é `F1 docs/contract-assign-action.md`, que trata de `PATCH /requests/:protocol/internal/assignee` e registra como pendência "Confirmar se `GET /queue` deve refletir `mappingAssignee` ou só `assignee` — hoje só `assignee`" (`F1 docs/contract-assign-action.md` §Pendências). O contrato efetivo desta seção é o código.
+
+### 11.2 Rotas
+
+| #   | Método | Path                                | Autenticação/autorização                                                                                          | Handler                | Sucesso                                                            | Erros                                           |
+| --- | ------ | ----------------------------------- | ----------------------------------------------------------------------------------------------------------------- | ---------------------- | ------------------------------------------------------------------ | ----------------------------------------------- |
+| 35  | GET    | `/queue/requests/:protocol/mapping` | sessão + `requireRole("Analista", "Gestor", "Administrador")`; leitura sem restrição por solicitação              | `getMappingController` | `200` `MappingResponseDTO` (estado vazio quando não há mapeamento) | `400`, `401`, `403`, `404`, `500`               |
+| 36  | PUT    | `/queue/requests/:protocol/mapping` | sessão + `requireRole("Analista", "Gestor", "Administrador")`; escrita restrita no service (Gestor nunca escreve) | `putMappingController` | `200` `MappingResponseDTO` (inclusive na criação)                  | `400`, `401`, `403`, `404`, `409`, `422`, `500` |
+
+- A montagem é `/queue` (`F1 src/router.ts:28`), portanto o path completo é `/queue/requests/:protocol/mapping` — **fora** do recurso `/requests` (`F1 src/modules/queue/queue.router.ts:25-40`).
+- O comentário do router declara que o `GET` é de leitura para todos os perfis internos e que a autorização de edição é do service (`F1 src/modules/queue/queue.router.ts:25-27`).
+
+### 11.3 GET `/queue/requests/:protocol/mapping`
+
+#### Request
+
+| Parte   | Conteúdo                                                                                                        |
+| ------- | --------------------------------------------------------------------------------------------------------------- |
+| Path    | `protocol`; vazio/espaço → `400 "Protocolo é obrigatório"` (`F1 src/modules/queue/mapping.controller.ts:12-20`) |
+| Query   | nenhuma                                                                                                         |
+| Body    | não há                                                                                                          |
+| Headers | cookie de sessão (`session_id`)                                                                                 |
+
+O `400` de protocolo não é alcançável pelo roteamento (`/requests/:protocol/mapping` não casa com segmento vazio).
+
+#### Autorização
+
+1. `requireRole("Analista", "Gestor", "Administrador")` → outro perfil recebe `403 "Acesso restrito ao perfil Analista ou Gestor ou Administrador"`; `must_change_password` recebe `403 "Troca de senha obrigatória antes de continuar"` (`F1 src/shared/middleware/requireRole.ts:11-22`).
+2. Protocolo inexistente → `404 "Solicitação não encontrada"` (`F1 src/modules/queue/mapping.service.ts:284-288`).
+3. Não há checagem de custódia, de status terminal, de status restrito nem de escopo por analista: qualquer perfil interno lê o mapeamento de qualquer protocolo (`F1 src/modules/queue/mapping.service.ts:284-306`). A restrição da fila por analista é de `GET /queue` e `GET /queue/metrics`, e o próprio documento da issue declara o mapeamento fora do escopo (`F1 docs/issues/102-scope-queue-to-analyst.md` §Escopo).
+
+#### Qual mapeamento é devolvido
+
+`findCurrentMapping` devolve o mapeamento **mais recente da solicitação, inclusive concluído**, ordenado por `created_at desc, updated_at desc` (`F1 src/modules/queue/mapping.repository.ts:172-184`). Não existe parâmetro para pedir uma versão específica: o GET sempre devolve a última linha de `mappings`.
+
+Sem nenhuma linha, a resposta é o estado vazio — `id: null`, todos os campos `null`, `participants: []`, `mappingAssignee: null` (`F1 src/modules/queue/mapping.service.ts:166-180,290-293`). É `200`, não `404`.
+
+#### Response `200`
+
+| Campo             | Tipo                                                                                            | Origem/regra                                                                                                                                             |
+| ----------------- | ----------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `protocol`        | `string`                                                                                        | protocolo da solicitação                                                                                                                                 |
+| `id`              | `string \| null`                                                                                | `mappings.mapping_id` (uuid); `null` no estado vazio                                                                                                     |
+| `targetStatus`    | `number \| null`                                                                                | `mappings.target_status_id` — id numérico de `statuses` (`F1 src/modules/queue/mapping.service.ts:118`; `F1 src/modules/queue/mapping.repository.ts:21`) |
+| `scheduledFor`    | `string \| null`                                                                                | ISO-8601 UTC com sufixo `Z` e **precisão de segundos**                                                                                                   |
+| `durationMinutes` | `number \| null`                                                                                | 15..480 no payload                                                                                                                                       |
+| `modality`        | `"REMOTE" \| "IN_PERSON" \| null`                                                               |                                                                                                                                                          |
+| `meetingLink`     | `string \| null`                                                                                | ≤ 500 no payload                                                                                                                                         |
+| `location`        | `string \| null`                                                                                | ≤ 500 no payload                                                                                                                                         |
+| `participants`    | `Array<{ id: string \| null, name: string, email: string }>`                                    | `id` = `users.user_id` serializado; `null` para participante externo; nome/e-mail de cadastrado vêm do `users` na leitura (`COALESCE`)                   |
+| `notes`           | `string \| null`                                                                                | ≤ 2000                                                                                                                                                   |
+| `mappingAssignee` | `{ id: string, userId: string, name: string, email: string, jobTitle: string \| null } \| null` | `id` = `details_professional.professional_id` (uuid); `userId` = `users.user_id` (string); `null` quando não há designado                                |
+
+- `justification` e `lastTechnicalMessage` existem no DTO como opcionais (`F1 src/modules/DTOs/queue/mapping.dto.ts:81-82`), mas o mapeador da resposta nunca os preenche — **não saem no GET** (`F1 src/modules/queue/mapping.service.ts:109-132`).
+- `mappingAssigneeId` **não** é devolvido; o designado vai só resolvido no objeto `mappingAssignee`.
+- `scheduledFor` é normalizado por `toIsoSeconds` (remove milissegundos) tanto na leitura quanto na resposta do PUT (`F1 src/modules/queue/mapping.service.ts:57-63,119,151`).
+- `mappingDate`, `meeting` e `mappingAssignee` também aparecem no detalhe interno, que é outro contrato (`F1 src/modules/DTOs/requests/RequestInternalDetail.dto.ts:68,78-79`).
+
+```json
+{
+  "protocol": "MAAT-8K3P-9X2M",
+  "id": "5b0f1c9e-2f3a-4b7c-9d10-6a2e0c4d8f77",
+  "targetStatus": 6,
+  "scheduledFor": "2026-10-15T13:30:00Z",
+  "durationMinutes": 60,
+  "modality": "REMOTE",
+  "meetingLink": "https://meet.example.com/sala-mapeamento",
+  "location": null,
+  "participants": [
+    { "id": "20", "name": "Rafael Alves", "email": "rafael.alves@example.com" },
+    { "id": null, "name": "Convidado Externo", "email": "convidado@example.com" }
+  ],
+  "notes": "Alinhamento inicial do escopo",
+  "mappingAssignee": {
+    "id": "3f6c1a54-0a1b-4c2d-8e9f-7a6b5c4d3e2f",
+    "userId": "20",
+    "name": "Rafael Alves",
+    "email": "rafael.alves@example.com",
+    "jobTitle": "Analista de processos"
+  }
+}
+```
+
+#### Erros
+
+| Status | Mensagem literal                                                  | Condição                                | Evidência                                         |
+| ------ | ----------------------------------------------------------------- | --------------------------------------- | ------------------------------------------------- |
+| 401    | `"Token não fornecido"` / `"Token inválido ou expirado"`          | sessão                                  | `F1 src/shared/middleware/auth.ts:27-45,87-95`    |
+| 403    | `"Troca de senha obrigatória antes de continuar"`                 | `must_change_password`                  | `F1 src/shared/middleware/requireRole.ts:11-13`   |
+| 403    | `"Acesso restrito ao perfil Analista ou Gestor ou Administrador"` | perfil fora da lista                    | `F1 src/shared/middleware/requireRole.ts:21-22`   |
+| 404    | `"Solicitação não encontrada"`                                    | protocolo inexistente (sem ponto final) | `F1 src/modules/queue/mapping.service.ts:285-288` |
+
+### 11.4 PUT `/queue/requests/:protocol/mapping`
+
+#### Request
+
+`Content-Type: application/json`. O ator é validado **antes** do body: sessão inválida responde `401` mesmo com corpo malformado (`F1 src/modules/queue/mapping.controller.ts:42-47`). Body que não seja objeto JSON → `400 "O payload deve ser um objeto JSON."` (`F1 src/modules/queue/mapping.controller.ts:49-52`). Chaves desconhecidas são **descartadas** (o schema não é `.strict()`, ao contrário do de triagem) — `F1 src/modules/queue/mapping.schemas.ts:62-119`.
+
+| Campo                  | Tipo/limite                                                        | Obrigatório                                             | Regra                                                                                                                                                                   |
+| ---------------------- | ------------------------------------------------------------------ | ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                   | uuid                                                               | não                                                     | Seleciona o mapeamento alvo; ausente → mapeamento **aberto** mais recente                                                                                               |
+| `mappingAssigneeId`    | uuid de `details_professional` ou `null`                           | não                                                     | Ausente mantém; `null` em mapeamento existente **remove** a designação; `null` na criação equivale a herdar o responsável                                               |
+| `scheduledFor`         | ISO-8601 com offset (`z.iso.datetime({ offset: true })`) ou `null` | não                                                     | `"Data/hora inválida — envie ISO-8601 com offset (ex.: 2026-10-15T10:30:00-03:00)."`                                                                                    |
+| `durationMinutes`      | inteiro, 15..480, ou `null`                                        | não                                                     | `"Deve ser um número inteiro."` / `"Mínimo de 15 minutos."` / `"Máximo de 480 minutos."`                                                                                |
+| `modality`             | `"REMOTE"` \| `"IN_PERSON"` \| `null`                              | não                                                     | `"Modalidade inválida — opções: REMOTE ou IN_PERSON."`                                                                                                                  |
+| `meetingLink`          | string ≤ 500 ou `null`                                             | não                                                     | `"Máximo de 500 caracteres."`                                                                                                                                           |
+| `location`             | string ≤ 500 ou `null`                                             | não                                                     | `"Máximo de 500 caracteres."`                                                                                                                                           |
+| `notes`                | string ≤ 2000 ou `null`                                            | não                                                     | `"Máximo de 2.000 caracteres."`                                                                                                                                         |
+| `participants`         | array (≤ 20) de `{ id?, name (≤255), email }`                      | não                                                     | `id` aceita número, string numérica ou `null` (vira ausente = externo); e-mail válido e ≤ 254; duplicados rejeitados (`"Participantes duplicados não são permitidos."`) |
+| `completeMapping`      | boolean                                                            | **sim**                                                 | `"Informe completeMapping (true ou false)."`                                                                                                                            |
+| `targetStatus`         | inteiro positivo                                                   | não (obrigatório quando `completeMapping: true`)        | `"Status de destino inválido."`                                                                                                                                         |
+| `justification`        | string 1..4000                                                     | não (obrigatório na conclusão com `targetStatus !== 6`) | `"Campo obrigatório."` / `"Máximo de 4.000 caracteres."`; **não aceita `null`**                                                                                         |
+| `lastTechnicalMessage` | string 1..4000 ou `null`                                           | condicional                                             | Obrigatório quando o destino é público                                                                                                                                  |
+
+Evidência: `F1 src/modules/queue/mapping.schemas.ts:20-119`; `F1 src/shared/validation/fieldSchemas.ts:5-10,20-25` (`requiredString`, `emailSchema`).
+
+Forma inválida → `422` `message` agregada + `fields` objeto (`F1 src/modules/queue/mapping.controller.ts:54-58`; `F1 src/shared/validation/zodErrors.ts:57-117`). O erro de tipo do próprio objeto (`"O payload deve ser um objeto JSON com a chave completeMapping."`) também é do schema (`F1 src/modules/queue/mapping.schemas.ts:116-118`), mas o controller já barra não-objeto com `400` antes.
+
+#### Semântica: merge, não substituição
+
+`mergeValues` é PATCH-like: campo **ausente** mantém o valor atual; `null` **ou string vazia** limpa; valor presente sobrescreve (`F1 src/modules/queue/mapping.service.ts:182-204`). `participants` presente **substitui a lista inteira** (delete + insert na mesma transação) — `F1 src/modules/queue/mapping.repository.ts:361-382`.
+
+Alvo do PUT: `id` explícito (`findMappingById`, restrito à solicitação) ou, sem `id`, o mapeamento **aberto** mais recente (`is_concluded = false`) — `F1 src/modules/queue/mapping.repository.ts:186-211`. Sem mapeamento aberto, o PUT **cria** um novo registro (`F1 src/modules/queue/mapping.service.ts:542-556`).
+
+`id` funciona como **seletor de alvo**, não como trava de concorrência: não há versão nem `expectedVersion`. `id` inexistente na solicitação → `404 "Mapeamento não encontrado."`; `id` de mapeamento já concluído → `422 "Este mapeamento já foi concluído e não pode ser editado."` (`F1 src/modules/queue/mapping.service.ts:362-371`).
+
+Nenhum campo de atualização e `completeMapping: false` → `400 "Informe ao menos um campo para atualizar o mapeamento."` (`F1 src/modules/queue/mapping.service.ts:407-425`).
+
+#### Autorização (no service, dentro da transação)
+
+| Ação                                                                          | Quem passa                                                                                                                           |
+| ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| Editar campos / concluir (`contentAction`)                                    | Administrador; **designado atual** do mapeamento; na **criação** sem designação, o responsável pela solicitação ou o designado atual |
+| Designar (`mappingAssigneeId` presente, ou `null` sobre mapeamento existente) | Administrador; **responsável pela solicitação**; designado atual                                                                     |
+
+- Gestor: `403 "Ação restrita ao Administrador ou ao Analista responsável pela demanda."` com `code: "INSUFFICIENT_ROLE_PERMISSIONS"`, com auditoria `request.access_denied` e `note` `"Mapping negado: perfil Gestor é somente leitura"` (`F1 src/modules/queue/mapping.service.ts:322-334`).
+- Status terminal → `422 "Solicitação encerrada."`, com auditoria (`note` `"Mapping negado: demanda encerrada"`) (`F1 src/modules/queue/mapping.service.ts:336-341`).
+- Status restrito (`Priorizado`) → `403` com o mesmo par mensagem/`code`, **inclusive para Administrador**, com auditoria (`note` `"Mapping negado: demanda priorizada"`) (`F1 src/modules/queue/mapping.service.ts:343-353`). Difere da triagem, onde Administrador passa (§10.4).
+- Sem permissão para designar → `403 "Você não tem permissão para designar o mapeamento: apenas o responsável pela solicitação ou Administrador."` + `code`, com auditoria (`note` `"Mapping negado: sem permissão para designar o mapeamento"`) (`F1 src/modules/queue/mapping.service.ts:427-439`).
+- Sem permissão para editar → `403 "Você não tem permissão para editar este mapeamento."` + `code`, com auditoria (`note` `"Mapping negado: sem custódia para editar o mapeamento"`) (`F1 src/modules/queue/mapping.service.ts:440-452`).
+- Os dois eixos são independentes: enviar `mappingAssigneeId` não dispensa a checagem de edição (`F1 src/modules/queue/mapping.service.ts:404-421`).
+- O contexto é relido **dentro** da transação com `forUpdate` na solicitação, fechando a janela entre checagem e commit (`F1 src/modules/queue/mapping.repository.ts:75-111`; `F1 src/modules/queue/mapping.service.ts:314-320`).
+
+#### Designado
+
+- `mappingAssigneeId` é `details_professional.professional_id` (uuid) — não `users.user_id` (`F1 src/modules/queue/mapping.service.ts:454-476`).
+- Sem designação explícita: mantém o atual; ao criar, herda `requests.mapping_professional_id ?? requests.professional_id` (`F1 src/modules/queue/mapping.service.ts:470-476`).
+- Candidato inexistente → `422 "Designado não encontrado."`; `details_professional.status !== 'active'` ou usuário inativo → `422 "Designado inativo."`; perfil fora de `ASSIGNABLE_PROFILES` (`["analista"]`) → `422 "Perfil do designado não permite executar o mapeamento."` (`F1 src/modules/queue/mapping.service.ts:274-282,457-467`; `F1 src/modules/requests/requests.repository.ts:641`).
+
+#### Conclusão (`completeMapping: true`)
+
+1. `targetStatus` ausente → `422` `"Validação falhou"` + `fields.targetStatus: "Informe o status de destino ao concluir o mapeamento"` (`F1 src/modules/queue/mapping.service.ts:483-489`).
+2. Elegibilidade: `is_active = true`, `is_restricted = false` e `mapping_mode = 'conclusion_only'` — igualmente só `conclusion_only` (`F1 src/modules/queue/mapping.repository.ts:113-137`). Falha → `422` + `fields.targetStatus: "Status deve ter mappingMode conclusion_only e isRestricted=false"` (`F1 src/modules/queue/mapping.service.ts:491-499`).
+3. **Destino diferente de `6`** — `6` é o status `"Mapeamento agendado"` do cadastro (`F1 migrations/requester_request/20260926000000_complete_status_transition_v4.js:57-67`): `justification` obrigatória (`422` + `fields.justification: "Justificativa obrigatória ao concluir o mapeamento (1..4000 caracteres)."`), `lastTechnicalMessage` obrigatório se o destino é público (`422` + `fields.lastTechnicalMessage: "Retorno ao solicitante obrigatório para status público (1..4000 caracteres)."`), e **todos os campos da reunião são zerados** (`values = emptyValues()`), com `participants: []` (`F1 src/modules/queue/mapping.service.ts:500-519,532-537`).
+4. **Destino `6`** (agendamento): exige modalidade compatível e os campos da reunião completos (`F1 src/modules/queue/mapping.service.ts:520-526`; ver abaixo). `justification` e `lastTechnicalMessage` não são exigidos e são gravados como `null` (`F1 src/modules/queue/mapping.service.ts:549-553,566-567`).
+5. Transição de status na mesma transação: `applyStatusTransition` com `expectedStatusId` lido do contexto; se o status mudou nesse intervalo → `409 "Solicitação foi atualizada por outra operação"` (`F1 src/modules/requests/statusTransition.ts:38-51`; `F1 src/modules/queue/mapping.service.ts:619-630`).
+6. `requests.meeting_scheduled_for`/`meeting_link` são atualizados **só** quando o destino é `6`; nos demais casos são zerados (`F1 src/modules/queue/mapping.service.ts:632-638`).
+7. Liberação automática do designado: quando o destino **não** é `6` e havia `mapping_professional_id`, `requests.mapping_professional_id = null` com auditoria `mapping.assign` `newValue: null`, `changeOrigin: "system"`. Agendar (6) mantém o designado (`F1 src/modules/queue/mapping.service.ts:657-672`; `F1 src/modules/queue/mapping.repository.ts:343-359`).
+8. `mappings.is_concluded = true` e `concluded_at` só na conclusão; rascunho não reescreve esses campos (`F1 src/modules/queue/mapping.repository.ts:311-341`).
+
+Regras de completude (rascunho **e** conclusão):
+
+| Regra                                                                   | Mensagem literal                                               | Evidência                                                 |
+| ----------------------------------------------------------------------- | -------------------------------------------------------------- | --------------------------------------------------------- |
+| `modality === "REMOTE"` sem `meetingLink`                               | `"Modalidade remota exige o link da reunião (meetingLink)."`   | `F1 src/modules/queue/mapping.service.ts:206-214,528-530` |
+| `modality === "IN_PERSON"` sem `location`                               | `"Modalidade presencial exige o local da reunião (location)."` | `F1 src/modules/queue/mapping.service.ts:206-214,528-530` |
+| conclusão sem `modality`/`scheduledFor`/`durationMinutes`/link ou local | `422 "Revise os campos do mapeamento: informe \"<campo>\"."`   | `F1 src/modules/queue/mapping.service.ts:216-224,521-525` |
+
+#### Participantes
+
+- Com `id`: nome/e-mail vêm do cadastro e a divergência do payload é **ignorada**; `id` inexistente/inativo (usuário ou perfil) → `422 "Participante inválido: usuário inexistente ou inativo."` (`F1 src/modules/queue/mapping.service.ts:226-252`; `F1 src/modules/queue/mapping.repository.ts:236-276`).
+- Sem `id`: participante externo, persistido como enviado, e-mail em minúsculas (`F1 src/modules/queue/mapping.service.ts:242-245`; `F1 src/modules/queue/mapping.repository.ts:373-380`).
+- Unicidade revalidada após a resolução, por e-mail (case-insensitive) e por `user_id` → `422 "Participantes duplicados não são permitidos."` (`F1 src/modules/queue/mapping.service.ts:254-269`).
+
+#### Auditoria
+
+| Evento                  | Quando                                             | Corpo                                                                                                                                                                               | Evidência                                         |
+| ----------------------- | -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| `mapping.save`          | todo PUT que não conclui (inclusive só designação) | `entityType: "mapping"`, `entityId` = `mapping_id`, `previousValue`/`newValue` com os seis campos + `mappingAssigneeId` + `targetStatus` (+ `justification`/`lastTechnicalMessage`) | `F1 src/modules/queue/mapping.service.ts:576-604` |
+| `mapping.complete`      | PUT que conclui                                    | idem, `actionType: "mapping.complete"`                                                                                                                                              | `F1 src/modules/queue/mapping.service.ts:595-604` |
+| `mapping.assign`        | designação alterada                                | `previousValue`/`newValue` = `professional_id`                                                                                                                                      | `F1 src/modules/queue/mapping.service.ts:606-617` |
+| `request.status_change` | conclusão                                          | `previousValue` = status anterior, `newValue` = nome do destino, `note` = justificativa (exceto destino 6), `changeOrigin: "system"`                                                | `F1 src/modules/queue/mapping.service.ts:640-655` |
+| `request.access_denied` | toda negação do PUT                                | `note` = `"Mapping negado: <detalhe>"`, `changeOrigin: "system"`                                                                                                                    | `F1 src/modules/queue/mapping.service.ts:35-55`   |
+
+`changeOrigin` das escritas é `"admin"` quando o ator é Administrador e `"internal"` nos demais casos (`F1 src/modules/queue/mapping.service.ts:574`).
+
+#### Response `200`
+
+Mesmo shape do GET (`§11.3`), montado a partir dos valores em memória já persistidos (`F1 src/modules/queue/mapping.service.ts:134-164,690-697`). `targetStatus` reflete o destino da conclusão quando houve, senão o valor persistido (`F1 src/modules/queue/mapping.service.ts:693`). A criação também responde `200` (`F1 src/modules/queue/mapping.controller.ts:62`).
+
+#### Erros
+
+| Status | Mensagem literal                                                                                                              | Condição                                                                  | Evidência                                                                                             |
+| ------ | ----------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| 400    | `"Protocolo é obrigatório"`                                                                                                   | protocolo vazio (não alcançável pelo roteamento)                          | `F1 src/modules/queue/mapping.controller.ts:15-17`                                                    |
+| 401    | `"Token inválido ou expirado"`                                                                                                | `req.user` ausente ou `id` não inteiro                                    | `F1 src/modules/queue/mapping.controller.ts:23-34`                                                    |
+| 400    | `"O payload deve ser um objeto JSON."`                                                                                        | body `null`, array ou primitivo                                           | `F1 src/modules/queue/mapping.controller.ts:49-52`                                                    |
+| 422    | `"Validação falhou"` + `fields`                                                                                               | forma do payload, `targetStatus`, `justification`, `lastTechnicalMessage` | `F1 src/modules/queue/mapping.controller.ts:54-58`; `F1 src/modules/queue/mapping.service.ts:484-518` |
+| 404    | `"Solicitação não encontrada"`                                                                                                | protocolo inexistente                                                     | `F1 src/modules/queue/mapping.service.ts:317-320`                                                     |
+| 403    | `"Ação restrita ao Administrador ou ao Analista responsável pela demanda."` + `code: "INSUFFICIENT_ROLE_PERMISSIONS"`         | Gestor, ou status restrito (qualquer perfil)                              | `F1 src/modules/queue/mapping.service.ts:329-353`                                                     |
+| 422    | `"Solicitação encerrada."`                                                                                                    | status terminal                                                           | `F1 src/modules/queue/mapping.service.ts:338-341`                                                     |
+| 404    | `"Mapeamento não encontrado."`                                                                                                | `id` inexistente na solicitação                                           | `F1 src/modules/queue/mapping.service.ts:366-368`                                                     |
+| 422    | `"Este mapeamento já foi concluído e não pode ser editado."`                                                                  | alvo concluído                                                            | `F1 src/modules/queue/mapping.service.ts:369-371`                                                     |
+| 400    | `"Informe ao menos um campo para atualizar o mapeamento."`                                                                    | sem `contentAction` e sem designação                                      | `F1 src/modules/queue/mapping.service.ts:423-425`                                                     |
+| 403    | `"Você não tem permissão para designar o mapeamento: apenas o responsável pela solicitação ou Administrador."` + `code`       | sem permissão de designar                                                 | `F1 src/modules/queue/mapping.service.ts:427-439`                                                     |
+| 403    | `"Você não tem permissão para editar este mapeamento."` + `code`                                                              | sem custódia                                                              | `F1 src/modules/queue/mapping.service.ts:440-452`                                                     |
+| 422    | `"Designado não encontrado."` / `"Designado inativo."` / `"Perfil do designado não permite executar o mapeamento."`           | designação inválida                                                       | `F1 src/modules/queue/mapping.service.ts:274-282,462-467`                                             |
+| 422    | `"Modalidade remota exige o link da reunião (meetingLink)."` / `"Modalidade presencial exige o local da reunião (location)."` | modalidade incompleta                                                     | `F1 src/modules/queue/mapping.service.ts:206-214`                                                     |
+| 422    | `"Revise os campos do mapeamento: informe \"<campo>\"."`                                                                      | conclusão em `6` incompleta                                               | `F1 src/modules/queue/mapping.service.ts:524`                                                         |
+| 422    | `"Participante inválido: usuário inexistente ou inativo."` / `"Participantes duplicados não são permitidos."`                 | participantes                                                             | `F1 src/modules/queue/mapping.service.ts:249,259-265`                                                 |
+| 422    | `"Informe o retorno ao solicitante para um status público."`                                                                  | destino público sem retorno (checagem final da transição)                 | `F1 src/modules/requests/statusTransition.ts:28-32`                                                   |
+| 409    | `"Solicitação foi atualizada por outra operação"`                                                                             | status mudou entre a leitura e o update (sem ponto final)                 | `F1 src/modules/requests/statusTransition.ts:44-50`                                                   |
+
+#### Transporte
+
+JSON puro, sem multipart e sem paginação. `scheduledFor` de entrada aceita offset (`-03:00` ou `Z`) e a resposta sempre devolve UTC `Z` com precisão de segundos (`F1 src/modules/queue/mapping.schemas.ts:71-77`; `F1 src/modules/queue/mapping.service.ts:57-63`). `ip` da requisição vai para a auditoria (`F1 src/modules/queue/mapping.controller.ts:60`).
+
+### 11.5 Visão do consumidor (F2) e drift
+
+`F2 src/lib/api/mapping.api.ts:9-45` chama `GET`/`PUT /queue/requests/{protocol}/mapping` com `encodeURIComponent` e `credentials: 'include'` (`F2 src/lib/api/client.ts:55-62`), e o tipo do payload espelha os campos do backend (`F2 src/lib/types/mapping.ts:53-69`).
+
+| Ponto                              | F2                                                                                                                                                                                                        | Backend (F1)                                                                              | Evidência                                                                                                                                                                                        |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Estado vazio                       | `getMapping` tipado `MappingResponse \| null` e comentário fala em "estado vazio… resposta válida"                                                                                                        | nunca devolve `null`: devolve objeto com todos os campos `null` e `participants: []`      | `F2 src/lib/api/mapping.api.ts:7-20`; `F1 src/modules/queue/mapping.service.ts:166-180,290-293`                                                                                                  |
+| `completeMapping`                  | sempre `true`; o rascunho (`false`) não é usado                                                                                                                                                           | aceita `false` (rascunho: `mapping.save`) e `true` (conclusão: `mapping.complete`)        | `F2 src/lib/api/mapping.api.ts:23-24`; `F2 src/lib/services/mapping.service.ts:67`; `F1 src/modules/queue/mapping.service.ts:595-598`                                                            |
+| Designado                          | `buildMappingPayload` envia `mappingAssigneeId: null` sempre que o rascunho está vazio                                                                                                                    | `null` sobre mapeamento existente **remove** a designação (passa por `designationAction`) | `F2 src/lib/services/mapping.service.ts:69`; `F1 src/modules/queue/mapping.service.ts:383-385,456-476`                                                                                           |
+| Origem do designado no formulário  | lê `saved.mappingAssigneeId`, que o GET nunca devolve — o rascunho parte de `''`                                                                                                                          | GET devolve só `mappingAssignee` resolvido                                                | `F2 src/routes/(admin)/fila/[protocolo]/components/mapping/mapping-validation.ts:79`; `F2 src/lib/types/mapping.ts:47`; `F1 src/modules/queue/mapping.service.ts:124-131`                        |
+| Campos write-only no tipo          | declara `justification`/`lastTechnicalMessage` no `MappingResponse`                                                                                                                                       | não são devolvidos pelo GET/PUT                                                           | `F2 src/lib/types/mapping.ts:45-50`; `F1 src/modules/queue/mapping.service.ts:109-132`                                                                                                           |
+| `justification` vazia              | omitida do body, nunca `null` (o schema rejeita `null`)                                                                                                                                                   | `justification` é `requiredString(4000).optional()`; `null` dá `422`                      | `F2 src/lib/services/mapping.service.ts:70-75`; `F1 src/modules/queue/mapping.schemas.ts:111-114`                                                                                                |
+| Data                               | `datetime-local` → `new Date(...).toISOString()` (com milissegundos); valida "futuro ou hoje" no cliente                                                                                                  | aceita offset e normaliza para UTC com precisão de **segundos**; não valida data futura   | `F2 src/lib/services/mapping.service.ts:24-33`; `F2 src/routes/(admin)/fila/[protocolo]/components/mapping/mapping-validation.ts:16-31,199-208`; `F1 src/modules/queue/mapping.service.ts:57-63` |
+| Limite de `location`               | 255 caracteres no cliente                                                                                                                                                                                 | 500 no schema                                                                             | `F2 src/lib/types/mapping.ts:116`; `F1 src/modules/queue/mapping.schemas.ts:92`                                                                                                                  |
+| Duração                            | opções de UI até 120 minutos                                                                                                                                                                              | schema aceita 15..480                                                                     | `F2 src/lib/types/mapping.ts:106-113`; `F1 src/modules/queue/mapping.schemas.ts:78-84`                                                                                                           |
+| Modalidade                         | pré-seleciona `REMOTE` no rascunho vazio                                                                                                                                                                  | sem default: `null` é válido no rascunho, obrigatório na conclusão em `6`                 | `F2 src/routes/(admin)/fila/[protocolo]/components/mapping/mapping-validation.ts:33-48`; `F1 src/modules/queue/mapping.service.ts:217-224`                                                       |
+| Reunião travada quando destino ≠ 6 | envia `scheduledFor`/`modality`/`meetingLink`/`location`/`participants`/`notes` como `null`/`[]`                                                                                                          | conclusão ≠ 6 zera os valores no servidor de qualquer forma                               | `F2 src/lib/services/mapping.service.ts:52-66`; `F1 src/modules/queue/mapping.service.ts:519`                                                                                                    |
+| Estado concluído                   | deduz de `solicitation.status` contra uma lista fixa de status "pré-mapeamento"                                                                                                                           | o GET não expõe `is_concluded`/`concluded_at`                                             | `F2 src/routes/(admin)/fila/[protocolo]/components/mapping/mapping-validation.ts:88-98`; `F1 src/modules/queue/mapping.repository.ts:17-34`                                                      |
+| Erros                              | traduz por status: 400 `"Dados inválidos. Revise os campos do mapeamento."`, 403 `"Você não tem permissão para editar o mapeamento."`, 404 `"Solicitação não encontrada."`, 422 usa a mensagem do backend | três `403` distintos; `404` também cobre `"Mapeamento não encontrado."`                   | `F2 src/lib/services/mapping.service.ts:80-104`; `F1 src/modules/queue/mapping.service.ts:366-368,427-452`                                                                                       |
+| Participantes externos             | omite `id` quando vazio                                                                                                                                                                                   | `id` ausente ou `null` = externo                                                          | `F2 src/lib/services/mapping.service.ts:35-43`; `F1 src/modules/queue/mapping.schemas.ts:20-33`                                                                                                  |
+
+### 11.6 Confronto com `docs/04-API-Conventions.md`
+
+| Tema                  | Situação                                                                                                                                                                                               | Ponteiro                         |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------- |
+| Base path             | Divergente (legado vigente): recurso sob `/queue`, sem `/api/v1`                                                                                                                                       | #1 / §1                          |
+| Sucesso               | Divergente (legado vigente): `PUT` que **cria** mapeamento responde `200`, não `201`                                                                                                                   | #20 / §15.4                      |
+| Método e idempotência | Divergente (legado vigente): `PUT` faz **merge** (semântica de `PATCH`) em vez de substituir o recurso; repetir o PUT depois da conclusão devolve `422`, então a operação não é idempotente na prática | #11 / §8.2                       |
+| Concorrência          | Divergente (legado vigente): mudança de status embutida no `PUT`, com `targetStatus` numérico e sem `targetStatusKey`/`expectedStatusKey`; o `409` não traz `currentStatusKey`/`currentStatusId`       | #10 / §8.1                       |
+| Referência a status   | Divergente (legado vigente): `targetStatus` é `statuses.status_id` numérico; a `key` não vai ao wire                                                                                                   | #18 / ADR-0003, ADR-0021 / §15.1 |
+| Ids no wire           | Divergente (legado vigente): `participants[].id` é `users.user_id` numérico serializado como string                                                                                                    | #18 / §15.1                      |
+| Validação             | Divergente (legado vigente): `422` + `fields` objeto; `400` apenas para corpo não-objeto e para "nenhum campo"                                                                                         | #5 / §3; decisão D12 de #19      |
+| `code` de erro        | Divergente (legado vigente): `INSUFFICIENT_ROLE_PERMISSIONS` em `UPPER_SNAKE`; `404`/`409`/`422` sem `code`                                                                                            | #4 / §2.3                        |
+| Autorização           | Divergente (legado vigente): perfis + custódia no service, em vez de capability keys com escopo `own`/`all`                                                                                            | #8 / ADR-0025 / §6               |
+| Datas                 | Compatível: `scheduledFor` trafega em ISO-8601 UTC com `Z` (entrada aceita offset e é normalizada)                                                                                                     | #13 / §10                        |
+| Content types         | Compatível: só JSON                                                                                                                                                                                    | #12 / §9                         |
+| Paginação             | Não se aplica: recurso único, sem listagem                                                                                                                                                             | §4                               |
+| Request-id            | Divergente (legado vigente): sem `x-request-id` e sem `requestId` no envelope                                                                                                                          | #15 / §12                        |
+| Rate limit            | Não se aplica: rota autenticada                                                                                                                                                                        | §13                              |
+
+**Cobertura da seção:** 2 de 2 rotas do inventário — `GET /queue/requests/:protocol/mapping` (#35) e `PUT /queue/requests/:protocol/mapping` (#36).
