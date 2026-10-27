@@ -4659,3 +4659,245 @@ JSON puro, sem multipart e sem paginação. `scheduledFor` de entrada aceita off
 | Rate limit            | Não se aplica: rota autenticada                                                                                                                                                                        | §13                              |
 
 **Cobertura da seção:** 2 de 2 rotas do inventário — `GET /queue/requests/:protocol/mapping` (#35) e `PUT /queue/requests/:protocol/mapping` (#36).
+
+## 12. prioritization
+
+Duas rotas do inventário (§4, #37 e #38), montadas em `/prioritization` (`F1 src/router.ts:18`). O router aplica `authMiddleware` a todas as rotas (`F1 src/modules/prioritization/prioritization.router.ts:8`); não existe rota pública neste domínio.
+
+O domínio lê os critérios e as faixas da configuração (`criteria`, `priorities`), calcula a nota e grava o estado atual em `prioritization_evaluations`; o histórico de reavaliações fica em `audit_history`, sem tabela própria (`F1 migrations/20260912010000_create_prioritization_evaluations.js:4-10`).
+
+### 12.1 Fontes
+
+| Ref | Caminho                                                                                                                                                                                                           | Uso                                                               |
+| --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| F1  | `src/modules/prioritization/prioritization.router.ts`                                                                                                                                                             | montagem, autenticação e autorização de perfil                    |
+| F1  | `src/modules/prioritization/prioritization.controller.ts`                                                                                                                                                         | validação de path/body, ator e respostas                          |
+| F1  | `src/modules/prioritization/prioritization.schema.ts`                                                                                                                                                             | corpo de `PUT .../score`                                          |
+| F1  | `src/modules/prioritization/prioritization.service.ts`                                                                                                                                                            | autorização de custódia, cálculo, classificação e auditoria       |
+| F1  | `src/modules/prioritization/prioritization.repository.ts`                                                                                                                                                         | consultas de critérios, faixas e upsert da avaliação              |
+| F1  | `src/modules/DTOs/prioritization/PrioritizationRequests.dto.ts`                                                                                                                                                   | corpo e snapshot de auditoria                                     |
+| F1  | `src/modules/DTOs/prioritization/PrioritizationResponse.dto.ts`                                                                                                                                                   | resposta das duas rotas                                           |
+| F1  | `src/shared/types/criteria.ts`                                                                                                                                                                                    | ponte entre as chaves de `portal-config` e os `criterion_id`      |
+| F1  | `src/shared/types/prioritization.ts`                                                                                                                                                                              | linhas de `criteria`, `priorities` e `prioritization_evaluations` |
+| F1  | `src/modules/requests/requests.repository.ts`; `src/modules/requests/requests.service.ts`                                                                                                                         | leitura da Prioridade na solicitação e no detalhe interno         |
+| F1  | `src/modules/queue/queue.repository.ts`; `src/modules/reports/reports.repository.ts`                                                                                                                              | leitura da Prioridade na fila e nos relatórios                    |
+| F1  | `migrations/20260912010000_create_prioritization_evaluations.js`; `migrations/requester_request/20260912003734_create_criteria.js`; `migrations/requester_request/20260916170010_adjust_criteria_weight_check.js` | schema das tabelas e CHECK de peso                                |
+| F1  | `seeds/requester_request/002_criteria.js`; `seeds/requester_request/003_priorities.js`                                                                                                                            | conteúdo de referência dos critérios e das faixas                 |
+| F1  | `docs/portal-config-api-0_4.md` §8                                                                                                                                                                                | referência ao contrato de priorização citado pelo legado          |
+| F1  | `docs/audit-events.md`                                                                                                                                                                                            | entidade e ação de auditoria `prioritization`/`evaluate`          |
+| F2  | `src/lib/api/prioritization.api.ts`                                                                                                                                                                               | chamadas do consumidor                                            |
+| F2  | `src/lib/types/prioritization.ts`                                                                                                                                                                                 | tipos de wire e de UI                                             |
+| F2  | `src/lib/services/prioritization.service.ts`                                                                                                                                                                      | validação local, submissão e conversão de resultado               |
+| F2  | `src/lib/types/request.ts`; `src/routes/(admin)/fila/[protocolo]/components/SolicitationSpecs.svelte`; `.../PrioritizationCalculator.svelte`                                                                      | leitura do detalhe interno e reavaliação                          |
+
+**Contrato markdown no legado:** não existe contrato de priorização versionado em `F1 docs/`. Os comentários citam `RN-007`/`RN-008` e `issue-51`; o consumidor cita `docs/issue-51.md` (`F2 src/lib/types/prioritization.ts:25`), e `F1 docs/portal-config-api-0_4.md` §8 cita `prioritization-api.md`; nenhum desses arquivos está presente no tree de `F1`. O contrato efetivo desta seção é o código.
+
+### 12.2 Rotas
+
+| #   | Método | Path                              | Autenticação/autorização                                                                 | Handler         | Sucesso | Erros                             |
+| --- | ------ | --------------------------------- | ---------------------------------------------------------------------------------------- | --------------- | ------- | --------------------------------- |
+| 37  | GET    | `/prioritization/criteria`        | cookie de sessão; `Analista`, `Gestor` ou `Administrador`                                | `listCriteria`  | `200`   | `401`, `403`, `500`               |
+| 38  | PUT    | `/prioritization/:protocol/score` | cookie de sessão; `Analista` ou `Administrador`; no service, `Administrador` ou assignee | `evaluateScore` | `200`   | `400`, `401`, `403`, `404`, `500` |
+
+Autenticação comum: `authMiddleware` exige o cookie de sessão e responde `401 "Token não fornecido"` na ausência e `401 "Token inválido ou expirado"` para token inválido/expirado/usuário inativo (`F1 src/shared/middleware/auth.ts:27-45,87-95`). Com `must_change_password`, qualquer rota deste domínio responde `403 "Troca de senha obrigatória antes de continuar"` (`F1 src/shared/middleware/auth.ts:49-61`). O `requireRole` responde `403 "Acesso restrito ao perfil <perfis unidos por ' ou '>"` (`F1 src/shared/middleware/requireRole.ts:21-23`). O envelope de erro não tem `code` nestas rotas (`F1 src/shared/errors/AppError.ts:1-11`).
+
+### 12.3 GET `/prioritization/criteria`
+
+Lista os critérios ativos com o peso vigente.
+
+#### Request
+
+| Parte   | Conteúdo                                    |
+| ------- | ------------------------------------------- |
+| path    | —                                           |
+| query   | —                                           |
+| body    | —                                           |
+| headers | cookie de sessão (`session_id` por default) |
+
+#### Response `200`
+
+`ListCriteriaResponse` (`F1 src/modules/DTOs/prioritization/PrioritizationResponse.dto.ts:10-13`):
+
+```json
+{
+  "criteria": [
+    { "id": "impacto_operacional", "name": "Impacto operacional", "weight": 10 },
+    { "id": "risco_operacional", "name": "Risco operacional", "weight": 10 },
+    { "id": "urgencia", "name": "Urgência", "weight": 10 },
+    { "id": "volumetria", "name": "Volumetria", "weight": 10 },
+    { "id": "esforco_manual", "name": "Esforço manual", "weight": 10 },
+    { "id": "impacto_cliente", "name": "Impacto no cliente", "weight": 10 },
+    { "id": "prazo_regulatorio", "name": "Prazo regulatório", "weight": 10 },
+    { "id": "areas_impactadas", "name": "Áreas impactadas", "weight": 10 },
+    { "id": "alinhamento_estrategico", "name": "Alinhamento estratégico", "weight": 10 },
+    { "id": "complexidade_estimada", "name": "Complexidade estimada", "weight": 10 }
+  ]
+}
+```
+
+Regras efetivas:
+
+- Só entram critérios com `active = true`, ordenados por `display_order` ascendente (`F1 src/modules/prioritization/prioritization.repository.ts:32-34`).
+- O item expõe apenas `id`, `name` e `weight`; `id` é o `criterion_id` da tabela `criteria` (`F1 src/modules/prioritization/prioritization.service.ts:17-24`), em `snake_case` português, não a chave `camelCase` de `portal-config`.
+- As dez chaves de `portal-config` mapeiam para esses `criterion_id` pela constante `CRITERION_KEY_TO_ID` (`F1 src/shared/types/criteria.ts:8-19`); a configuração administrativa expõe o inverso, de `criterion_id` para chave (`F1 src/modules/portalConfig/portalConfig.service.ts:89-94`).
+- `weight` é inteiro lido direto de `criteria.weight`, sem normalização (`F1 src/modules/prioritization/prioritization.service.ts:19-23`; `F1 migrations/requester_request/20260912003734_create_criteria.js:5`). O seed grava `10` nos dez critérios (`F1 seeds/requester_request/002_criteria.js:4-98`).
+- A escrita administrativa de pesos aceita inteiro de 1 a 10 (`F1 src/modules/portalConfig/portalConfig.schema.ts:228-232`), mas o CHECK do banco aceita 0 a 10 (`F1 migrations/requester_request/20260916170010_adjust_criteria_weight_check.js:10`).
+- O payload **não** tem `maxScore`, `scale`, `total`, `page` nem qualquer envelope de paginação; a lista é o objeto `{ criteria }` completo.
+- O nome e o peso vêm do banco: mudanças em `criteria` aparecem na resposta sem alteração de código.
+
+#### Erros
+
+| Status | `code` | Mensagem literal                                                  | Condição                                    |
+| ------ | ------ | ----------------------------------------------------------------- | ------------------------------------------- |
+| 401    | —      | `"Token não fornecido"`                                           | sem cookie de sessão                        |
+| 401    | —      | `"Token inválido ou expirado"`                                    | token inválido, expirado ou usuário inativo |
+| 401    | —      | `"Sua sessão foi revogada. Faça login novamente."`                | token emitido antes da troca/reset de senha |
+| 403    | —      | `"Troca de senha obrigatória antes de continuar"`                 | `must_change_password` verdadeiro           |
+| 403    | —      | `"Acesso restrito ao perfil Analista ou Gestor ou Administrador"` | outro perfil, inclusive `Solicitante`       |
+| 500    | —      | `"Erro interno do servidor"`                                      | falha não prevista (envelope genérico)      |
+
+Evidência: `F1 src/modules/prioritization/prioritization.router.ts:11-15`; `F1 src/modules/prioritization/prioritization.controller.ts:24-28`; `F1 src/shared/middleware/errorHandler.ts:39-43`.
+
+### 12.4 PUT `/prioritization/:protocol/score`
+
+Avalia ou reavalia a priorização de uma solicitação.
+
+#### Request
+
+| Parte | Campo           | Tipo                            | Obrigatório | Regra                                                                                      |
+| ----- | --------------- | ------------------------------- | ----------- | ------------------------------------------------------------------------------------------ |
+| path  | `protocol`      | string                          | sim         | `trim` com mínimo 1; vazio → `400 "Campos inválidos: protocol — Protocolo é obrigatório."` |
+| body  | `notes`         | objeto `criterion_id` → inteiro | sim         | ao menos uma chave; chave com até 50 caracteres; nota inteira de 1 a 5                     |
+| body  | `justification` | string                          | não         | `trim`; até 500 caracteres; string vazia vira ausência                                     |
+
+Exemplo de corpo (PII-free):
+
+```json
+{
+  "notes": {
+    "impacto_operacional": 5,
+    "risco_operacional": 4,
+    "urgencia": 4,
+    "volumetria": 3,
+    "esforco_manual": 2,
+    "impacto_cliente": 5,
+    "prazo_regulatorio": 4,
+    "areas_impactadas": 3,
+    "alinhamento_estrategico": 4,
+    "complexidade_estimada": 2
+  },
+  "justification": "Reavaliação após reunião de priorização."
+}
+```
+
+Regras de validação do corpo:
+
+- `noteSchema` aceita apenas número inteiro; fora disso: `"Deve ser um número inteiro."`, abaixo de 1: `"Mínimo de 1."`, acima de 5: `"Máximo de 5."` (`F1 src/modules/prioritization/prioritization.schema.ts:4-9`).
+- A chave de `notes` tem `trim` e máximo de 50, com a mensagem `"Identificador de critério inválido (máx. 50)."` (`F1 src/modules/prioritization/prioritization.schema.ts:11-15`).
+- `notes` vazio é recusado com `"Informe ao menos uma nota."` no path `notes` (`F1 src/modules/prioritization/prioritization.schema.ts:24-28`).
+- `justification` usa `optionalString(500)`; o limite gera `"Máximo de 500 caracteres."` (`F1 src/shared/validation/fieldSchemas.ts:12-18`).
+- O objeto **não** é `.strict()`: chaves extras no body, como `pesos` ou `score`, são removidas pelo Zod e não chegam ao service (`F1 src/modules/prioritization/prioritization.schema.ts:17-23`).
+- O score e o peso **não** são aceitos como entrada: o peso vem exclusivamente de `criteria.weight` (`F1 src/modules/prioritization/prioritization.schema.ts:20-22`).
+
+Ordem efetiva de avaliação: path (`400`) → corpo (`400`) → existência do protocolo (`404`) → custódia (`403`) → quantidade de critérios (`500`) → cobertura das notas (`400`) → cálculo (`500`) → faixa de classificação (`500`) (`F1 src/modules/prioritization/prioritization.controller.ts:30-46`; `F1 src/modules/prioritization/prioritization.service.ts:44-73`).
+
+#### Autorização
+
+- O router exige `Analista` ou `Administrador`; `Gestor` e `Solicitante` recebem `403 "Acesso restrito ao perfil Analista ou Administrador"` (`F1 src/modules/prioritization/prioritization.router.ts:18-22`).
+- No service, `Administrador` passa sempre; os demais só passam se o `user_id` do responsável técnico da solicitação for igual ao usuário autenticado (`F1 src/modules/prioritization/prioritization.service.ts:38-42`). O responsável é lido de `details_professional` pelo `requests.professional_id` (`F1 src/modules/prioritization/prioritization.repository.ts:21-30`).
+- Sem responsável técnico, apenas `Administrador` avalia; `Analista` recebe `403 "Acesso negado a esta solicitação"` (`F1 src/modules/prioritization/prioritization.service.ts:54-60`).
+
+#### Cálculo
+
+- A quantidade de critérios ativos precisa ser exatamente 10; qualquer outra quantidade recusa a avaliação com `500 "Avaliação indisponível: esperados 10 critérios ativos (RN-007), encontrados <n>."` (`F1 src/modules/prioritization/prioritization.service.ts:121-128`).
+- As notas precisam cobrir exatamente os critérios ativos: ausentes → `400 "Notas obrigatórias ausentes: <ids>"`; chaves desconhecidas → `400 "Critérios inválidos: <ids>"` (`F1 src/modules/prioritization/prioritization.service.ts:131-144`). As listas de erro mostram no máximo 10 ids e resumem o resto como `"… (+N mais)"` (`F1 src/modules/prioritization/prioritization.service.ts:147-150`).
+- O score é a média ponderada das notas pelos pesos, multiplicada por 10, arredondada a uma casa: `Number(((somaPonderada / somaPesos) * 10).toFixed(1))` (`F1 src/modules/prioritization/prioritization.service.ts:153-165`). Com notas de 1 a 5, o resultado fica no intervalo 10,0 a 50,0.
+- Soma de pesos menor ou igual a zero → `500 "Soma dos pesos dos critérios deve ser maior que zero"` (`F1 src/modules/prioritization/prioritization.service.ts:160-162`).
+- A classificação é lida da tabela `priorities` pela faixa que contém o score arredondado a uma casa (`F1 src/modules/prioritization/prioritization.repository.ts:37-44`). O seed define `Baixa` em 10,0–20,0, `Média` em 20,1–30,0, `Alta` em 30,1–40,0 e `Crítica` em 40,1–50,0 (`F1 seeds/requester_request/003_priorities.js:5-38`).
+- Nenhuma faixa encontrada → `500 "Nenhuma faixa de prioridade encontrada para o score <score>"` (`F1 src/modules/prioritization/prioritization.service.ts:168-174`).
+
+#### Persistência e reavaliação
+
+- Estado atual: upsert em `prioritization_evaluations` pela PK `protocol`, com `notes` em JSONB, `score` decimal(5,1), `classification` no enum nativo `request_priority`, `calculated_by` e `calculated_at` (`F1 src/modules/prioritization/prioritization.repository.ts:61-93`; `F1 migrations/20260912010000_create_prioritization_evaluations.js:15-41`).
+- A avaliação anterior é lida com `FOR SHARE` na mesma transação, para o snapshot de auditoria (`F1 src/modules/prioritization/prioritization.repository.ts:46-59`).
+- Auditoria: `entityType: "prioritization"`, `entityId: <protocol>`, `actionType: "prioritization.evaluate"`, snapshot anterior e novo (notas, score, classificação) em JSON canônico, `changeOrigin: "manual"`; `justification` vai apenas para o campo `note` da auditoria e **não** é persistida na avaliação nem devolvida na resposta (`F1 src/modules/prioritization/prioritization.service.ts:69-102`; `F1 src/modules/DTOs/prioritization/PrioritizationRequests.dto.ts:9-14`).
+- Reavaliar é o mesmo `PUT`: sobrescreve a linha vigente e acumula um evento em `audit_history`; não há tabela de histórico de notas (`F1 migrations/20260912010000_create_prioritization_evaluations.js:8-10`).
+
+#### Response `200`
+
+`EvaluatePrioritizationResponse` (`F1 src/modules/DTOs/prioritization/PrioritizationResponse.dto.ts:15-22`):
+
+```json
+{
+  "protocol": "MAAT-8K3P-9X2M",
+  "score": 36,
+  "classification": "Alta",
+  "calculatedAt": "2026-10-27T13:20:00.000Z",
+  "calculatedBy": 12
+}
+```
+
+`calculatedAt` é ISO-8601 UTC; `calculatedBy` é o `user_id` numérico (`F1 src/modules/prioritization/prioritization.service.ts:107-113`). A resposta não inclui as notas, o peso, o `maxScore`, o nome do responsável nem o status da solicitação.
+
+#### Erros
+
+| Status | `code` | Mensagem literal                                                                                             | Condição                                       |
+| ------ | ------ | ------------------------------------------------------------------------------------------------------------ | ---------------------------------------------- |
+| 400    | —      | `"Campos inválidos: protocol — Protocolo é obrigatório."`                                                    | `:protocol` vazio após `trim`                  |
+| 400    | —      | `"Campos obrigatórios ausentes: notes"`                                                                      | corpo sem `notes`                              |
+| 400    | —      | `"Campos inválidos: notes — Informe ao menos uma nota."`                                                     | `notes` vazio                                  |
+| 400    | —      | `"Campos inválidos: notes.<id> — Deve ser um número inteiro."` / `"… — Mínimo de 1."` / `"… — Máximo de 5."` | nota fora do domínio                           |
+| 400    | —      | `"Campos inválidos: justification — Máximo de 500 caracteres."`                                              | justificativa acima de 500                     |
+| 400    | —      | `"Notas obrigatórias ausentes: <ids>"`                                                                       | falta nota de critério ativo                   |
+| 400    | —      | `"Critérios inválidos: <ids>"`                                                                               | nota para chave que não é critério ativo       |
+| 401    | —      | `"Token não fornecido"` / `"Token inválido ou expirado"`                                                     | sessão ausente/inválida                        |
+| 403    | —      | `"Acesso restrito ao perfil Analista ou Administrador"`                                                      | perfil fora do router                          |
+| 403    | —      | `"Acesso negado a esta solicitação"`                                                                         | `Analista` que não é o responsável             |
+| 404    | —      | `"Solicitação não encontrada"`                                                                               | protocolo inexistente                          |
+| 500    | —      | `"Avaliação indisponível: esperados 10 critérios ativos (RN-007), encontrados <n>."`                         | quantidade de critérios ativos diferente de 10 |
+| 500    | —      | `"Soma dos pesos dos critérios deve ser maior que zero"`                                                     | soma dos pesos ≤ 0                             |
+| 500    | —      | `"Nenhuma faixa de prioridade encontrada para o score <score>"`                                              | score fora das faixas de `priorities`          |
+| 500    | —      | `"Erro interno do servidor"`                                                                                 | falha não prevista                             |
+
+Evidência: `F1 src/modules/prioritization/prioritization.controller.ts:30-48`; `F1 src/modules/prioritization/prioritization.service.ts:49-73,121-174`.
+
+#### Onde a Prioridade fica
+
+- A avaliação grava somente `prioritization_evaluations` (`F1 src/modules/prioritization/prioritization.repository.ts:82-86`).
+- `requests.priority_id` é preenchido com `null` na criação (`F1 src/modules/requests/requests.repository.ts:201`) e **não** é atualizado por `PUT /prioritization/:protocol/score`.
+- A Prioridade devolvida em `GET /requests` e na fila vem do join com `priorities` por `requests.priority_id` (`F1 src/modules/requests/requests.repository.ts:365,395`; `F1 src/modules/queue/queue.repository.ts:68`; `F1 src/modules/reports/reports.repository.ts:225`).
+- O detalhe interno expõe as duas leituras lado a lado: `priority` (join de `requests.priority_id`) e `prioritization { score, maxScore: 50, label }` (de `prioritization_evaluations`) (`F1 src/modules/requests/requests.service.ts:305-312`; `F1 src/modules/requests/requests.repository.ts:579-580,626-639`).
+
+**Divergente (legado vigente):** a Prioridade tem duas casas no legado (`requests.priority_id` e `prioritization_evaluations.classification`) e a avaliação não mantém a primeira. O ADR-0016 fixa a faixa em uma única casa, lida por join/porta do domínio `prioritization`. Ver ADR-0016.
+
+### 12.5 Visão do consumidor (F2) e drift
+
+- O consumidor usa exatamente os paths do legado, sob `PUBLIC_API_URL`: `GET /prioritization/criteria` e `PUT /prioritization/:protocol/score` com `protocol` em `encodeURIComponent` (`F2 src/lib/api/prioritization.api.ts:9,13-21,26-42`). As chamadas usam `credentials: "include"` e `Content-Type: application/json` por padrão (`F2 src/lib/api/client.ts:47-69`).
+- O corpo enviado é apenas `notes` + `justification`; o comentário do consumidor registra que o score e a classificação são calculados no backend e que o frontend não envia score final como fonte de verdade (`F2 src/lib/api/prioritization.api.ts:23-25,36-41`).
+- Os tipos de wire espelham o legado: `CriterionResponse`, `ListCriteriaResponse`, `EvaluatePrioritizationRequest` e `EvaluatePrioritizationResponse` (`F2 src/lib/types/prioritization.ts:28-52`).
+- **Dois tipos de resultado no consumidor.** O tipo de wire tem `protocol`, `score`, `classification`, `calculatedAt` e `calculatedBy` (`F2 src/lib/types/prioritization.ts:46-52`); o tipo de UI `PrioritizationResult` tem `score`, `maxScore` e `level` (`F2 src/lib/types/prioritization.ts:19-23`). A conversão é feita no service: `score` do wire, `maxScore = criteria.length * MAX_NOTE` calculado no cliente, `level = classification` (`F2 src/lib/services/prioritization.service.ts:103-107`).
+- **`maxScore` é derivação do consumidor.** Nenhuma das duas rotas devolve `maxScore`; o detalhe interno devolve `maxScore: 50` fixo (`F1 src/modules/requests/requests.service.ts:310`), e o consumidor usa `solicitation.prioritization.maxScore ?? 50` (`F2 src/routes/(admin)/fila/[protocolo]/components/SolicitationSpecs.svelte:237`). Com 10 critérios e nota máxima 5, a fórmula do cliente também resulta em 50 (`F2 src/lib/services/prioritization.service.ts:105`).
+- O consumidor valida localmente que todos os critérios ativos têm nota de 1 a 5 antes de chamar o backend e monta mensagens próprias, como `"Preencha todos os critérios com uma nota de 1 a 5 antes de salvar."` e `"Faltam <n> critério(s): <nomes> — selecione nota de 1 a 5."` (`F2 src/lib/services/prioritization.service.ts:38-76`).
+- `justification` é opcional: `trim` e omissão quando vazia (`F2 src/lib/services/prioritization.service.ts:96-101`).
+- **Reavaliação no consumidor.** O comentário do service afirma que as notas já salvas para reavaliação vêm de `GET /requests/:protocol/internal` (`F2 src/lib/services/prioritization.service.ts:22-24`), e a tela passa `solicitation.prioritization.notes` como notas iniciais (`F2 src/routes/(admin)/fila/[protocolo]/components/SolicitationSpecs.svelte:537`). O DTO interno do legado devolve `prioritization` apenas com `score`, `maxScore` e `label`, sem `notes` (`F1 src/modules/DTOs/requests/RequestInternalDetail.dto.ts:25-29`; `F1 src/modules/requests/requests.service.ts:308-312`). O consumidor ainda tipa `prioritization` do detalhe interno como `PrioritizationResult` (`level`) e converte `label` para `level` (`F2 src/lib/types/request.ts:430`; `F2 src/routes/(admin)/fila/[protocolo]/components/SolicitationSpecs.svelte:329-334`), enquanto o wire usa `label`.
+- O consumidor mantém rascunho em `sessionStorage` e dá prioridade a ele sobre as notas do servidor na abertura da calculadora (`F2 src/routes/(admin)/fila/[protocolo]/components/PrioritizationCalculator.svelte:85-99`).
+- Em `DEV` com o domínio de mock ligado, as duas funções desviam para `$lib/mocks/prioritization.mock` (`F2 src/lib/api/prioritization.api.ts:15-18,31-34`).
+- O consumidor também lê os pesos pela configuração do portal, não por `/prioritization/criteria`: `GET /portal-config` devolve `prioritizationWeights` com as dez chaves `camelCase` (`F2 src/lib/config/portal-config.service.ts:229-251`; `F1 src/modules/portalConfig/portalConfig.service.ts:89-94`).
+
+### 12.6 Confronto com docs/04-API-Conventions.md
+
+| Tema             | Situação no legado                                                                                         | Convenção                                                                                                                                |
+| ---------------- | ---------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Base path        | `/prioritization/*`, sem prefixo                                                                           | **Divergente (legado vigente):** `/api/v1` — §1                                                                                          |
+| Envelope de erro | `{ status, statusCode, message }`, sem `code`                                                              | Compatível com o envelope legado da §2.1; a ausência de `code` é **divergente (legado vigente)** — §2.3 e §4                             |
+| Validação        | `400` com mensagem agregada, sem `code` e sem `fields`                                                     | **Divergente (legado vigente):** §5 congela `400` + `validation_error` + `fields` como lista                                             |
+| Sucesso          | `200` em leitura e em atualização                                                                          | Compatível — §15.4                                                                                                                       |
+| Paginação        | `GET /prioritization/criteria` é lista não paginada com envelope `{ criteria }`                            | **Divergente (legado vigente):** §4/§4.3 só admitem lista não paginada com linha de exceção registrada                                   |
+| Autorização      | `GET /criteria` aceita `Gestor`                                                                            | **Divergente (legado vigente):** ADR-0017 retira a leitura de critérios do `Gestor`; a Prioridade continua visível pela solicitação — §6 |
+| Prioridade       | Duas leituras: `requests.priority_id` e `prioritization_evaluations.classification`                        | **Divergente (legado vigente):** ADR-0016 fixa a faixa em uma única casa, no domínio `prioritization`                                    |
+| Datas            | `calculatedAt` ISO-8601 UTC                                                                                | Compatível — §10                                                                                                                         |
+| Idioma           | Chaves `camelCase`; valores de domínio em pt-BR; `id` de critério é um identificador opaco em `snake_case` | Compatível — §11                                                                                                                         |
+| Idempotência     | `PUT` substitui a avaliação vigente                                                                        | Compatível — §8.2                                                                                                                        |
+| Request-id       | Ausente                                                                                                    | **Divergente (legado vigente):** §12; anotado na §3 do baseline                                                                          |
+
+**Cobertura da seção:** 2 de 2 rotas do inventário — #37 `GET /prioritization/criteria`; #38 `PUT /prioritization/:protocol/score`.
