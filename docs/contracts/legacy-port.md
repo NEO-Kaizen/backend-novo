@@ -859,3 +859,460 @@ Drift anotado (sem decisão):
 - `POST /auth/logout`
 - `GET /auth/me`
 - `PUT /auth/change-password`
+
+## 6. forms
+
+O domínio `forms` **não tem superfície HTTP no legado**. O formulário de abertura de solicitação é
+um conjunto fixo de blocos e chaves escrito em TypeScript: os tipos em
+`F1 src/shared/types/requests.ts`, a gramática em `F1 src/modules/requests/requests.schema.ts` e o
+catálogo de 33 chaves em `F1 src/shared/catalog/fieldCatalog.ts`. A única forma de o formulário
+trafegar é como a parte textual `payload` do `POST /requests` (§9), e a única forma de consultá-lo é
+pela leitura da própria solicitação (§9), que devolve os blocos já materializados.
+
+Esta seção documenta a gramática desse payload e o catálogo que as pendências usam para validar
+`fieldKey` e fotografar o valor atual. Nada aqui é decisão: o formulário configurável é delta
+intencional e vive nos ADRs (ponteiro em §6.7).
+
+### 6.1 Fontes
+
+| Ref | Caminho                                                                                                    | Uso                                                                       |
+| --- | ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| F1  | `src/shared/types/requests.ts`                                                                             | tipos dos quatro blocos, `YesNoDetail`, enums de impacto e criticidade    |
+| F1  | `src/modules/requests/requests.schema.ts`                                                                  | gramática Zod do `POST /requests` e reuso dos blocos no `PATCH /internal` |
+| F1  | `src/shared/validation/fieldSchemas.ts`                                                                    | helpers `requiredString` / `optionalString` e mensagens de tamanho        |
+| F1  | `src/shared/validation/zodErrors.ts`                                                                       | formato agregado das mensagens de validação (`400`)                       |
+| F1  | `src/modules/requests/requests.controller.ts`                                                              | leitura da parte `payload`, erros de multipart e resposta `201`           |
+| F1  | `src/shared/middleware/upload.ts`                                                                          | limites e mensagens do multipart                                          |
+| F1  | `src/modules/requests/requests.repository.ts`                                                              | validação da categoria contra o cadastro ativo e persistência dos blocos  |
+| F1  | `src/modules/requests/requests.service.ts`                                                                 | sobrescrita de identidade no modo `AUTHENTICATED`                         |
+| F1  | `src/shared/catalog/fieldCatalog.ts`                                                                       | `FIELD_KEYS`, `FIELD_LABELS`, `FIELD_KEY_SET`, `getFieldSnapshot`         |
+| F1  | `src/modules/pendingItems/pendingItems.schema.ts`, `pendingItems.service.ts`, `pendingItems.repository.ts` | validação de `fieldKey`, snapshot e escrita do valor corrigido            |
+| F1  | `docs/solicitations-api-requests-0_4.md` §0, §1, "Tipos compartilhados", "Observações do contrato"         | contrato do formulário e do `POST /requests`                              |
+| F1  | `docs/contract-pendencias_03.md` §8                                                                        | catálogo de 33 `fieldKey` e regra de marcação                             |
+| F2  | `src/lib/types/request.ts`                                                                                 | tipos do consumidor, opções de select e estado das etapas                 |
+| F2  | `src/lib/pendency/field-catalog.ts`                                                                        | seleção de campos marcáveis e rótulos exibidos                            |
+| F2  | `src/lib/pendency/requester-field-kind.ts`                                                                 | controle por tipo de campo e conversão do valor respondido                |
+| F2  | `src/lib/types/pendency.ts`                                                                                | `PendingFieldRef`, `fieldKey` e `correctedValue`                          |
+| F2  | `src/lib/api/request.api.ts`                                                                               | montagem do `multipart/form-data` do `POST /requests`                     |
+| F2  | `src/routes/(public)/solicitacao/components/solicitation-form/SolicitationForm.svelte`                     | conversão do estado do formulário no payload                              |
+
+### 6.2 Superfície
+
+Zero rotas. O legado não tem `GET /forms`, nem qualquer verbo em `/forms`: o roteador monta apenas os
+routers de domínio listados em `F1 src/router.ts:16-32`, e não existe módulo `forms` em
+`F1 src/modules`. A definição do formulário é código estático:
+
+| Elemento                         | Onde vive no legado                                                       | Evidência                                                                                                 |
+| -------------------------------- | ------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| Blocos e chaves do payload       | `RequesterBlock`, `DemandBlock`, `OperationalBlock`, `ComplementaryBlock` | `F1 src/shared/types/requests.ts:76-124`                                                                  |
+| Obrigatoriedade, tipos e limites | schemas Zod dos blocos                                                    | `F1 src/modules/requests/requests.schema.ts:25-78`                                                        |
+| Envelope do payload              | `createRequestPayloadSchema`                                              | `F1 src/modules/requests/requests.schema.ts:90-117`                                                       |
+| Catálogo de chaves marcáveis     | `FIELD_KEYS` / `FIELD_LABELS`                                             | `F1 src/shared/catalog/fieldCatalog.ts:6-80`                                                              |
+| Transporte                       | parte textual `payload` do `POST /requests`                               | `F1 src/modules/requests/requests.controller.ts:120-137`; `F1 src/modules/requests/requests.router.ts:88` |
+| Reuso dos blocos na edição       | `updateRequestPayloadSchema`                                              | `F1 src/modules/requests/requests.schema.ts:143-148`                                                      |
+
+Não há endpoint de definição nem de metadados do formulário: rótulos, tipos e obrigatoriedade só
+existem no código do backend e, no consumidor, em espelhos manuais (§6.6). A leitura dos valores
+respondidos acontece no detalhe interno e no acompanhamento, ambos em §9.
+
+### 6.3 Gramática do payload
+
+#### Transporte e envelope
+
+O corpo é `multipart/form-data` com uma parte de texto `payload` (máx. 1) e zero a cinco partes
+binárias `attachments` (`F1 src/shared/middleware/upload.ts:35-38`). O controller exige que
+`payload` seja string não vazia, faz `JSON.parse` e valida o objeto resultante
+(`F1 src/modules/requests/requests.controller.ts:120-137`):
+
+| Condição                                      | Status | Mensagem literal                                  | Evidência                                                                                                          |
+| --------------------------------------------- | ------ | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| parte `payload` ausente, vazia ou não textual | 400    | `Parte 'payload' ausente no corpo da requisição.` | `F1 src/modules/requests/requests.controller.ts:121-125`                                                           |
+| `payload` não é JSON válido                   | 400    | `A parte 'payload' contém um JSON inválido.`      | `F1 src/modules/requests/requests.controller.ts:127-132`                                                           |
+| JSON válido mas schema inválido               | 400    | mensagem agregada (abaixo)                        | `F1 src/modules/requests/requests.controller.ts:134-137`                                                           |
+| sucesso                                       | 201    | `{ protocol, status, createdAt }`                 | `F1 src/modules/requests/requests.controller.ts:143-149`; `F1 src/modules/requests/requests.repository.ts:329-333` |
+
+O JSON tem quatro blocos, dos quais três são obrigatórios:
+
+```jsonc
+{
+  "requester": {/* obrigatório */},
+  "demand": {/* obrigatório */},
+  "operational": {/* obrigatório */},
+  "complementary": {/* opcional */},
+  "schedulePreferences": ["2026-09-02T08:00"], // opcional; 1 a 3 itens
+}
+```
+
+- Se o valor não for objeto, a mensagem é
+  `O payload deve ser um objeto JSON com os blocos requester, demand e operational.`
+  (`F1 src/modules/requests/requests.schema.ts:114-116`).
+- O envelope usa `z.object` sem `.strict()`: chave desconhecida — em qualquer nível — é
+  **descartada em silêncio**, não gera erro (`F1 src/modules/requests/requests.schema.ts:90-117`).
+- A validação é agregada em uma única string, sem `fields`:
+  `Campos obrigatórios ausentes: <paths>` e/ou `Campos inválidos: <path> — <mensagem>`,
+  separados por `;` e depois por `. ` (`F1 src/shared/validation/zodErrors.ts:57-91`). Exemplo:
+  `Campos inválidos: operational.operationalImpact — Impacto operacional inválido — opções: Baixo, Médio, Alto ou Crítico.`
+- Tipos trocados são traduzidos por `DEFAULT_TYPE_MESSAGES`: `Deve ser um texto.`, `Deve ser um
+número.`, `Deve ser um objeto.`, `Informe uma lista.` (`F1 src/shared/validation/zodErrors.ts:3-8,33-37`).
+
+#### Bloco `requester`
+
+Obrigatório. Todas as chaves são strings (`F1 src/shared/types/requests.ts:76-85`;
+`F1 src/modules/requests/requests.schema.ts:25-32`). Strings obrigatórias passam por `trim` antes da
+contagem (`F1 src/shared/validation/fieldSchemas.ts:5-10`).
+
+| Chave               | Obrigatória | Limite | Observação                                                                                                         |
+| ------------------- | ----------- | ------ | ------------------------------------------------------------------------------------------------------------------ |
+| `fullName`          | sim         | 150    | —                                                                                                                  |
+| `corporateEmail`    | sim         | 254    | validado como e-mail; sem `trim`/`toLowerCase` no schema do POST (`F1 src/modules/requests/requests.schema.ts:27`) |
+| `area`              | sim         | 100    | —                                                                                                                  |
+| `department`        | não         | 100    | vazio após `trim` vira ausente (`F1 src/shared/validation/fieldSchemas.ts:12-18`)                                  |
+| `manager`           | sim         | 150    | —                                                                                                                  |
+| `additionalContact` | não         | 100    | —                                                                                                                  |
+
+Normalização do e-mail ocorre na persistência, não na validação: `trim().toLowerCase()` em
+`F1 src/modules/requests/requests.repository.ts:76,181,323`. **Desatualizado no legado:** o contrato
+descreve `department` como "opcional (padrão; Admin pode tornar obrigatório)"
+(`F1 docs/solicitations-api-requests-0_4.md` §"Tipos compartilhados"), mas o schema do POST o trata
+sempre como opcional e não há caminho de configuração que o torne obrigatório
+(`F1 src/modules/requests/requests.schema.ts:29`).
+
+#### Bloco `demand`
+
+Obrigatório, oito chaves obrigatórias (`F1 src/shared/types/requests.ts:87-98`;
+`F1 src/modules/requests/requests.schema.ts:34-43`).
+
+| Chave            | Obrigatória | Limite | Observação                                           |
+| ---------------- | ----------- | ------ | ---------------------------------------------------- |
+| `title`          | sim         | 150    | —                                                    |
+| `requestType`    | sim         | 80     | texto livre no backend; nenhum enum é validado       |
+| `category`       | sim         | 80     | nome validado contra o cadastro ativo (§"Categoria") |
+| `processName`    | sim         | 150    | —                                                    |
+| `description`    | sim         | 4.000  | —                                                    |
+| `problem`        | sim         | 4.000  | —                                                    |
+| `expectedResult` | sim         | 4.000  | —                                                    |
+| `justification`  | sim         | 4.000  | —                                                    |
+
+`demand.category` viaja **dentro de `demand`**, não no topo do payload
+(`F1 src/modules/requests/requests.schema.ts:37`). **Desatualizado no legado:** a assinatura do
+contrato tipa `category: RequestCategory` com as 10 opções base
+(`F1 docs/solicitations-api-requests-0_4.md` §"Tipos compartilhados"), enquanto o schema aceita
+qualquer string de até 80 caracteres e a lista efetiva é a das categorias ativas do banco — o
+próprio documento registra, em outro trecho, que novas categorias chegam como string livre.
+
+#### Bloco `operational`
+
+Obrigatório, 14 chaves obrigatórias (`F1 src/shared/types/requests.ts:100-116`;
+`F1 src/modules/requests/requests.schema.ts:45-70`).
+
+| Chave                  | Tipo              | Limite / regra                           | Mensagem específica                                                                                                                           |
+| ---------------------- | ----------------- | ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `processDescription`   | string            | 4.000                                    | padrão                                                                                                                                        |
+| `processSteps`         | string            | 4.000                                    | padrão                                                                                                                                        |
+| `systemsUsed`          | string            | 255                                      | padrão                                                                                                                                        |
+| `executionFrequency`   | string            | 50                                       | padrão; texto livre                                                                                                                           |
+| `volumetry`            | string            | 100                                      | padrão                                                                                                                                        |
+| `peopleInvolved`       | number            | inteiro, `> 0`                           | `Deve ser um número inteiro.`; `Deve ser maior que zero.`                                                                                     |
+| `averageExecutionTime` | string            | 60                                       | padrão                                                                                                                                        |
+| `monthlyEffortHours`   | number            | `>= 0` e `<= 99999999.99`                | `Não pode ser negativo.`; `Máximo de 99.999.999,99.`                                                                                          |
+| `hasManualControls`    | `false` ou string | `false`; ou texto não vazio de até 1.000 | `Responda com 'false' (Não) ou informe o detalhamento em texto (máx. 1.000 caracteres).`; `Campo obrigatório.`; `Máximo de 1.000 caracteres.` |
+| `mainRisks`            | string            | 2.000                                    | padrão                                                                                                                                        |
+| `clientImpact`         | string            | 2.000                                    | padrão                                                                                                                                        |
+| `operationalImpact`    | enum              | `Baixo`, `Médio`, `Alto`, `Crítico`      | `Impacto operacional inválido — opções: Baixo, Médio, Alto ou Crítico.`                                                                       |
+| `desiredDeadline`      | string            | `AAAA-MM-DD`                             | `Data inválida — use o formato AAAA-MM-DD.`                                                                                                   |
+| `perceivedCriticality` | enum              | `Baixa`, `Média`, `Alta`, `Crítica`      | `Criticidade inválida — opções: Baixa, Média, Alta ou Crítica.`                                                                               |
+
+- `hasManualControls` é uma união de `false` literal e string
+  (`F1 src/modules/requests/requests.schema.ts:15-23`): o detalhamento **é** a resposta "Sim"; não
+  existe `true` nem "Sim" sem texto.
+- O POST **não** exige prazo futuro: `desiredDeadline` valida a data ISO, sem regra de "hoje ou
+  futura" (`F1 src/modules/requests/requests.schema.ts:66`). A regra "hoje ou futura" existe apenas no
+  `PATCH /requests/:protocol/internal` (`F1 src/modules/requests/requests.schema.ts:128-137`).
+- `peopleInvolved` e `monthlyEffortHours` chegam como número JSON, não como string
+  (`F1 src/modules/requests/requests.controller.ts:129`).
+
+#### Bloco `complementary`
+
+Opcional por inteiro (`F1 src/shared/types/requests.ts:118-124`;
+`F1 src/modules/requests/requests.schema.ts:72-78`). Se omitido, todas as flags são gravadas como
+`NULL` (`F1 src/modules/requests/requests.repository.ts:43-53,231-239`).
+
+| Chave                     | Obrigatória | Regra                         | Mensagem específica                |
+| ------------------------- | ----------- | ----------------------------- | ---------------------------------- |
+| `hasProcessDocumentation` | não         | `false` ou texto de até 1.000 | mesma união de `hasManualControls` |
+| `hasSimilarSolution`      | não         | idem                          | idem                               |
+| `dependsOnOtherAreas`     | não         | idem                          | idem                               |
+| `handlesRestrictedInfo`   | não         | idem                          | idem                               |
+| `additionalNotes`         | não         | string de até 2.000           | padrão                             |
+
+Cada chave `YesNoDetail` aceita exatamente dois formatos: `false` ("Não") ou string não vazia após
+`trim` ("Sim" + detalhamento) (`F1 src/shared/types/requests.ts:56`;
+`F1 src/modules/requests/requests.schema.ts:15-23`).
+
+#### `schedulePreferences`
+
+Opcional; quando presente, é lista de strings `AAAA-MM-DDTHH:MM`
+(`F1 src/modules/requests/requests.schema.ts:96-112`).
+
+| Regra                                                                               | Mensagem literal                                     |
+| ----------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| formato `^\d{4}-(0[1-9]\|1[0-2])-(0[1-9]\|[12]\d\|3[01])T([01]\d\|2[0-3]):[0-5]\d$` | `Horário inválido — use o formato AAAA-MM-DDTHH:MM.` |
+| data/hora precisa existir no calendário (dia válido, hora `<= 23`, minuto `<= 59`)  | `Horário inexistente no calendário.`                 |
+| mínimo de 1 item (lista vazia falha)                                                | `Selecione pelo menos 1 opção de horário.`           |
+| máximo de 3 itens                                                                   | `Máximo de 3 opções de horário.`                     |
+| sem duplicatas                                                                      | `Horários duplicados não são permitidos.`            |
+
+Os horários são gravados em `request_time_preferences` (`scheduled_for`) e não passam pelo catálogo
+de 33 chaves (`F1 src/modules/requests/requests.repository.ts:258-273`).
+
+#### Regras condicionais e normalizações
+
+- **Identidade no modo `AUTHENTICATED`:** `fullName` e `corporateEmail` continuam obrigatórios na
+  validação, mas são **sobrescritos** pela identidade do cadastro antes da persistência
+  (`F1 src/modules/requests/requests.service.ts:105-139`). O guard de modo roda antes do multipart
+  (`F1 src/modules/requests/requests.router.ts:88`); o contrato registra a mesma regra em
+  `F1 docs/solicitations-api-requests-0_4.md` §0.
+- **`trim`:** strings obrigatórias e opcionais são aparadas antes de medir; só espaços em campo
+  obrigatório resulta em `Campo obrigatório.` (`F1 src/shared/validation/fieldSchemas.ts:5-18`).
+- **Vazios opcionais:** `department`, `additionalContact` e `additionalNotes` com `""` depois do
+  `trim` tornam-se ausentes (`F1 src/shared/validation/fieldSchemas.ts:12-18`;
+  `F1 src/modules/requests/requests.schema.ts:77`).
+- **Sem máscara:** o backend não aplica máscara de telefone, documento ou data; `additionalContact`
+  é texto livre limitado a 100 caracteres e os limites são apenas de tamanho
+  (`F1 src/modules/requests/requests.schema.ts:31`;
+  `F1 src/shared/validation/fieldSchemas.ts:12-18`).
+- **Flags Sim/Não na persistência:** string → flag `true` + coluna de detalhe; `false` → flag
+  `false` + detalhe `NULL`; ausente → ambos `NULL`
+  (`F1 src/modules/requests/requests.repository.ts:43-53`).
+- **Categoria:** resolvida para `category_id` na mesma transação; nome inexistente entre as
+  categorias `active` interrompe a criação com
+  `Categoria inválida — selecione uma opção da lista.` (`400`)
+  (`F1 src/modules/requests/requests.repository.ts:55-61,300-311`).
+- **Não verificado:** o conjunto aceito de `demand.category` depende dos dados de `categories`;
+  o código não fixa a lista.
+- **Status inicial:** a criação grava `Solicitação enviada` e devolve esse nome no `201`
+  (`F1 src/modules/requests/requests.repository.ts:36,312,329-333`).
+
+#### Enumerações e vocabulários aceitos
+
+| Campo                                          | Valores aceitos na validação              | Evidência                                                      |
+| ---------------------------------------------- | ----------------------------------------- | -------------------------------------------------------------- |
+| `operational.operationalImpact`                | `Baixo` \| `Médio` \| `Alto` \| `Crítico` | `F1 src/modules/requests/requests.schema.ts:63-65`             |
+| `operational.perceivedCriticality`             | `Baixa` \| `Média` \| `Alta` \| `Crítica` | `F1 src/modules/requests/requests.schema.ts:67-69`             |
+| `demand.requestType`                           | qualquer string não vazia de até 80       | `F1 src/modules/requests/requests.schema.ts:36`                |
+| `operational.executionFrequency`               | qualquer string não vazia de até 50       | `F1 src/modules/requests/requests.schema.ts:49`                |
+| `demand.category`                              | nome de categoria `active` no cadastro    | `F1 src/modules/requests/requests.repository.ts:55-61,306-309` |
+| `hasManualControls` e flags de `complementary` | `false` ou string não vazia de até 1.000  | `F1 src/modules/requests/requests.schema.ts:15-23`             |
+
+As unions `RequestCategory`, `OperationalImpact` e `RequestPriority` em
+`F1 src/shared/types/requests.ts:54-68` são referência de tipo, não allowlist de runtime: só os dois
+enums de impacto/criticidade e a categoria (via banco) são validados.
+
+#### Limites de transporte do formulário
+
+| Parte                           | Limite no legado              | Erro                                                                                             | Evidência                                              |
+| ------------------------------- | ----------------------------- | ------------------------------------------------------------------------------------------------ | ------------------------------------------------------ |
+| `payload` (texto)               | 2 MiB por campo (`fieldSize`) | 400 com fallback `Erro ao processar o upload dos anexos.` — `LIMIT_FIELD_VALUE` não está no mapa | `F1 src/shared/middleware/upload.ts:15,22,42-46,54-60` |
+| `attachments`                   | 5 arquivos                    | 400 `Máximo de 5 anexos por solicitação.`                                                        | `F1 src/shared/middleware/upload.ts:14,21,44`          |
+| cada anexo                      | 10 MB                         | 400 `Cada anexo deve ter no máximo 10MB.`                                                        | `F1 src/shared/middleware/upload.ts:13,20,43`          |
+| MIME do anexo                   | PDF, DOCX, XLSX, PNG, JPG     | 400 `Formato de arquivo não permitido. Aceitos: PDF, DOCX, XLSX, PNG e JPG.`                     | `F1 src/shared/middleware/upload.ts:5-11,24-32`        |
+| parte de arquivo fora dos nomes | —                             | 400 `Parte de arquivo inesperada na requisição.`                                                 | `F1 src/shared/middleware/upload.ts:45`                |
+
+**Desatualizado no legado:** o contrato afirma que `limits.fieldSize` fica no default "1MB"
+(`F1 docs/solicitations-api-requests-0_4.md` §1, "Nota de implementação"), mas o código fixa
+**2 MiB** (`F1 src/shared/middleware/upload.ts:15,22`).
+
+O transporte completo do `POST /requests` — inclusive a coluna de autenticação e o envelope de
+erro — está em §9; aqui ficam apenas as mensagens que nascem da gramática do formulário.
+
+### 6.4 Catálogo de 33 chaves
+
+Fonte única: `FIELD_KEYS` e `FIELD_LABELS` (`F1 src/shared/catalog/fieldCatalog.ts:6-80`). Os
+rótulos abaixo são os do backend, literais; `getFieldLabel` devolve a própria chave quando ela não
+está no mapa (`F1 src/shared/catalog/fieldCatalog.ts:82-84`).
+
+| #   | Chave                                   | Label                       | Bloco         | Evidência                                     |
+| --- | --------------------------------------- | --------------------------- | ------------- | --------------------------------------------- |
+| 1   | `requester.fullName`                    | Nome completo               | requester     | `F1 src/shared/catalog/fieldCatalog.ts:7,47`  |
+| 2   | `requester.corporateEmail`              | E-mail corporativo          | requester     | `F1 src/shared/catalog/fieldCatalog.ts:8,48`  |
+| 3   | `requester.area`                        | Área                        | requester     | `F1 src/shared/catalog/fieldCatalog.ts:9,49`  |
+| 4   | `requester.department`                  | Departamento                | requester     | `F1 src/shared/catalog/fieldCatalog.ts:10,50` |
+| 5   | `requester.manager`                     | Gestor responsável          | requester     | `F1 src/shared/catalog/fieldCatalog.ts:11,51` |
+| 6   | `requester.additionalContact`           | Contato adicional           | requester     | `F1 src/shared/catalog/fieldCatalog.ts:12,52` |
+| 7   | `demand.title`                          | Título resumido             | demand        | `F1 src/shared/catalog/fieldCatalog.ts:13,53` |
+| 8   | `demand.requestType`                    | Tipo de solicitação         | demand        | `F1 src/shared/catalog/fieldCatalog.ts:14,54` |
+| 9   | `demand.category`                       | Categoria                   | demand        | `F1 src/shared/catalog/fieldCatalog.ts:15,55` |
+| 10  | `demand.processName`                    | Nome do processo            | demand        | `F1 src/shared/catalog/fieldCatalog.ts:16,56` |
+| 11  | `demand.description`                    | Descrição da necessidade    | demand        | `F1 src/shared/catalog/fieldCatalog.ts:17,57` |
+| 12  | `demand.problem`                        | Problema/oportunidade       | demand        | `F1 src/shared/catalog/fieldCatalog.ts:18,58` |
+| 13  | `demand.expectedResult`                 | Resultado esperado          | demand        | `F1 src/shared/catalog/fieldCatalog.ts:19,59` |
+| 14  | `demand.justification`                  | Justificativa               | demand        | `F1 src/shared/catalog/fieldCatalog.ts:20,60` |
+| 15  | `operational.processDescription`        | Descrição do processo atual | operational   | `F1 src/shared/catalog/fieldCatalog.ts:21,61` |
+| 16  | `operational.processSteps`              | Etapas do processo          | operational   | `F1 src/shared/catalog/fieldCatalog.ts:22,62` |
+| 17  | `operational.systemsUsed`               | Sistemas utilizados         | operational   | `F1 src/shared/catalog/fieldCatalog.ts:23,63` |
+| 18  | `operational.executionFrequency`        | Frequência de execução      | operational   | `F1 src/shared/catalog/fieldCatalog.ts:24,64` |
+| 19  | `operational.volumetry`                 | Volumetria                  | operational   | `F1 src/shared/catalog/fieldCatalog.ts:25,65` |
+| 20  | `operational.peopleInvolved`            | Pessoas envolvidas          | operational   | `F1 src/shared/catalog/fieldCatalog.ts:26,66` |
+| 21  | `operational.averageExecutionTime`      | Tempo médio por ciclo       | operational   | `F1 src/shared/catalog/fieldCatalog.ts:27,67` |
+| 22  | `operational.monthlyEffortHours`        | Esforço mensal (horas)      | operational   | `F1 src/shared/catalog/fieldCatalog.ts:28,68` |
+| 23  | `operational.hasManualControls`         | Controles manuais           | operational   | `F1 src/shared/catalog/fieldCatalog.ts:29,69` |
+| 24  | `operational.mainRisks`                 | Principais riscos           | operational   | `F1 src/shared/catalog/fieldCatalog.ts:30,70` |
+| 25  | `operational.clientImpact`              | Impacto no cliente          | operational   | `F1 src/shared/catalog/fieldCatalog.ts:31,71` |
+| 26  | `operational.operationalImpact`         | Impacto operacional         | operational   | `F1 src/shared/catalog/fieldCatalog.ts:32,72` |
+| 27  | `operational.desiredDeadline`           | Prazo desejado              | operational   | `F1 src/shared/catalog/fieldCatalog.ts:33,73` |
+| 28  | `operational.perceivedCriticality`      | Criticidade percebida       | operational   | `F1 src/shared/catalog/fieldCatalog.ts:34,74` |
+| 29  | `complementary.hasProcessDocumentation` | Documentação do processo    | complementary | `F1 src/shared/catalog/fieldCatalog.ts:35,75` |
+| 30  | `complementary.hasSimilarSolution`      | Solução semelhante          | complementary | `F1 src/shared/catalog/fieldCatalog.ts:36,76` |
+| 31  | `complementary.dependsOnOtherAreas`     | Dependência de outras áreas | complementary | `F1 src/shared/catalog/fieldCatalog.ts:37,77` |
+| 32  | `complementary.handlesRestrictedInfo`   | Informação restrita (LGPD)  | complementary | `F1 src/shared/catalog/fieldCatalog.ts:38,78` |
+| 33  | `complementary.additionalNotes`         | Observações adicionais      | complementary | `F1 src/shared/catalog/fieldCatalog.ts:39,79` |
+
+Distribuição: 6 em `requester`, 8 em `demand`, 14 em `operational` e 5 em `complementary`.
+`demand.category` está no bloco `demand` do payload de abertura (§6.3), e as cinco chaves
+`complementary.*` pertencem a um bloco opcional. O catálogo é fechado — não inclui
+`schedulePreferences` nem anexos, conforme o próprio contrato registra em
+`F1 docs/contract-pendencias_03.md` §8.
+
+### 6.5 Relação com pending-items
+
+O formulário é insumo do lote de pendências: o analista marca chaves, o backend valida contra o
+catálogo e grava o rótulo e o valor corrente como snapshot.
+
+**Validação de `fieldKey`:**
+
+- No schema do lote, `fieldKey` é apenas `z.string().trim().min(1)`, sem lista
+  (`F1 src/modules/pendingItems/pendingItems.schema.ts:9-12`).
+- A pertinência é verificada no service, contra `FIELD_KEY_SET`, depois de `trim`
+  (`F1 src/modules/pendingItems/pendingItems.service.ts:25-27,114-118`). Fora do catálogo:
+  400 `Campos inválidos: fieldKey — <chave> não está no catálogo`.
+- `requester.fullName` e `requester.corporateEmail` só são marcáveis quando a solicitação não tem
+  usuário de origem (`requester_user_id === null`); caso contrário, 400
+  `Campos inválidos: fieldKey — <chave> só pode ser solicitado para solicitação pública`
+  (`F1 src/modules/pendingItems/pendingItems.service.ts:125-133`).
+- `comment` é obrigatório, não vazio após `trim`, até 2.000
+  (`F1 src/modules/pendingItems/pendingItems.schema.ts:11`;
+  `F1 src/modules/pendingItems/pendingItems.service.ts:119-124`).
+
+**Snapshot:** na criação do item, `getFieldSnapshot(fieldKey, row)` devolve `{ label, value }`
+(`F1 src/shared/catalog/fieldCatalog.ts:190-199`) e o service grava `field_label` e
+`current_value: JSON.stringify(value)` (`F1 src/modules/pendingItems/pendingItems.service.ts:157-173`).
+Regras de extração (`F1 src/shared/catalog/fieldCatalog.ts:95-188`):
+
+| Chave                                                                                  | Valor corrente                                 |
+| -------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| `requester.fullName`, `requester.corporateEmail`, `demand.*`, `operational.*` textuais | string da coluna                               |
+| `requester.area`, `requester.manager`                                                  | `""` quando a coluna é nula                    |
+| `requester.department`, `requester.additionalContact`                                  | `null` quando a coluna é nula                  |
+| `demand.category`                                                                      | `category`, senão `category_name`, senão `""`  |
+| `operational.peopleInvolved`                                                           | número                                         |
+| `operational.monthlyEffortHours`                                                       | `Number(...)`                                  |
+| `operational.hasManualControls`                                                        | `null` (flag nula), `false`, ou o detalhamento |
+| `operational.desiredDeadline`                                                          | `AAAA-MM-DD` (`toISOString().slice(0, 10)`)    |
+| `complementary.*Detail`                                                                | `null`, `false`, ou o detalhamento             |
+| `complementary.additionalNotes`                                                        | `null` ou string                               |
+
+O snapshot é serializado em JSON e desserializado na leitura quando o valor é escalar
+(`F1 src/modules/pendingItems/pendingItems.service.ts:51-73`). O rótulo exibido é o do catálogo do
+backend, não o do frontend. **Desatualizado no legado:** o exemplo de `fieldLabel` em
+`F1 docs/contract-pendencias_03.md` §10 usa `E-mail Corporativo`, enquanto o catálogo devolve
+`E-mail corporativo` (`F1 src/shared/catalog/fieldCatalog.ts:48`).
+
+**Correção do valor (`correctedValue`):** a revisão do lote valida por chave antes de aplicar
+(`F1 src/modules/pendingItems/pendingItems.service.ts:392-453`):
+
+| Chave                                                          | Regra na revisão                                                                                                                                          | Mensagem                                                                                                                     |
+| -------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `operational.peopleInvolved`, `operational.monthlyEffortHours` | precisa ser número                                                                                                                                        | `Campos inválidos: correctedValue — <chave> deve ser número`                                                                 |
+| `operational.peopleInvolved`                                   | precisa ser `> 0`                                                                                                                                         | `Campos inválidos: correctedValue — peopleInvolved > 0`                                                                      |
+| `operational.hasManualControls`                                | `false` ou texto não vazio                                                                                                                                | `Campos inválidos: correctedValue — hasManualControls deve ser false ou texto não vazio`                                     |
+| `operational.desiredDeadline`                                  | `AAAA-MM-DD` e data parseável                                                                                                                             | `Campos inválidos: correctedValue — desiredDeadline deve ser yyyy-mm-dd`; `Campos inválidos: correctedValue — data inválida` |
+| `operational.operationalImpact`                                | vocabulário de impacto                                                                                                                                    | `Campos inválidos: correctedValue — operationalImpact inválido`                                                              |
+| `operational.perceivedCriticality`                             | vocabulário de criticidade                                                                                                                                | `Campos inválidos: correctedValue — perceivedCriticality inválido`                                                           |
+| demais                                                         | texto ou `null`; vazio só em `requester.department`, `requester.additionalContact`, `complementary.additionalNotes` e nas quatro flags de `complementary` | `Campos inválidos: correctedValue — <chave> deve ser texto`; `Campos inválidos: correctedValue — <chave> não pode ser vazio` |
+
+A revisão **não reaplica** o piso `>= 0` de `monthlyEffortHours` que o POST exige: para essa chave
+só o tipo numérico é checado (`F1 src/modules/pendingItems/pendingItems.service.ts:392-401` versus
+`F1 src/modules/requests/requests.schema.ts:56-59`).
+
+`validate` escreve o valor na coluna correspondente: `requester.*` em `requesters`, `demand.*` em
+`requests` (com `demand.category` resolvida de novo contra categorias ativas), `operational.*` em
+`requests` e `complementary.*` nas flags + detalhe
+(`F1 src/modules/pendingItems/pendingItems.repository.ts:603-742`).
+
+### 6.6 Visão do consumidor (F2) e drift
+
+**Envio.** O consumidor serializa o payload na parte textual `payload` e anexa os binários em
+`attachments` (`F2 src/lib/api/request.api.ts:31-41`). O estado do formulário é separado dos tipos do
+payload: `IdentificationData`, `DemandData`, `OperationalData` e `ComplementaryData` guardam
+`YesNo` (`'Sim' | 'Não'`), detalhes em campos próprios e números como string
+(`F2 src/lib/types/request.ts:151-226`).
+
+**Conversão para o payload** (`F2 src/routes/(public)/solicitacao/components/solicitation-form/SolicitationForm.svelte:346-437`):
+
+- aplica `trim` em todas as strings e omite `department` e `additionalContact` vazios;
+- `hasManualControls`: `'Não'` vira `false`; qualquer outra escolha vira o detalhe aparado — "Sim"
+  sem detalhe produz string vazia, que o backend recusa com `Campo obrigatório.`;
+- as quatro flags de `complementary` usam `false` para "Não" e detalhe aparado para "Sim"; chave sem
+  escolha fica fora do objeto (`toYesNoDetail`);
+- `complementary` inteiro é omitido quando não há nenhuma chave preenchida;
+- `schedulePreferences` só é enviado quando a lista tem itens;
+- `peopleInvolved` e `monthlyEffortHours` passam por `Number(...)`;
+- `category`, `requestType`, `executionFrequency`, `operationalImpact` e `perceivedCriticality`
+  recebem cast para as unions de `F2 src/lib/types/request.ts:23-31`;
+- no modo autenticado, a identidade enviada é a do usuário da sessão (`shouldLockIdentity`),
+  coerente com a sobrescrita do backend (§6.3)
+  (`F2 src/routes/(public)/solicitacao/components/solicitation-form/SolicitationForm.svelte:380-387`).
+
+**Seleção de campos marcáveis.** `F2 src/lib/pendency/field-catalog.ts` monta as mesmas chaves do
+catálogo (33 no total) em quatro seções e envia apenas `fieldKey`
+(`F2 src/lib/pendency/field-catalog.ts:32-154`; `F2 src/lib/types/pendency.ts:17-24`).
+`fullName`/`corporateEmail` só entram com `includeIdentityFields`, que fica desligado por padrão
+porque o detalhe interno não expõe o id de origem
+(`F2 src/lib/pendency/field-catalog.ts:27-46`); na prática a UI oferece 31 chaves, enquanto o backend
+aceita as 33 com a exceção de solicitação pública.
+
+**Drift observado (sem decisão):**
+
+| Ponto                                 | Legado (F1)                                             | Consumidor (F2)                                                                                                                                                                                                                         |
+| ------------------------------------- | ------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Rótulos                               | catálogo do backend (`fieldCatalog.ts:46-80`)           | rótulos próprios, ex.: `Nome` vs `Nome completo`, `Título Resumido` vs `Título resumido`, `Volumetria Aproximada` vs `Volumetria`, `Tempo Médio de Execução` vs `Tempo médio por ciclo` (`F2 src/lib/pendency/field-catalog.ts:43-149`) |
+| `demand.requestType`                  | texto livre até 80                                      | union de 3 opções: `Automação`, `Melhoria`, `Manutenção` (`F2 src/lib/types/request.ts:25,296-300`)                                                                                                                                     |
+| `operational.executionFrequency`      | texto livre até 50                                      | union de 4 opções: `Diária`, `Semanal`, `Mensal`, `Por Demanda` (`F2 src/lib/types/request.ts:27,302-307`)                                                                                                                              |
+| `demand.category`                     | nome de categoria ativa no cadastro                     | union fixa de 10 categorias (`F2 src/lib/types/request.ts:44-54`)                                                                                                                                                                       |
+| `operational.*` numéricos na correção | número (`correctedValue`); `peopleInvolved` exige `> 0` | input texto convertido; negativo é recusado no cliente, mas zero passa no cliente e só é barrado no backend para `peopleInvolved` (`F2 src/lib/pendency/requester-field-kind.ts:106-115`)                                               |
+| Sim/Não na correção                   | `hasManualControls` recusa string vazia                 | "Sim" sem detalhe é aceito como string vazia (`F2 src/lib/pendency/requester-field-kind.ts:144-150`)                                                                                                                                    |
+
+Não existe, em F2, definição de obrigatoriedade vinda do backend: a obrigatoriedade por etapa está
+escrita no próprio frontend (`STEP_FIELDS` em `F2 src/lib/types/request.ts:232-261`) e repetida na
+validação dos componentes. O consumidor não chama nenhuma rota de definição de formulário — não há
+`GET /forms` para chamar.
+
+**Divergente (legado vigente):** o catálogo do legado trata `demand.category` como uma das 33 chaves
+marcáveis, e a pendência pode pedir sua correção. O ADR-0022 fixa a categoria como classificação
+top-level, fora do formulário; o wire de abertura mantém `demand.category` por compatibilidade até o
+formulário configurável entrar (`docs/adr/0022-the-classification-picks-the-form.md`, "Emenda de
+compatibilidade").
+
+### 6.7 Confronto com `docs/04-API-Conventions.md`
+
+| Convenção                                                                 | Comportamento no legado (§6)                                                | Situação                    | Ponteiro                                                           |
+| ------------------------------------------------------------------------- | --------------------------------------------------------------------------- | --------------------------- | ------------------------------------------------------------------ |
+| §2 / §2.3 — envelope e `code`                                             | 400 `{ status, statusCode, message }`, sem `code` e sem `requestId`         | divergente (legado vigente) | ADR-0005; convenção §2.3                                           |
+| §3 — validação `400` + `validation_error` + `fields: [{ path, message }]` | `POST /requests` responde 400 com **uma string agregada** e nenhum `fields` | divergente (legado vigente) | convenção §3 (C2) e tabela 0.1 #5; decisão D12 de #19              |
+| §9 — MIME inválido → 415; arquivo acima do limite → 413                   | MIME e tamanho respondem 400, com mensagens próprias                        | divergente (legado vigente) | convenção §9                                                       |
+| §9 — parte `payload` acima de 2 MiB → 413                                 | 400 com a mensagem de fallback do multer                                    | divergente (legado vigente) | convenção §9                                                       |
+| §9 — 5 arquivos × 10 MiB, parte JSON de 2 MiB                             | mesmos limites                                                              | compatível                  | convenção §9; `F1 src/shared/middleware/upload.ts:13-22,35-38`     |
+| §10 — datas puras `yyyy-mm-dd`                                            | `desiredDeadline` segue o formato                                           | compatível                  | convenção §10                                                      |
+| §10 — timestamps ISO-8601 UTC                                             | `schedulePreferences` usa `AAAA-MM-DDTHH:MM`, sem fuso e sem segundos       | divergente (legado vigente) | convenção §10; `F1 src/modules/requests/requests.schema.ts:96-104` |
+| §11 — chaves EN camelCase, valores pt-BR                                  | blocos e chaves em camelCase; enums e mensagens em pt-BR                    | compatível                  | convenção §11                                                      |
+| §1 — base path `/api/v1`                                                  | o transportador vive em `/requests`                                         | divergente (legado vigente) | já registrado em §3.1 e §9                                         |
+| #22 — multipart com limites por rota                                      | limites coincidem; status divergem (acima)                                  | divergente (legado vigente) | convenção §9; tabela 0.1 #22                                       |
+
+Contexto de delta intencional (ponteiro, sem decisão nesta seção): o formulário fixo em código é
+substituído por `forms` → `form_blocks` → `form_fields`, com respostas em `requests.form_answers`
+(ADR-0012); a definição é editada no lugar, sem versionamento (ADR-0019); a categoria passa a ser
+classificação top-level que escolhe o formulário, com `categories.form_id` (ADR-0022). O seed desses
+ADRs tem 32 campos — as 33 chaves do catálogo legado menos `demand.category`
+(`docs/adr/0012-form-is-a-configurable-entity.md`, "Consequências").
+
+**Cobertura da seção:** 0 rotas (sem superfície HTTP); 33 chaves de campo catalogadas.
