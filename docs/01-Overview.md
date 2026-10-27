@@ -86,7 +86,7 @@ A reescrita não é uma reimplementação linha a linha. O legado é a **fonte d
 | ------------ | -------------------------------------------------------------- | ------------------------------------------------------------------- |
 | Runtime      | Node.js 24+                                                    | `CODING_STANDARDS.md`                                               |
 | Módulos      | ESM                                                            | `CODING_STANDARDS.md`                                               |
-| Linguagem    | TypeScript 7, modo estrito                                     | `CODING_STANDARDS.md`                                               |
+| Linguagem    | TypeScript ~6.0.3 (alvo 7), modo estrito                       | `CODING_STANDARDS.md`                                               |
 | HTTP         | Express 5                                                      | `CODING_STANDARDS.md`                                               |
 | Persistência | Knex como query builder, sem ORM                               | [ADR-0003](./adr/0003-knex-dialect-portability.md)                  |
 | Validação    | Zod na borda                                                   | [02-Architecture § 13](./02-Architecture.md#13-validação-e-a-borda) |

@@ -65,7 +65,7 @@ O Knex ordena os seeds pelo caminho completo por padrão, e isso agrupa por dire
 
 ## Fluxo local
 
-Os comandos abaixo usam `npx knex … --knexfile knexfile.ts`. No Node 24, carregue o arquivo TypeScript com `node --experimental-strip-types` (ou um loader equivalente) até que scripts npm dedicados existam.
+Os comandos abaixo são a interface prevista: `knexfile.ts`, `migrations/` e `seeds/` nascem no scaffolding. No Node 24 o type stripping é nativo, então o `--knexfile knexfile.ts` não exige o flag `--experimental-strip-types` nem um loader.
 
 1. **Criar o banco** (exemplo; o nome é o de `DATABASE.NAME`):
 
