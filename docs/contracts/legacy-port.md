@@ -4,6 +4,9 @@ Este documento registra, domínio por domínio, o contrato HTTP **vigente no bac
 commit `70acc02c89c58d9b0056f9f1615502212873c7e2` (referência `F1`). Ele descreve o que o sistema
 faz hoje, para que o backend-novo tenha uma fonte única e fiel antes de qualquer alteração.
 
+Este é um port **narrativo** do legado: não é o contrato de máquina do backend-novo e não substitui
+os schemas Zod (`docs/04-HTTP-Contract.md`).
+
 **Este documento não decide nada.** Não há renomeação de rota ou campo, não há correção de
 divergência e não há recomendação. Onde o legado diverge das convenções congeladas do backend-novo,
 a divergência é apenas **anotada**, com ponteiro para a decisão correspondente. Os deltas
@@ -48,9 +51,7 @@ Linhas foram lidas no commit fixado, nunca na árvore de trabalho.
 - [15. reports](#15-reports)
 - [16. audit](#16-audit)
 - [17. internal-notes](#17-internal-notes)
-- [18. Cobertura e checklist de aceite](#18-cobertura-e-checklist-de-aceite)
-- [19. Divergências anotadas (índice)](#19-divergências-anotadas-índice)
-- [20. Como atualizar este port](#20-como-atualizar-este-port)
+- [18. Divergências anotadas (índice)](#18-divergências-anotadas-índice)
 
 ## Template das seções de domínio
 
@@ -93,6 +94,8 @@ Limitações das fontes:
   **Desatualizado no legado**.
 - `F1` é o HEAD do backend no momento deste port (`git log -1`), mas o contrato é fixado por SHA:
   se o legado avançar, este documento não muda.
+- Comportamentos que dependem de dados ou configuração (por exemplo, o modo de abertura do portal e o
+  conteúdo de `system_settings`) são descritos pela regra do código, não por um estado específico.
 
 ## 3. Transporte transversal
 
@@ -6950,74 +6953,11 @@ Sem corpo (`F1 src/modules/internalNotes/internalNotes.controller.ts:75`).
 - `POST /requests/:protocol/internal-notes` (#53)
 - `PUT /requests/:protocol/internal-notes/read` (#54)
 
-## 18. Cobertura e checklist de aceite
-
-### 18.1 Cobertura por domínio
-
-Contagem de rotas do inventário (§4) e de citações com linha (`arquivo:linha`) nas seções de
-domínio. Citações são contadas como ocorrências, não como linhas únicas; referências sem linha nas
-tabelas de fontes não entram na contagem.
-
-| Domínio                         | Rotas                   | Seção  | Citações F1 | Citações F2 |
-| ------------------------------- | ----------------------- | ------ | ----------- | ----------- |
-| auth                            | 4                       | §5     | 136         | 23          |
-| forms                           | 0 (sem superfície HTTP) | §6     | 116         | 15          |
-| portal-config                   | 8                       | §7     | 175         | 25          |
-| users                           | 10                      | §8     | 189         | 10          |
-| requests                        | 10                      | §9     | 274         | 29          |
-| triage                          | 2                       | §10    | 93          | 16          |
-| mapping                         | 2                       | §11    | 112         | 20          |
-| prioritization                  | 2                       | §12    | 61          | 19          |
-| pending-items                   | 6                       | §13    | 101         | 33          |
-| queue                           | 2                       | §14    | 81          | 12          |
-| reports                         | 2                       | §15    | 84          | 11          |
-| audit                           | 3                       | §16    | 100         | 9           |
-| internal-notes                  | 3                       | §17    | 97          | 10          |
-| **Total das seções de domínio** | **54**                  | §5–§17 | **1.619**   | **232**     |
-
-As seções §2–§3 (fontes e transporte transversal) acrescentam 108 citações `F1` e §18–§20, 1. O
-documento tem **1.960 citações com linha** — 1.728 `F1` e 232 `F2`.
-
-Cada seção de domínio tem as quatro partes exigidas pelo template: Fontes, Rotas, uma subseção por
-rota e as duas leituras finais (consumidor F2 e confronto com as convenções). As três rotas de
-auditoria compartilham a seção §16; as duas de mapping, a §11; as três de internal-notes, a §17.
-
-### 18.2 Checklist dos critérios de aceite
-
-| Critério da issue #35                                                            | Como foi cumprido                                                                                                                               | Evidência                                                                               |
-| -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| Os 13 domínios têm suas rotas vigentes documentadas (request, response, códigos) | 12 domínios com superfície HTTP, 54 rotas, uma subseção por rota; `forms` documentado como gramática de payload (§6) por não ter rota no legado | §5–§17; §18.1                                                                           |
-| Nenhuma rota/campo é alterado em relação ao legado                               | Os paths e nomes de campo são os de `F1`; os deltas intencionais (#15–#27) não foram aplicados nem sugeridos                                    | §4; §19                                                                                 |
-| Cada seção cita arquivo e linha do legado como evidência                         | 1.728 citações `F1` com `caminho:linha`, todas resolvidas no commit fixado                                                                      | §5–§17; verificação abaixo                                                              |
-| Visão do consumidor (frontend) registrada onde houver drift                      | 232 citações `F2` com linha e uma subseção "Visão do consumidor (F2) e drift" por domínio                                                       | §5.7, §6.6, §7.11, §8.13, §9.13, §10.6, §11.5, §12.5, §13.9, §14.5, §15.5, §16.6, §17.6 |
-| Nenhuma contradição com `docs/04-API-Conventions.md`                             | Toda divergência está marcada como `Divergente (legado vigente)` e aponta a convenção/ADR/decisão; nenhuma convenção é redefinida               | §19; subseção "Confronto" de cada domínio                                               |
-
-### 18.3 Verificações executadas
-
-Antes do fechamento do port foram executadas quatro verificações pontuais (scripts descartáveis, não
-versionados):
-
-1. **Paridade de rotas** — extração de todas as chamadas de método nos 11 módulos de router de `F1` e nos
-   `publicVerifyRouter`/`auditLogsRouter`, com a montagem de `F1 src/router.ts:16-32`, comparada ao
-   inventário da §4: **54 registros no legado, 54 linhas no inventário, zero diferenças**.
-2. **Resolução de citações** — leitura de cada `F1 <arquivo>:<linha>`/`F2 <arquivo>:<linha>` no SHA
-   fixado: **1.960 citações, zero arquivos ausentes, zero linhas fora do arquivo e zero citações
-   apontando para linha vazia**.
-3. **Linguagem de decisão** — varredura das seções de domínio por `deveria`, `recomend*`, `propõe`,
-   `decidir` e `decidido` fora dos blocos de confronto e das anotações: nenhuma ocorrência que
-   introduza decisão (as únicas ocorrências descrevem comportamento do legado ou o próprio escopo
-   deste documento).
-4. **Formatação** — `npx prettier --check docs/contracts/legacy-port.md` sem diferenças.
-
-A verificação de paridade não substitui revisão: ela garante que nenhuma rota ficou de fora e que
-nenhuma rota inventada entrou, mas não valida a semântica de cada campo. Campos e regras foram lidos
-no código citado, rota a rota.
-
-## 19. Divergências anotadas (índice)
+## 18. Divergências anotadas (índice)
 
 Este índice não decide nada: ele apenas agrupa, por tema, onde o legado diverge das convenções
-congeladas e onde estão as decisões correspondentes. As tabelas de decisão consolidadas estão no
-comentário de consolidação da issue #35 (deltas herdados de #15–#27); os ADRs estão em `docs/adr/`.
+congeladas. As decisões correspondentes estão nas specs de domínio (#15–#27) e nos ADRs em
+`docs/adr/`.
 
 | Tema                      | O que o legado faz                                                                                           | Onde aparece                                 | Ponteiro                                                     |
 | ------------------------- | ------------------------------------------------------------------------------------------------------------ | -------------------------------------------- | ------------------------------------------------------------ |
@@ -7038,23 +6978,3 @@ comentário de consolidação da issue #35 (deltas herdados de #15–#27); os AD
 | Notas internas            | Cursor por `(created_at, id)`, `unseenCount` global, eventos normalizados na leitura                         | §17                                          | #27                                                          |
 | Formulário                | Catálogo estático de 33 chaves; sem `GET /forms`; `fieldKey` pontilhado                                      | §6                                           | ADR-0012; ADR-0019; ADR-0022; #16                            |
 | Portal-config             | `id` numérico e status por nome no payload público; assets como 8 variantes                                  | §7                                           | ADR-0015; ADR-0018; ADR-0021                                 |
-
-## 20. Como atualizar este port
-
-1. Fixe o novo commit do legado em §2 e, se for o caso, atualize a referência `F1` do Apêndice B de
-   `docs/04-API-Conventions.md` para o mesmo SHA.
-2. Reextraia o inventário da §4 a partir de `src/router.ts` e dos 11 módulos de router de domínio. A contagem
-   esperada é a soma das rotas registradas; qualquer diferença é mudança de contrato, não de
-   documentação.
-3. Atualize as seções afetadas mantendo a regra de citação: `F1 caminho:linha` lido no SHA fixado.
-4. Rode as verificações de §18.3 (paridade, resolução de citações, linguagem de decisão e prettier).
-5. Não promova uma divergência a decisão aqui: o destino é a spec do domínio ou um ADR.
-
-Limitações permanentes deste artefato:
-
-- A visão do consumidor cobre apenas o que está versionado em `F2` (`src/lib`). As cópias de contrato
-  em `frontend/contratos/` não estavam versionadas no commit fixado e não são citadas.
-- Documentos do legado marcados como **Desatualizado no legado** continuam úteis como narrativa, mas
-  não são fonte de contrato: o código no SHA fixado prevalece.
-- Comportamentos que dependem de dados/configuração (por exemplo, o modo de abertura do portal e o
-  conteúdo de `system_settings`) são descritos pela regra do código, não por um estado específico.
