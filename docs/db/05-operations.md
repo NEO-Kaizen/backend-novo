@@ -57,7 +57,7 @@ knexfile.ts                     # lista os diretórios por domínio
 
 ### Ordem dos seeds
 
-O Knex ordena os seeds pelo caminho completo por padrão, e isso agrupa por diretório — não pela ordem de dependência. Para respeitar a ordem do [`04-seeds.md`](./04-seeds.md), o `knexfile.ts` deve listar `seeds.directory` na ordem das dependências e usar `sortDirsSeparately: true`, **ou** um seed orquestrador deve chamar os seeds de domínio na ordem. Sem uma dessas duas coisas, `users` pode rodar antes de `profiles`, e a FK de `users.profile_id` falha; `categories`/`form_blocks` podem rodar antes de `forms`.
+O Knex ordena os seeds pelo caminho completo por padrão, e isso agrupa por diretório — não pela ordem de dependência. Como há um seed por domínio ([`04-seeds.md`](./04-seeds.md)), a ordem entre domínios precisa ser explícita: o `knexfile.ts` deve listar `seeds.directory` na ordem das dependências — `users` → `auth` → `forms` → `portal-config` → `prioritization` — e usar `sortDirsSeparately: true`, **ou** um seed orquestrador deve chamar os seeds de domínio nessa ordem. Dentro do domínio, o próprio seed insere as tabelas na ordem das FKs: `profiles` antes de `users`, `themes` antes de `portal_settings` e `forms` antes de `form_blocks`/`form_fields`. Sem essa ordem, a FK `users.profile_id` falha; e sem `forms` antes de `portal-config`, falha `categories.form_id`.
 
 ### Semântica de atraso
 
@@ -141,7 +141,7 @@ A estratégia concreta (in-memory, arquivo temporário, container) está **em ab
 | Sintoma | Causa provável | O que fazer |
 | --- | --- | --- |
 | Migration falha ao criar FK | Tabela referenciada ainda não existe | Confira a ordem em [§ 4](../03-Data-Model.md#4-integridade-referencial-e-ordem-de-criação) e o timestamp da migration |
-| Seed falha em `users.profile_id` | `profiles` não rodou antes | Ordene `seeds.directory` ou use o seed orquestrador (ver acima) |
+| Seed falha em `users.profile_id` | O seed do domínio `users` não inseriu `profiles` antes | Insira `profiles` antes de `users` no seed do domínio |
 | Seed duplica linha | A busca pela chave natural não foi usada | Implemente create-if-absent; não use id fixo nem `merge` |
 | `ENUM`/`ARRAY`/`jsonb` funciona no Postgres e quebra no MySQL | Tipo nativo fora do `Dialect` | Use coluna com `ck_`, tabela filha e `dialect.jsonType()` |
 | Índice funcional `LOWER(name)` quebra no MySQL | `LOWER()` em índice não é portátil | Use coluna normalizada mantida pela aplicação (`normalized_name`) |
