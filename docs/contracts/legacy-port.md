@@ -5379,3 +5379,323 @@ O `protocol` ecoado é o do path, já com `trim` (`F1 src/modules/pendingItems/p
 | `deadline` no wire        | A chave é sempre emitida, com `null` quando não há prazo (`F1 src/modules/pendingItems/pendingItems.repository.ts:764-766`) | **Desatualizado no legado:** o contrato marca `deadline` como opcional (`F1 docs/contract-pendencias_03.md` §7)                                               |
 
 **Cobertura da seção:** 6 de 6 rotas do inventário — #39 `POST /requests/:protocol/pending-items`; #40 `GET /requests/:protocol/pending-items`; #41 `PATCH /requests/:protocol/pending-items/review`; #42 `PATCH /requests/:protocol/pending-items/:pendingItemId`; #43 `POST /requests/:protocol/pending-items/:pendingItemId/attachments`; #44 `POST /requests/:protocol/public/verify`.
+
+## 14. queue
+
+Fila centralizada do painel interno: métricas agregadas e listagem paginada das solicitações. O
+mesmo router monta o subfluxo de mapeamento (`GET`/`PUT /queue/requests/:protocol/mapping`), que é
+contrato da §11 — esta seção cobre apenas as duas rotas de fila.
+
+### 14.1 Fontes
+
+| Ref | Caminho                                      | Uso                                                               |
+| --- | -------------------------------------------- | ----------------------------------------------------------------- |
+| F1  | `src/modules/queue/queue.router.ts`          | montagem, guards de perfil                                        |
+| F1  | `src/modules/queue/queue.controller.ts`      | borda HTTP: validação da query e status                           |
+| F1  | `src/modules/queue/queue.schemas.ts`         | `queueQuerySchema` e `queueFilterQuerySchema`                     |
+| F1  | `src/modules/queue/queue.service.ts`         | escopo por perfil, paginação, serialização                        |
+| F1  | `src/modules/queue/queue.repository.ts`      | SQL das métricas, da listagem e do roster                         |
+| F1  | `src/modules/queue/queue.filters.ts`         | semântica de filtros compartilhada com o CSV (§15)                |
+| F1  | `src/modules/DTOs/queue/queue.dto.ts`        | `FindQueueParams`                                                 |
+| F1  | `src/shared/types/queue.types.ts`            | shapes de request/response                                        |
+| F1  | `src/shared/types/requests.ts`               | `IN_PROGRESS_STATUSES`, `TERMINAL_STATUSES`, `REQUEST_PRIORITIES` |
+| F1  | `docs/issues/102-scope-queue-to-analyst.md`  | decisão do escopo por Analista                                    |
+| F1  | `docs/contract-assign-action.md` §Pendências | `GET /queue` reflete só o responsável de triagem                  |
+| F2  | `src/lib/types/queue.ts`                     | tipos do envelope e do item                                       |
+| F2  | `src/lib/api/request.api.ts`                 | cliente de `GET /queue` e `GET /queue/metrics`                    |
+| F2  | `src/routes/(admin)/fila/+page.server.ts`    | tradução da URL da tela para a query da API                       |
+
+Não há documento do legado dedicado ao contrato de `GET /queue`: a semântica dos filtros só existe
+como comentário no código (`F1 src/modules/queue/queue.filters.ts:8-12`). O contrato do CSV
+(`F1 docs/queue-csv-export-contract.md:16-27`) descreve os mesmos filtros e é citado na §15. O
+contrato de atribuição registra como pendência aberta a decisão entre refletir só o responsável de
+triagem ou também o de mapeamento na fila (`F1 docs/contract-assign-action.md:180-183`).
+
+### 14.2 Rotas
+
+| #   | Método | Path             | Autenticação/autorização                         | Handler                | Sucesso  | Erros              |
+| --- | ------ | ---------------- | ------------------------------------------------ | ---------------------- | -------- | ------------------ |
+| 45  | GET    | `/queue/metrics` | sessão + `Analista`, `Gestor` ou `Administrador` | `getMetricsController` | 200 JSON | 401, 403, 500      |
+| 46  | GET    | `/queue`         | sessão + `Analista`, `Gestor` ou `Administrador` | `centralizedQueue`     | 200 JSON | 400, 401, 403, 500 |
+
+Evidência: `F1 src/modules/queue/queue.router.ts:11-23`; montagem em `F1 src/router.ts:28`.
+
+Os dois handlers respondem `200` fixo, sem `201`/`204` (`F1 src/modules/queue/queue.controller.ts:10,22`).
+O guard é `requireRole("Analista", "Gestor", "Administrador")`; a custódia por solicitação não existe
+nesta rota — a restrição do Analista é aplicada no service (§14.4, "Escopo por perfil").
+
+### 14.3 GET /queue/metrics
+
+#### Request
+
+Sem path params e sem query params: o controller não lê `req.query`, apenas repassa `req.user`
+(`F1 src/modules/queue/queue.controller.ts:7-11`). Parâmetros enviados na URL são ignorados.
+
+#### Response 200
+
+```json
+{
+  "totalRequests": 42,
+  "unassignedRequests": 7,
+  "inProgressRequests": 12,
+  "overdueRequests": 3
+}
+```
+
+| Campo                | Tipo             | Definição no SQL                                                                                                        | Evidência                                                                                          |
+| -------------------- | ---------------- | ----------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `totalRequests`      | number (inteiro) | `COUNT(requests.*)`                                                                                                     | `F1 src/modules/queue/queue.repository.ts:35`                                                      |
+| `unassignedRequests` | number (inteiro) | `requests.professional_id IS NULL`                                                                                      | `F1 src/modules/queue/queue.repository.ts:36-38`                                                   |
+| `inProgressRequests` | number (inteiro) | `statuses.name IN ("Em triagem", "Em mapeamento", "Em análise de viabilidade", "Em desenvolvimento", "Em homologação")` | `F1 src/modules/queue/queue.repository.ts:39-42`; lista em `F1 src/shared/types/requests.ts:34-40` |
+| `overdueRequests`    | number (inteiro) | `desired_deadline < CURRENT_DATE` **e** `statuses.name NOT IN ("Concluído", "Cancelado")`                               | `F1 src/modules/queue/queue.repository.ts:43-48`; lista em `F1 src/shared/types/requests.ts:42-43` |
+
+- As quatro contagens vêm do mesmo `SELECT` com a mesma cláusula de escopo; `|| 0` cobre resultado
+  nulo (`F1 src/modules/queue/queue.repository.ts:33-57`).
+- "Atrasada" é prazo **já** vencido: vencer hoje ainda não conta
+  (`F1 src/modules/queue/queue.repository.ts:43-44`).
+- O corte de atraso usa `CURRENT_DATE` — o dia do processo do banco, sem conversão de fuso. O
+  dashboard usa `CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo'` (§15.3), portanto os dois
+  números podem divergir na virada do dia.
+- A lista de status "em andamento" é fixa em código; `inProgressRequests` não deriva de
+  `statuses.closes_request`/`is_terminal`.
+
+#### Escopo por perfil
+
+`resolveQueueScope` devolve `undefined` para qualquer perfil diferente de `Analista` e, para
+`Analista`, `Number(actor.id)` — ou `0` quando o id não é inteiro positivo, valor que não existe em
+`users.user_id` e por isso não casa nenhuma linha (`F1 src/modules/queue/queue.service.ts:9-22`).
+
+Com escopo definido, o repositório passa a contar apenas solicitações em que o usuário é o
+responsável de triagem **ou** o designado do mapeamento:
+
+```sql
+leftJoin details_professional as assignee          -- requests.professional_id
+leftJoin details_professional as mapping_assignee  -- requests.mapping_professional_id
+andWhere ( assignee.user_id = :scopedUserId OR mapping_assignee.user_id = :scopedUserId )
+```
+
+Evidência: `F1 src/modules/queue/queue.repository.ts:10-31`. Os joins são 1:1 por
+`professional_id`, o que mantém as contagens sem inflação (`F1 src/modules/queue/queue.repository.ts:11-13`).
+
+Consequência observável do SQL: para um `Analista`, `unassignedRequests` não é necessariamente
+zero — uma solicitação sem `professional_id` em que ele seja o designado de mapeamento continua
+casando o escopo e é contada como sem responsável **de triagem**.
+
+#### Erros
+
+| Status | Condição                                                            | Mensagem                                                                            | Evidência                                            |
+| ------ | ------------------------------------------------------------------- | ----------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| 401    | sem cookie de sessão                                                | `"Token não fornecido"`                                                             | `F1 src/shared/middleware/auth.ts:27-30`             |
+| 401    | token inválido/expirado, usuário ou perfil inativo, sessão revogada | `"Token inválido ou expirado"` / `"Sua sessão foi revogada. Faça login novamente."` | `F1 src/shared/middleware/auth.ts:37-45,69-72,87-95` |
+| 403    | perfil fora de Analista/Gestor/Administrador                        | `"Acesso restrito ao perfil Analista ou Gestor ou Administrador"`                   | `F1 src/shared/middleware/requireRole.ts:21-22`      |
+| 403    | `must_change_password` pendente                                     | `"Troca de senha obrigatória antes de continuar"`                                   | `F1 src/shared/middleware/auth.ts:58-61`             |
+| 500    | falha não prevista                                                  | `"Erro interno do servidor"`                                                        | `F1 src/shared/middleware/errorHandler.ts:32-43`     |
+
+### 14.4 GET /queue
+
+#### Request — query
+
+Validada por `queueQuerySchema` (`F1 src/modules/queue/queue.schemas.ts:50-66`) a partir de
+`req.query` (`F1 src/modules/queue/queue.controller.ts:14-18`).
+
+| Param        | Tipo aceito                                           | Regra                                   | Default | Mensagem literal                                                             | Evidência                                     |
+| ------------ | ----------------------------------------------------- | --------------------------------------- | ------- | ---------------------------------------------------------------------------- | --------------------------------------------- |
+| `page`       | inteiro ≥ 1                                           | obrigatório; `coerce`                   | —       | `"Deve ser um número."` / `"Deve ser um número inteiro."` / `"Mínimo de 1."` | `F1 src/modules/queue/queue.schemas.ts:54`    |
+| `pageSize`   | inteiro 1..100                                        | obrigatório; `coerce`                   | —       | idem + `"Máximo de 100."`                                                    | `F1 src/modules/queue/queue.schemas.ts:55-59` |
+| `search`     | string ≤ 254                                          | `trim`                                  | ausente | `"Máximo de 254 caracteres."`                                                | `F1 src/modules/queue/queue.schemas.ts:6`     |
+| `status`     | string 1..100                                         | `trim`; comparado ao **nome** do status | ausente | `"Status inválido."` / `"Máximo de 100 caracteres."`                         | `F1 src/modules/queue/queue.schemas.ts:7-12`  |
+| `priority`   | `Baixa` \| `Média` \| `Alta` \| `Crítica` \| `nenhum` | enum                                    | ausente | `"Prioridade inválida."`                                                     | `F1 src/modules/queue/queue.schemas.ts:13-15` |
+| `assigneeId` | UUID \| dígitos \| `unassigned`                       | `trim`                                  | ausente | `"Identificador do responsável inválido."`                                   | `F1 src/modules/queue/queue.schemas.ts:16-22` |
+| `unassigned` | `true` \| `false` \| `1` \| `0`                       | convertido para boolean                 | ausente | `"Valor inválido para \"unassigned\"."`                                      | `F1 src/modules/queue/queue.schemas.ts:23-26` |
+
+Regras adicionais:
+
+- `page` e `pageSize` são **obrigatórios** e não têm default (`F1 src/modules/queue/queue.schemas.ts:46-49,54-59`).
+- `unassigned=true` combinado com `assigneeId` diferente de `unassigned` é rejeitado com
+  `"\"unassigned\" e \"assigneeId\" não podem ser combinados."`, no path `unassigned`
+  (`F1 src/modules/queue/queue.schemas.ts:29-35,63-66`).
+- O schema **não** é `.strict()`: parâmetro desconhecido na query é descartado em silêncio
+  (`F1 src/modules/queue/queue.schemas.ts:50-62`). O schema dos filtros sem paginação
+  (`queueFilterQuerySchema`), usado pelo CSV, é `.strict()` (`F1 src/modules/queue/queue.schemas.ts:38-44`).
+- `status` não é validado contra o catálogo de status; é comparado por igualdade ao rótulo
+  (`statuses.name`) e um nome inexistente devolve lista vazia
+  (`F1 src/modules/queue/queue.filters.ts:25`).
+
+Semântica dos filtros (`F1 src/modules/queue/queue.filters.ts:13-50`):
+
+| Filtro                                         | SQL                                                                                                                     |
+| ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `search`                                       | `protocol ILIKE %search%` **ou** `requester.corporate_email ILIKE %search%` **ou** `requester.full_name ILIKE %search%` |
+| `status`                                       | `statuses.name = :status` (igualdade exata)                                                                             |
+| `priority = "nenhum"`                          | `requests.priority_id IS NULL`                                                                                          |
+| `priority` = nível                             | `priorities.level = :priority`                                                                                          |
+| `unassigned=true` ou `assigneeId="unassigned"` | `requests.professional_id IS NULL`                                                                                      |
+| `assigneeId` numérico                          | `assignee_user.user_id = :assigneeId`                                                                                   |
+| `assigneeId` UUID                              | `requests.professional_id = :assigneeId`                                                                                |
+| escopo do Analista                             | `assignee_user.user_id = :scopedUserId` **ou** `mapping_assignee.user_id = :scopedUserId`                               |
+
+#### Response 200 — envelope
+
+```json
+{
+  "data": [
+    {
+      "protocol": "MAAT-0000-0000",
+      "createdAt": "2026-10-27T12:00:00.000Z",
+      "processName": "Conferência de notas fiscais",
+      "priority": "Média",
+      "status": "Em triagem",
+      "assignee": "Analista Exemplo",
+      "requesterName": "Solicitante Exemplo",
+      "requesterEmail": "solicitante@example.com",
+      "assigneeId": "20"
+    }
+  ],
+  "page": 1,
+  "pageSize": 20,
+  "total": 1,
+  "totalPages": 1,
+  "assignees": [{ "id": "20", "name": "Analista Exemplo" }]
+}
+```
+
+| Campo                                     | Tipo                                        | Origem                                      | Evidência                                                                                       |
+| ----------------------------------------- | ------------------------------------------- | ------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `data[].protocol`                         | string                                      | `requests.protocol`                         | `F1 src/modules/queue/queue.repository.ts:88`                                                   |
+| `data[].createdAt`                        | string ISO-8601 UTC                         | `requests.created_at`, com `toIso`          | `F1 src/modules/queue/queue.repository.ts:89`; `F1 src/modules/queue/queue.service.ts:30-33,67` |
+| `data[].processName`                      | string                                      | `requests.process_name`                     | `F1 src/modules/queue/queue.repository.ts:90`                                                   |
+| `data[].priority`                         | `"Baixa"\|"Média"\|"Alta"\|"Crítica"\|null` | `priorities.level` (LEFT JOIN)              | `F1 src/modules/queue/queue.repository.ts:91`                                                   |
+| `data[].status`                           | string (nome do status)                     | `statuses.name`                             | `F1 src/modules/queue/queue.repository.ts:92`                                                   |
+| `data[].assignee`                         | string \| null                              | `users.full_name` do responsável de triagem | `F1 src/modules/queue/queue.repository.ts:95`; `F1 src/modules/queue/queue.service.ts:71`       |
+| `data[].requesterName`                    | string                                      | `requesters.full_name`                      | `F1 src/modules/queue/queue.repository.ts:96`                                                   |
+| `data[].requesterEmail`                   | string                                      | `requesters.corporate_email`                | `F1 src/modules/queue/queue.repository.ts:97`                                                   |
+| `data[].assigneeId`                       | string \| null                              | `assignee_user.user_id::text`               | `F1 src/modules/queue/queue.repository.ts:93-94`; `F1 src/modules/queue/queue.service.ts:74`    |
+| `page`, `pageSize`, `total`, `totalPages` | number                                      | ver paginação abaixo                        | `F1 src/modules/queue/queue.service.ts:77-84`                                                   |
+| `assignees[]`                             | `{ id: string, name: string }`              | roster completo de analistas                | `F1 src/modules/queue/queue.repository.ts:109-121`                                              |
+
+Campos que **não** existem no item: `mappingAssigneeId`, `mappingAssigneeName` e `demandTitle`. O
+contrato de atribuição registra que `GET /queue` reflete apenas o responsável de triagem
+(`F1 docs/contract-assign-action.md:95-96,183`).
+
+`assignees`:
+
+- vem de `details_professional` ⋈ `users` ⋈ `profiles`, filtrando `details_professional.status =
+'active'`, `users.is_active = true`, `profiles.is_active = true` e `profiles.name = 'analista'`,
+  ordenado por `users.full_name` ascendente (`F1 src/modules/queue/queue.repository.ts:109-121`);
+- é buscado em paralelo com a página e **não** recebe os filtros nem o escopo do Analista
+  (`F1 src/modules/queue/queue.service.ts:46-58`); `id` é o `user_id` serializado como texto.
+
+#### Ordenação e paginação
+
+- Ordem fixa: `requests.created_at DESC`, sem critério de desempate
+  (`F1 src/modules/queue/queue.repository.ts:99`).
+- `totalPages = 0` quando `total = 0`; caso contrário `ceil(total / pageSize)`
+  (`F1 src/modules/queue/queue.service.ts:60`).
+- `page` devolvido é preso ao intervalo: `1` quando não há resultados, `min(page, totalPages)`
+  quando há (`F1 src/modules/queue/queue.service.ts:61-63`).
+- O `offset` da consulta é calculado sobre a página **solicitada**, antes do ajuste
+  (`F1 src/modules/queue/queue.service.ts:40,54-55`). Pedir `page` além do fim devolve
+  `data: []` com `page` igual à última página válida e `totalPages` coerente — o ajuste é só do eco,
+  não da janela consultada.
+- `pageSize` acima de 100 é rejeitado com 400 (não é truncado)
+  (`F1 src/modules/queue/queue.schemas.ts:55-59`).
+
+#### Escopo por perfil
+
+O mesmo `resolveQueueScope` das métricas (`F1 src/modules/queue/queue.service.ts:17-22,53`) é
+repassado como `scopedUserId` para a listagem (`F1 src/modules/queue/queue.service.ts:46-56`) e
+aplicado como `OR` entre responsável de triagem e designado de mapeamento
+(`F1 src/modules/queue/queue.filters.ts:43-50`). O join `mapping_assignee` existe sempre na query da
+listagem (`F1 src/modules/queue/queue.repository.ts:75-80`).
+
+Efeitos registrados na issue: solicitações sem responsável não aparecem para o Analista; `total` e
+paginação refletem o conjunto filtrado; Gestor e Administrador permanecem sem restrição
+(`F1 docs/issues/102-scope-queue-to-analyst.md:18-23,37-42`). O escopo é resolvido no servidor, sem
+parâmetro de cliente (`F1 docs/issues/102-scope-queue-to-analyst.md:41`).
+
+#### Erros
+
+| Status | Condição                                  | Mensagem                                                                                                                                   | Evidência                                                                                       |
+| ------ | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------- |
+| 400    | query fora do schema                      | agregada por `formatZodIssues(..., "query")`, no formato `Campos inválidos: <campo> — <motivo>` / `Campos obrigatórios ausentes: <campos>` | `F1 src/modules/queue/queue.controller.ts:16-18`; `F1 src/shared/validation/zodErrors.ts:57-91` |
+| 400    | `page`/`pageSize` ausentes                | `"Campos inválidos: page — Deve ser um número.; pageSize — Deve ser um número."`                                                           | `F1 src/modules/queue/queue.schemas.ts:54-59`                                                   |
+| 400    | `pageSize` > 100                          | `"Campos inválidos: pageSize — Máximo de 100."`                                                                                            | `F1 src/modules/queue/queue.schemas.ts:55-59`                                                   |
+| 400    | `unassigned` + `assigneeId` incompatíveis | `"Campos inválidos: unassigned — \"unassigned\" e \"assigneeId\" não podem ser combinados."`                                               | `F1 src/modules/queue/queue.schemas.ts:41-44`                                                   |
+| 401    | sem sessão / sessão inválida              | `"Token não fornecido"` / `"Token inválido ou expirado"`                                                                                   | `F1 src/shared/middleware/auth.ts:27-45`                                                        |
+| 403    | perfil não interno ou senha pendente      | `"Acesso restrito ao perfil Analista ou Gestor ou Administrador"` / `"Troca de senha obrigatória antes de continuar"`                      | `F1 src/shared/middleware/requireRole.ts:11-22`                                                 |
+| 500    | falha não prevista                        | `"Erro interno do servidor"`                                                                                                               | `F1 src/shared/middleware/errorHandler.ts:32-45`                                                |
+
+O erro de validação é `400` (não `422`) e traz só `message`, sem `fields`
+(`F1 src/modules/queue/queue.controller.ts:17`).
+
+#### Transporte
+
+JSON, sem headers próprios: a rota não define `Cache-Control` nem `ETag`. Datas do item são
+serializadas em ISO-8601 UTC por `toIso` (`F1 src/modules/queue/queue.service.ts:30-33`); as
+métricas não expõem data.
+
+### 14.5 Visão do consumidor (F2) e drift
+
+O frontend não tem `queue.api.ts`: as duas chamadas vivem em `request.api.ts`.
+
+| Chamada             | Path             | Query montada                                                                          | Evidência                              |
+| ------------------- | ---------------- | -------------------------------------------------------------------------------------- | -------------------------------------- |
+| `listQueueRequests` | `/queue`         | `page`, `pageSize`, `search`, `status`, `priority`, `assigneeId` — só quando definidos | `F2 src/lib/api/request.api.ts:68-95`  |
+| `getQueueMetrics`   | `/queue/metrics` | nenhuma                                                                                | `F2 src/lib/api/request.api.ts:97-105` |
+
+Drift observado:
+
+- **`unassigned` não existe no consumidor.** `QueueFilterQuery` do F2 declara só `search`, `status`,
+  `priority`, `assigneeId` (`F2 src/lib/types/queue.ts:20-25`); a query nunca envia `unassigned`
+  (`F2 src/lib/api/request.api.ts:78-92`). O filtro "sem responsável" é feito pelo sentinela
+  `assigneeId: "unassigned"` (`F2 src/routes/(admin)/fila/+page.server.ts:10,40-46`).
+- **Campos de item que o backend não envia.** `QueueItem` do F2 declara `mappingAssigneeId?` e
+  `mappingAssigneeName?` como opcionais (`F2 src/lib/types/queue.ts:29-34`); nenhum dos dois aparece
+  no `SELECT` do repositório (`F1 src/modules/queue/queue.repository.ts:86-98`). O tipo base
+  `RequestSummary` do F2 também declara `demandTitle?`
+  (`F2 src/lib/types/request.ts:358-367`), ausente na resposta.
+- **`pageSize` fixo em 5** na tela da fila (`F2 src/routes/(admin)/fila/+page.server.ts:8,18`); o
+  backend exige o parâmetro, mas não tem default.
+- **Clamp confiado ao backend.** O `load` usa `result.data.page` como página efetiva, com comentário
+  de que o backend presa a página ao intervalo válido
+  (`F2 src/routes/(admin)/fila/+page.server.ts:57-58`) — o eco é ajustado, mas a janela consultada
+  não (§14.4).
+- **Filtros locais que não chegam à API.** `status=all`, `priority=all` e `assigneeId` fora do padrão
+  numérico/UUID são descartados na tradução da URL (`F2 src/routes/(admin)/fila/+page.server.ts:9-14,28-38,40-46`).
+- **Rótulo do sentinela.** O F2 nomeia o tipo de `priority` como `PriorityFilter`
+  (`F2 src/lib/types/queue.ts:16-18`); o backend usa `QueuePriorityFilter`
+  (`F1 src/shared/types/queue.types.ts:21`). O valor `"nenhum"` coincide.
+- O consumidor devolve `Result<QueueResponse>` e descarta a mensagem literal do backend, trocando-a
+  por `"Não foi possível carregar a fila centralizada."`
+  (`F2 src/lib/services/request.service.ts:70-99`).
+
+### 14.6 Confronto com `docs/04-API-Conventions.md`
+
+- **Divergente (legado vigente):** paths sem `/api/v1` — convenção §1.
+- **Divergente (legado vigente):** `page` e `pageSize` obrigatórios, sem default 20; a §4.2 fixa
+  default 20 e máximo 100, e §4.3 exige linha de exceção para default diferente. O máximo 100 e o
+  `totalPages: 0` quando vazio coincidem com §4.1/§4.2.
+- **Divergente (legado vigente):** o clamp é apenas do eco (`page`), não da janela — pedir página
+  além do fim devolve `data: []` com `page` ajustada; a §4.2 descreve a página ajustada como
+  resultado.
+- **Divergente (legado vigente):** `status` filtra pelo **nome** do status, rótulo editável no
+  Admin, em vez de `status.key` — convenção §15.1 e ADR-0021.
+- **Divergente (legado vigente):** identificadores de usuário numéricos no wire (`assigneeId` como
+  `user_id::text`) — PKs de entidade em UUID (§15.1, ADR-0003).
+- **Divergente (legado vigente):** `assigneeId` aceita duas identidades no mesmo parâmetro (UUID de
+  `details_professional` e inteiro de `users`), além do sentinela `"unassigned"`
+  (`F1 src/modules/queue/queue.schemas.ts:16-22`; `F1 src/modules/queue/queue.filters.ts:33-41`).
+  A §15.1 prevê referência por `<nome>Id` a um único identificador.
+- **Divergente (legado vigente):** o escopo do Analista é derivado do nome do perfil no service
+  (`F1 src/modules/queue/queue.service.ts:17-22`), não de capability/escopo `own`/`all` — ADR-0025 e
+  convenção §6.
+- **Compatível:** envelope `{ data, page, pageSize, total, totalPages }` com `totalPages = 0` quando
+  vazio (§4.1); `page` 1-based; `assignees` é campo aditivo no envelope (§2.1 admite aditivos).
+- **Compatível:** datas de timestamp em ISO-8601 UTC (§10).
+- Sem conflito registrado: erro de validação em `400` com mensagem agregada (§3 descreve 400 no
+  alvo; `fields` não é enviado).
+
+**Cobertura da seção:** 2 de 2 rotas do inventário.
+
+- `GET /queue/metrics` (#45)
+- `GET /queue` (#46)
