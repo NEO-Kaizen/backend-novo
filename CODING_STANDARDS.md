@@ -146,6 +146,19 @@ const CreateUser = z.strictObject({
   name: z.string().min(1).max(120),
 });
 
+// Catálogo pt-BR: todo campo do schema precisa de uma mensagem própria.
+const fieldMessages: Record<string, string> = {
+  email: "Informe um e-mail válido.",
+  name: "Informe o nome.",
+};
+
+const fieldMessage = (issue: { path: PropertyKey[] }): string => {
+  const key = issue.path.join(".");
+  const message = fieldMessages[key];
+  if (message === undefined) throw new Error(`mensagem pt-BR ausente: ${key}`);
+  return message;
+};
+
 const parsed = CreateUser.safeParse(req.body);
 if (!parsed.success) {
   return res.status(400).json({

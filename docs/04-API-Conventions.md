@@ -36,7 +36,7 @@ divergência exige emenda aqui e emenda ao ADR correspondente.
 | 13  | Datas e horas                  | decidido | ISO-8601 UTC para timestamps; `yyyy-mm-dd` para datas puras; tipo único via `dialect.timestampType()`                                                                                         | F1 (`docs/solicitations-api-requests-0_4.md` §1; `docs/requests-internal-query-contract.md`); `03-Data-Model.md` §2.5 (tipo do banco)          | Backend + FE    |
 | 14  | Idioma                         | decidido | Chaves EN camelCase; valores pt-BR; `code` em snake_case; exceção legada de auditoria em §11                                                                                                  | C14; `GLOSSARY.md`                                                                                                                             | Backend + FE    |
 | 15  | Request-id                     | decidido | `x-request-id` UUID, echo e log; `correlationId` é o id HTTP no log e `requestId` é o id de negócio fora do envelope; no envelope de erro, `requestId` é o id HTTP (emenda ao C11 em §12)     | C11 (emenda em §12); `02-Architecture.md` §9.4/§17                                                                                             | Backend         |
-| 16  | Rate limiting (verify público) | decidido | 10 req/10 min por IP+protocolo; 429 `rate_limited`; `Retry-After`; storage compartilhado; login em §0.2                                                                                       | C12; `02-Architecture.md` §14.2; F1 (`docs/contract-pendencias_03.md` §3)                                                                      | Backend + Infra |
+| 16  | Rate limiting (verify público) | decidido | 10 req/10 min por IP+protocolo; 429 `rate_limited`; `Retry-After`; storage compartilhado; login em §0.2                                                                                       | C12; `02-Architecture.md` §14.2 (gate por IP+protocolo); F1 (`docs/contract-pendencias_03.md` §3 — janela 10 min e limite 10)                  | Backend + Infra |
 | 17  | CORS                           | decidido | Origens explícitas, `credentials`, `exposedHeaders` (`Content-Disposition`, `x-request-id`), sem wildcard                                                                                     | C13; `02-Architecture.md` §15                                                                                                                  | Backend + Infra |
 | 18  | Ids e `key` de status          | decidido | PKs de entidade em UUID v4 gerado pela app; `status.key` `varchar(50)` UNIQUE e imutável; referências a status usam `key`, e id numérico de status não vai ao wire                            | ADR-0003; ADR-0021; `02-Architecture.md` §10.4/§22.1                                                                                           | Backend + FE    |
 | 19  | Header do solicitante          | decidido | Aceitar `X-Requester-Email` e `X-Requester-Identity` por uma release; depois só Email; o header não autentica                                                                                 | C10; ADR-0023                                                                                                                                  | Backend + FE    |
@@ -144,7 +144,7 @@ divergência exige emenda aqui e emenda ao ADR correspondente.
 
 - **Regra global:** todo endpoint de listagem usa default **20**, máximo **100** e clamp de página. O valor de cada endpoint é a regra global; não há uma tabela por endpoint repetindo o mesmo número.
 - **Emenda ao critério de aceite da #30:** o default 20, o máximo 100 e o clamp são globais; este registro de exceções atende ao requisito “por endpoint” e não há tabela repetindo os mesmos valores.
-- **Listagem não paginada:** também é exceção e só existe com uma linha nesta tabela, citada pela spec; sem linha, a listagem é paginada.
+- **Listagem não paginada:** também é exceção e só existe com uma linha nesta tabela, citada pela spec; sem linha, a listagem é paginada. A linha traz o endpoint em `Endpoint / grupo` e `—` em `Default`, `Máximo` e `Clamp`.
 - A tabela abaixo é o **registro de exceções**. Um endpoint com default, máximo ou clamp diferente só existe se estiver aqui; a spec de domínio lista seus endpoints e marca cada um como “global” ou cita a linha da exceção.
 
 | Endpoint / grupo                                                 | Default      | Máximo | Clamp                          | Dono         | Destino            | Prazo/gatilho                                                                                                               |
@@ -240,7 +240,7 @@ Os valores 20/100 da auditoria são os globais; a exceção é o parâmetro `lim
 | `PUT /api/v1/users/me` (avatar)                                            | 1        | 2 MiB                                                     | 2 MiB        | JPEG, PNG                                    |
 | `PATCH /api/v1/portal-config/assets`                                       | 8        | favicon 1 MiB; logo e avatar 2 MiB; imagem de login 5 MiB | 20 MiB       | conforme a chave (PNG, SVG, ICO, JPEG, WebP) |
 
-- O total é a soma dos máximos da rota; o multer limita a contagem e o tamanho de cada arquivo.
+- O multer limita a contagem de arquivos e o tamanho de cada arquivo; o **Total máximo** é o teto da requisição inteira e prevalece quando a soma dos máximos por arquivo o exceder (em assets, 8 arquivos e teto de 20 MiB).
 - JSON body: 1 MiB (`express.json({ limit: "1mb" })`); quando a rota tiver parte JSON no multipart (`payload` ou `assets`), o limite da parte é 2 MiB.
 - **Harmonização registrada:** o legado de requests/pendências devolvia 400 para tamanho e o de requests para MIME; a convenção nova usa **413** para tamanho e **415** para MIME. O FE lê `message`, então a mudança de status não quebra a renderização.
 - Rotas multipart: requests (anexos), pendências (anexos), avatar do usuário e assets do portal.
@@ -353,7 +353,7 @@ Uma spec de domínio só vira `frozen` se todas as caixas abaixo estiverem marca
 | --- | --------------------------------------------------------------------------------- | ----------- |
 | C1  | `requestId` aditivo no envelope legado?                                           | #2          |
 | C2  | Validação `400` × `422`; `fields` × `details`                                     | #5          |
-| C3  | `pageSize` default/máximo por rota                                                | #6          |
+| C3  | `pageSize` default/máximo e exceções (global 20/100)                              | #6          |
 | C4  | Página > `totalPages`                                                             | #6          |
 | C5  | Exceções de paginação (auditoria, timeline)                                       | #6          |
 | C6  | Cookie: nome/TTL/atributos e env vars                                             | #7          |
