@@ -13,6 +13,7 @@ dist/
 *.log
 npm-debug.log*
 logs/
+logs/
 
 # Runtime uploads
 uploads/
