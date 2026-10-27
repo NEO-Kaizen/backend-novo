@@ -6338,3 +6338,384 @@ O contrato registra o mesmo recorte de permissão e de erros
 - `GET /audit-history` (#49)
 - `GET /audit-history/:id` (#50)
 - `GET /audit-logs/:protocol` (#51)
+
+## 17. internal-notes
+
+Timeline interna da solicitação: observações escritas, eventos leves de atribuição/status/mapeamento
+e os históricos completos de triagem e mapeamento. Três rotas, todas sob
+`/requests/:protocol/internal-notes` e todas com o mesmo gate de perfil.
+
+### 17.1 Fontes
+
+| Ref | Caminho                                                                         | Uso                                                  |
+| --- | ------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| F1  | `src/modules/internalNotes/internalNotes.router.ts`                             | montagem com `mergeParams` e guards                  |
+| F1  | `src/modules/internalNotes/internalNotes.controller.ts`                         | borda HTTP, ordem de validação, 201/204              |
+| F1  | `src/modules/internalNotes/internalNotes.schema.ts`                             | params, body, `limit`/`cursor`                       |
+| F1  | `src/modules/internalNotes/internalNotes.service.ts`                            | merge keyset, textos, snapshots                      |
+| F1  | `src/modules/internalNotes/internalNotes.repository.ts`                         | SQL das duas fontes e dos históricos                 |
+| F1  | `src/modules/DTOs/internalNotes/InternalNotes.dto.ts`                           | shapes da timeline e dos históricos                  |
+| F1  | `src/shared/types/internalNotes.ts`                                             | enums de ação/origem e linhas                        |
+| F1  | `src/modules/requests/triage/triage.schema.ts`                                  | `TriageAssessment` (referenciado)                    |
+| F1  | `src/modules/DTOs/queue/mapping.dto.ts`                                         | `MappingResponseDTO` (referenciado)                  |
+| F1  | `docs/internal-observations.md`                                                 | contrato vigente da timeline unificada (v2.0, draft) |
+| F1  | `docs/internal-notes-contract.md`                                               | contrato v1, só de observações                       |
+| F2  | `src/lib/api/internal-note.api.ts`, `src/lib/services/internal-note.service.ts` | cliente                                              |
+| F2  | `src/lib/types/internal-note.ts`                                                | tipos do consumidor                                  |
+
+### 17.2 Rotas
+
+| #   | Método | Path                                      | Autenticação/autorização                         | Handler                 | Sucesso           | Erros                   |
+| --- | ------ | ----------------------------------------- | ------------------------------------------------ | ----------------------- | ----------------- | ----------------------- |
+| 52  | GET    | `/requests/:protocol/internal-notes`      | sessão + `Analista`, `Gestor` ou `Administrador` | `listInternalNotes`     | 200 JSON          | 400, 401, 403, 404, 500 |
+| 53  | POST   | `/requests/:protocol/internal-notes`      | idem                                             | `createInternalNote`    | **201** JSON      | 400, 401, 403, 404, 500 |
+| 54  | PUT    | `/requests/:protocol/internal-notes/read` | idem                                             | `markInternalNotesRead` | **204** sem corpo | 400, 401, 403, 404, 500 |
+
+Evidência: `F1 src/modules/internalNotes/internalNotes.router.ts:10-17`; montagem em
+`F1 src/router.ts:21`.
+
+- O router usa `express.Router({ mergeParams: true })` para ler `:protocol` do mount
+  (`F1 src/modules/internalNotes/internalNotes.router.ts:10`).
+- `authMiddleware` e `requireRole("Analista", "Gestor", "Administrador")` são aplicados com `use`,
+  então valem para as três rotas (`F1 src/modules/internalNotes/internalNotes.router.ts:12-13`).
+- O controller repete um check de `Solicitante` com 403 `"Acesso restrito aos perfis internos"`
+  (`F1 src/modules/internalNotes/internalNotes.controller.ts:31-33`), inalcançável: o `requireRole`
+  do router barra o perfil antes, com a mensagem
+  `"Acesso restrito ao perfil Analista ou Gestor ou Administrador"`
+  (`F1 src/shared/middleware/requireRole.ts:16-22`).
+- Não há checagem de custódia: qualquer perfil interno lê e escreve a timeline de qualquer
+  solicitação. A leitura embutida dos históricos de triagem/mapeamento segue o gate da rota, sem o
+  check de responsável do `GET /requests/:protocol/triage` — decisão D-N11
+  (`F1 docs/internal-observations.md:91-95,641`).
+
+### 17.3 GET /requests/:protocol/internal-notes
+
+#### Request
+
+| Parte           | Regra                                 | Mensagem literal                                                              | Evidência                                                                                                                    |
+| --------------- | ------------------------------------- | ----------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| path `protocol` | `trim` e mínimo 1                     | `"Protocolo é obrigatório."` (agregada como `Campos inválidos: protocol — …`) | `F1 src/modules/internalNotes/internalNotes.schema.ts:3-5`; `F1 src/modules/internalNotes/internalNotes.controller.ts:13-19` |
+| query `limit`   | inteiro 1..50, default 20             | `"limit inválido."` / `"limit deve estar entre 1 e 50."`                      | `F1 src/modules/internalNotes/internalNotes.schema.ts:38-43`                                                                 |
+| query `cursor`  | opaco: base64url de `{ t, type, id }` | `"Cursor inválido."`                                                          | `F1 src/modules/internalNotes/internalNotes.schema.ts:44-67`                                                                 |
+
+Payload do cursor (`F1 src/modules/internalNotes/internalNotes.schema.ts:22-33`):
+
+- `t` — instante ISO-8601 com offset (`z.iso.datetime({ offset: true })`);
+- `type` — `"note"` ou `"event"`;
+- `id` — `"note"`: inteiro positivo (`/^[1-9]\d*$/`); `"event"`: `audit:<id>` (`/^audit:[1-9]\d*$/`).
+
+O servidor só aceita o cursor que decodificar nessa forma; valor adulterado, base64 inválido ou JSON
+fora do shape → 400 com `"Cursor inválido."`. O cliente não interpreta o conteúdo — apenas repassa o
+`nextCursor` de uma resposta para a requisição seguinte
+(`F1 docs/internal-observations.md:223-226`).
+
+Ordem de validação do GET: query (400) → ator da sessão (401/403) → `protocol` (400) → existência da
+solicitação (404) (`F1 src/modules/internalNotes/internalNotes.controller.ts:38-51`;
+`F1 src/modules/internalNotes/internalNotes.service.ts:45-51`).
+
+#### Response 200
+
+```json
+{
+  "items": [
+    {
+      "type": "event",
+      "id": "audit:63",
+      "action": "request.status_change",
+      "text": "Status alterado: Mapeamento agendado",
+      "occurredAt": "2026-09-19T14:11:03.000Z",
+      "actor": null,
+      "changeOrigin": "system",
+      "justification": null,
+      "lastTechnicalMessage": null
+    },
+    {
+      "type": "note",
+      "id": "12",
+      "content": "Confirmar alçada antes do mapeamento.",
+      "createdAt": "2026-09-19T14:10:00.000Z",
+      "author": { "id": "7", "name": "Analista Exemplo", "role": "Analista" }
+    }
+  ],
+  "nextCursor": "eyJ0IjoiMjAyNi0wOS0xOVQxNDoxMDowMC4wMDBaIiwidHlwZSI6Im5vdGUiLCJpZCI6IjEyIn0",
+  "unseenCount": 1,
+  "triages": [],
+  "mappings": []
+}
+```
+
+| Campo de topo | Tipo                                | Regra                                                                    | Evidência                                                                                                                           |
+| ------------- | ----------------------------------- | ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `items`       | `(TimelineNote \| TimelineEvent)[]` | página mais-recente-primeiro, no máximo `limit` itens                    | `F1 src/modules/DTOs/internalNotes/InternalNotes.dto.ts:52-58`                                                                      |
+| `nextCursor`  | string \| null                      | cursor do item mais antigo da página; `null` = não há página mais antiga | `F1 src/modules/internalNotes/internalNotes.service.ts:94-105`                                                                      |
+| `unseenCount` | number                              | notas de outros autores após o checkpoint, na solicitação inteira        | `F1 src/modules/internalNotes/internalNotes.service.ts:308-316`; `F1 src/modules/internalNotes/internalNotes.repository.ts:138-153` |
+| `triages`     | `TriageHistoryEntry[]`              | histórico completo, `oldest → newest`, não paginado                      | `F1 src/modules/internalNotes/internalNotes.service.ts:314,326`                                                                     |
+| `mappings`    | `MappingHistoryEntry[]`             | histórico completo, `oldest → newest`, não paginado                      | `F1 src/modules/internalNotes/internalNotes.service.ts:315,327`                                                                     |
+
+`TimelineNote` (`F1 src/modules/internalNotes/internalNotes.service.ts:31-43`):
+
+| Campo         | Tipo                                      | Origem                                                       |
+| ------------- | ----------------------------------------- | ------------------------------------------------------------ |
+| `type`        | `"note"`                                  | literal                                                      |
+| `id`          | string                                    | `internal_note_id` (BIGINT serializado como string)          |
+| `content`     | string                                    | `content`                                                    |
+| `createdAt`   | string ISO-8601                           | `created_at.toISOString()`                                   |
+| `author.id`   | string                                    | `author_user_id` como string                                 |
+| `author.name` | string                                    | `users.full_name` via JOIN                                   |
+| `author.role` | `Analista` \| `Gestor` \| `Administrador` | `author_role_at_creation` (snapshot do perfil na publicação) |
+
+`TimelineEvent` (`F1 src/modules/internalNotes/internalNotes.service.ts:282-296`):
+
+| Campo                  | Tipo                                                                                                        | Regra                                                                                      |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `type`                 | `"event"`                                                                                                   | literal                                                                                    |
+| `id`                   | string                                                                                                      | `audit:<audit_id>`                                                                         |
+| `action`               | `request.assign` \| `request.reassign` \| `request.unassign` \| `request.status_change` \| `mapping.assign` | lista fechada de 5 ações                                                                   |
+| `text`                 | string                                                                                                      | frase pt-BR já renderizada no backend (tabela abaixo)                                      |
+| `occurredAt`           | string ISO-8601                                                                                             | `audit_history.occurred_at`                                                                |
+| `actor`                | `{ id, name, role }` \| null                                                                                | `null` quando não há usuário, nome ou perfil, ou quando o perfil resolvido é `Solicitante` |
+| `changeOrigin`         | `"admin"` \| `"system"` \| `"internal"` \| null                                                             | `audit_history.change_origin`                                                              |
+| `justification`        | string \| null (opcional)                                                                                   | presente **só** em `request.status_change`; é `audit_history.note`                         |
+| `lastTechnicalMessage` | string \| null (opcional)                                                                                   | presente **só** em `request.status_change`; é `audit_history.last_technical_message`       |
+
+Composição de `text` (`F1 src/modules/internalNotes/internalNotes.service.ts:129-163`):
+
+| `action`                | `text`                                                                                                                                                                                 |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `request.status_change` | `Status alterado: <nome do status>`; sem `new_value` → `Status alterado`                                                                                                               |
+| `request.assign`        | `Responsável atribuído: <nome>`; sem resolução → `Responsável atribuído`                                                                                                               |
+| `request.reassign`      | `Responsável substituído: <nome>`; sem resolução → `Responsável substituído`                                                                                                           |
+| `request.unassign`      | `Responsável removido`                                                                                                                                                                 |
+| `mapping.assign`        | `new_value` nulo → `Responsável pelo mapeamento removido`; com nome resolvido → `Responsável pelo mapeamento alterado: <nome>`; sem resolução → `Responsável pelo mapeamento alterado` |
+
+Regras de leitura dos eventos:
+
+- `request.override_status_admin` é gravado pelo bypass de Administrador no
+  `PATCH /requests/:protocol/status` e **entra** no filtro da timeline, mas é normalizado na leitura
+  para `action: "request.status_change"`, herdando `text`, `justification` e `lastTechnicalMessage`; a
+  ação bruta nunca sai (`F1 src/modules/internalNotes/internalNotes.service.ts:113-127,282-296`;
+  `F1 src/modules/internalNotes/internalNotes.repository.ts:19-28`;
+  `F1 src/shared/types/internalNotes.ts:29-36`).
+- `request.triage`, `mapping.save` e `mapping.complete` **não** viram evento; a informação deles vive
+  em `triages`/`mappings` (`F1 docs/internal-observations.md:32-45,386-391`;
+  `F1 src/modules/internalNotes/internalNotes.repository.ts:30`).
+- `mapping.assign` entra por `entity_type = 'mapping'` e `entity_id IN (SELECT mapping_id::text FROM
+mappings WHERE request_id = :requestId)`; as demais ações de `mapping` não entram
+  (`F1 src/modules/internalNotes/internalNotes.repository.ts:87-104`).
+- `actor.role` é o perfil **vigente** no momento da leitura (reidratado de `profiles`), diferente do
+  autor de nota, que preserva o perfil da publicação
+  (`F1 src/modules/internalNotes/internalNotes.service.ts:172-182`;
+  `F1 docs/internal-observations.md:360-365`).
+
+`TriageHistoryEntry` — `{ triage: TriageAssessment, occurredAt }`
+(`F1 src/modules/internalNotes/internalNotes.service.ts:192-219`): cada linha vem de `triages` ⋈
+`audit_history` por `request.triage` e `new_value->>'triageId'`, ordenada `occurred_at`/`audit_id`
+**ascendente** (`F1 src/modules/internalNotes/internalNotes.repository.ts:184-195`). Campos de
+`triage`: `id` (uuid), `adherentToScope` (`"Sim"` \| `"Não"` \| `""`), `adherentJustification`,
+`changeCategory`, `newCategory`, `preliminaryComplexity`, `perceivedRisks`, `suggestedResponsible`,
+`suggestedResponsibleJustification`, `exitStatus` (number), `result`, `conclusionJustification`,
+`assignee` (`{ id: string \| null, name, email }` \| null) e `lastTechnicalMessage`
+(`F1 src/modules/requests/triage/triage.schema.ts:9-24`).
+
+`MappingHistoryEntry` — `{ mapping: MappingResponseDTO, occurredAt }`
+(`F1 src/modules/internalNotes/internalNotes.service.ts:221-253`): a proveniência é a **última** linha
+`mapping.save`/`mapping.complete`/`mapping.assign` daquele `mapping_id` (`DISTINCT ON` por
+`occurred_at desc`), e a lista é ordenada `oldest → newest`
+(`F1 src/modules/internalNotes/internalNotes.repository.ts:204-236`). Campos de `mapping`:
+`protocol`, `id`, `targetStatus` (número de status), `scheduledFor` (ISO-8601 **sem** milissegundos),
+`durationMinutes`, `modality` (`"REMOTE"` \| `"IN_PERSON"` \| null), `meetingLink`, `location`,
+`participants[]` (`{ id: string \| null, name, email }`; `id` nulo = participante externo), `notes`,
+`justification`, `lastTechnicalMessage` e `mappingAssignee`
+(`{ id, userId, name, email, jobTitle }` \| null) (`F1 src/modules/DTOs/queue/mapping.dto.ts:15-19,58-84`).
+
+#### Ordenação e paginação
+
+- A página é o merge das duas fontes ordenado de forma **decrescente** por: instante
+  (`createdAt` da nota / `occurredAt` do evento); no empate, rank (evento antes de nota, pois
+  `EVENT_RANK = 1` e `NOTE_RANK = 0`); no empate de rank, id decrescente
+  (`F1 src/modules/internalNotes/internalNotes.service.ts:28-29,75-92`).
+- Cada fonte é consultada com `limit + 1` itens estritamente mais antigos que o cursor, para detectar
+  fim de timeline sem varrer a tabela
+  (`F1 src/modules/internalNotes/internalNotes.service.ts:306-312`).
+- O predicado de cursor é assimétrico entre as fontes: com cursor de nota, as notas usam
+  `created_at < t OR (created_at = t AND id < cursorId)` e os eventos usam `occurred_at < t`; com
+  cursor de evento, os eventos usam `occurred_at < t OR (= t AND audit_id < cursorId)` e as notas usam
+  `created_at <= t` — o `<=` cobre os itens do outro tipo no mesmo instante, que ainda não foram
+  devolvidos (`F1 src/modules/internalNotes/internalNotes.repository.ts:57-69,106-117`).
+- `nextCursor` é `null` quando o número de entradas não excede `limit`; caso contrário, carrega a
+  posição do item mais antigo da página (`F1 src/modules/internalNotes/internalNotes.service.ts:100-104`).
+- `triages`/`mappings` são idênticos em todas as páginas: não recebem `cursor` nem `limit`
+  (`F1 src/modules/internalNotes/internalNotes.service.ts:310-316,322-328`).
+- `unseenCount` é global: conta notas da solicitação com `author_user_id <> :userId` e
+  `internal_note_id > last_read_note_id` (BIGINT); sem checkpoint, conta todas as notas de outros
+  autores (`F1 src/modules/internalNotes/internalNotes.repository.ts:138-153`). O próprio GET **não**
+  grava checkpoint.
+
+#### Erros
+
+| Status | Condição                                                | Mensagem                                                          | Evidência                                                                                                  |
+| ------ | ------------------------------------------------------- | ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| 400    | `limit`/`cursor` inválidos                              | agregada por `formatZodIssues(..., "query")`                      | `F1 src/modules/internalNotes/internalNotes.controller.ts:39-42`                                           |
+| 400    | `protocol` vazio após `trim`                            | `"Protocolo é obrigatório."`                                      | `F1 src/modules/internalNotes/internalNotes.schema.ts:3-5`                                                 |
+| 401    | sem sessão / sessão inválida / id de sessão não inteiro | `"Token não fornecido"` / `"Token inválido ou expirado"`          | `F1 src/shared/middleware/auth.ts:27-45`; `F1 src/modules/internalNotes/internalNotes.controller.ts:21-29` |
+| 403    | perfil `Solicitante`                                    | `"Acesso restrito ao perfil Analista ou Gestor ou Administrador"` | `F1 src/shared/middleware/requireRole.ts:21-22`                                                            |
+| 403    | `must_change_password` pendente                         | `"Troca de senha obrigatória antes de continuar"`                 | `F1 src/shared/middleware/requireRole.ts:11-14`                                                            |
+| 404    | protocolo sem solicitação                               | `"Solicitação não encontrada"`                                    | `F1 src/modules/internalNotes/internalNotes.service.ts:45-51`                                              |
+| 500    | falha não prevista                                      | `"Erro interno do servidor"`                                      | `F1 src/shared/middleware/errorHandler.ts:32-43`                                                           |
+
+### 17.4 POST /requests/:protocol/internal-notes
+
+#### Request
+
+```json
+{ "content": "Confirmar alçada antes do mapeamento." }
+```
+
+- `content` é aparado, mínimo 1 e máximo 4.000 caracteres
+  (`F1 src/modules/internalNotes/internalNotes.schema.ts:7-13`), com mensagens
+  `"A observação não pode estar vazia."` e `"A observação deve ter no máximo 4000 caracteres."`.
+- Body fora do schema → 400 agregada por `formatZodIssues` com `rootLabel` default `payload`
+  (`F1 src/modules/internalNotes/internalNotes.controller.ts:54-57`;
+  `F1 src/shared/validation/zodErrors.ts:89-91`).
+- Autoria vem exclusivamente da sessão: `author_user_id` = `req.user.id` e
+  `author_role_at_creation` = perfil vigente; o cliente não envia autoria
+  (`F1 src/modules/internalNotes/internalNotes.service.ts:331-344`;
+  `F1 src/modules/internalNotes/internalNotes.repository.ts:345-364`).
+
+Ordem de validação: body (400) → `protocol` (400) → ator (401/403) → existência (404)
+(`F1 src/modules/internalNotes/internalNotes.controller.ts:53-65`).
+
+#### Response 201
+
+```json
+{
+  "type": "note",
+  "id": "13",
+  "content": "Confirmar alçada antes do mapeamento.",
+  "createdAt": "2026-09-22T17:12:00.000Z",
+  "author": { "id": "7", "name": "Analista Exemplo", "role": "Analista" }
+}
+```
+
+`TimelineNote` completo, já com `type: "note"` (`F1 src/modules/internalNotes/internalNotes.controller.ts:59-64`).
+Criar não altera o checkpoint do autor e, como nota própria não conta em `unseenCount`, não gera badge
+para quem publicou (`F1 docs/internal-observations.md:275`).
+
+#### Erros
+
+| Status    | Condição                                     | Mensagem                                                                                                                                              | Evidência                                                                                                         |
+| --------- | -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| 400       | `content` ausente                            | `"Campos obrigatórios ausentes: content"`                                                                                                             | `F1 src/modules/internalNotes/internalNotes.controller.ts:54-57`; `F1 src/shared/validation/zodErrors.ts:65-70`   |
+| 400       | `content` vazio após `trim` / acima de 4.000 | `"Campos inválidos: content — A observação não pode estar vazia."` / `"Campos inválidos: content — A observação deve ter no máximo 4000 caracteres."` | `F1 src/modules/internalNotes/internalNotes.schema.ts:7-13`                                                       |
+| 400       | `protocol` vazio                             | `"Protocolo é obrigatório."`                                                                                                                          | `F1 src/modules/internalNotes/internalNotes.schema.ts:3-5`                                                        |
+| 401 / 403 | idem §17.3                                   | idem §17.3                                                                                                                                            | `F1 src/shared/middleware/auth.ts:27-45`; `F1 src/shared/middleware/requireRole.ts:11-22`                         |
+| 404       | protocolo sem solicitação                    | `"Solicitação não encontrada"`                                                                                                                        | `F1 src/modules/internalNotes/internalNotes.service.ts:336`                                                       |
+| 500       | nota salva e não relida para retorno         | erro interno (`"Observação interna salva, mas não encontrada para retorno."` não é exposta; o envelope devolve `"Erro interno do servidor"`)          | `F1 src/modules/internalNotes/internalNotes.service.ts:340-342`; `F1 src/shared/middleware/errorHandler.ts:32-45` |
+
+### 17.5 PUT /requests/:protocol/internal-notes/read
+
+#### Request
+
+```json
+{ "lastReadNoteId": "12" }
+```
+
+- `lastReadNoteId` é **string** numérica, `^[1-9]\d*$` — o formato preserva o BIGINT sem perda de
+  precisão (`F1 src/modules/internalNotes/internalNotes.schema.ts:15-20`;
+  `F1 docs/internal-observations.md:279-281`). Fora do padrão →
+  `"Identificador da observação inválido."`.
+- A nota informada precisa existir e pertencer à solicitação da URL, senão 400
+  `"Observação interna não pertence à solicitação"`
+  (`F1 src/modules/internalNotes/internalNotes.service.ts:346-356`).
+- O checkpoint é um upsert por `(request_id, user_id)` com `GREATEST` no id e `read_at` preservado
+  quando o id não avança: nunca regride
+  (`F1 src/modules/internalNotes/internalNotes.repository.ts:374-398`;
+  `F1 docs/internal-observations.md:137-144`).
+
+Ordem de validação: body (400) → ator (401/403) → `protocol` (400) → existência/posse (404/400)
+(`F1 src/modules/internalNotes/internalNotes.controller.ts:67-75`).
+
+#### Response 204
+
+Sem corpo (`F1 src/modules/internalNotes/internalNotes.controller.ts:75`).
+
+#### Erros
+
+| Status    | Condição                                           | Mensagem                                                                                                                                 | Evidência                                                                                 |
+| --------- | -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| 400       | `lastReadNoteId` ausente ou fora de `/^[1-9]\d*$/` | `"Campos inválidos: lastReadNoteId — Identificador da observação inválido."` (ausente: `"Campos obrigatórios ausentes: lastReadNoteId"`) | `F1 src/modules/internalNotes/internalNotes.schema.ts:16-19`                              |
+| 400       | nota de outra solicitação ou inexistente           | `"Observação interna não pertence à solicitação"`                                                                                        | `F1 src/modules/internalNotes/internalNotes.service.ts:352-356`                           |
+| 400       | `protocol` vazio                                   | `"Protocolo é obrigatório."`                                                                                                             | `F1 src/modules/internalNotes/internalNotes.schema.ts:3-5`                                |
+| 401 / 403 | idem §17.3                                         | idem §17.3                                                                                                                               | `F1 src/shared/middleware/auth.ts:27-45`; `F1 src/shared/middleware/requireRole.ts:11-22` |
+| 404       | protocolo sem solicitação                          | `"Solicitação não encontrada"`                                                                                                           | `F1 src/modules/internalNotes/internalNotes.service.ts:351`                               |
+| 500       | falha não prevista                                 | `"Erro interno do servidor"`                                                                                                             | `F1 src/shared/middleware/errorHandler.ts:32-43`                                          |
+
+### 17.6 Visão do consumidor (F2) e drift
+
+- Cliente: `/requests/{protocol}/internal-notes` com `encodeURIComponent` no protocolo; GET com
+  `limit`/`cursor` só quando definidos, POST e PUT com body JSON
+  (`F2 src/lib/api/internal-note.api.ts:11-70`).
+- Tipos alinhados campo a campo, inclusive `nextCursor`, `unseenCount`, `triages` e `mappings`
+  (`F2 src/lib/types/internal-note.ts:81-92`); as constantes de `limit` são espelhadas no cliente
+  (1/50/20 em `F2 src/lib/types/internal-note.ts:102-105`).
+- O cursor é transportado como string opaca, sem conversão numérica
+  (`F2 src/lib/types/internal-note.ts:89-92`; `F2 src/lib/api/internal-note.api.ts:15-21`).
+- O F2 reimplementa a ordem canônica na apresentação, com `BigInt` nos ids para comparar
+  `internal_note_id`/`audit_id` sem perda (`F2 src/routes/(admin)/fila/[protocolo]/components/InternalNotesSection.svelte:186-204`).
+- **Composição só do cliente:** o F2 cria itens sintéticos `type: "ref"` (um por entrada de
+  `triages`/`mappings`, com rank 2 no empate) para ancorar as tabelas de histórico na timeline
+  (`F2 src/routes/(admin)/fila/[protocolo]/components/InternalNotesSection.svelte:88-99`).
+  Nada disso existe no wire: o backend devolve `triages`/`mappings` apenas como listas de topo.
+- O F2 valida `content` antes de enviar, com a mesma regra de 4.000 caracteres, e mensagem própria
+  `"Escreva uma observação antes de publicar."`
+  (`F2 src/lib/services/internal-note.service.ts:26-33`).
+- O F2 substitui as mensagens do backend por textos próprios: `403` →
+  `"Você não tem permissão para acessar as observações internas."`, `404` →
+  `"Solicitação não encontrada."`, demais → fallback por operação
+  (`F2 src/lib/services/internal-note.service.ts:15-24`).
+- `markThrough` só é disparado a partir da página inicial (sem cursor), com a nota mais recente
+  carregada (`F2 src/routes/(admin)/fila/[protocolo]/components/InternalNotesSection.svelte:233-235,298`),
+  coerente com "GET não marca lido" (`F1 docs/internal-observations.md:263,288-295`).
+
+### 17.7 Confronto com `docs/04-API-Conventions.md`
+
+- **Divergente (legado vigente):** paths sem `/api/v1` — convenção §1.
+- **Compatível por exceção registrada:** paginação keyset `{ items, nextCursor }` com `limit` default
+  20 e máximo 50 — a §4.3 tem linha própria para a timeline com esses valores e esse keyset; é a
+  única listagem da §14–§17 que aparece na tabela de exceções.
+- **Compatível:** `201` na criação e `204` sem corpo na marcação — §15.4.
+- **Compatível:** datas de timestamp em ISO-8601 UTC (§10). Observação de forma: `occurredAt` e
+  `createdAt` levam milissegundos, enquanto `mapping.scheduledFor` é serializado com precisão de
+  segundos por `toIsoSeconds` (`F1 src/modules/internalNotes/internalNotes.service.ts:184-190,227`).
+- **Compatível por exceção registrada:** valores de domínio em pt-BR (`text`, `role`) com chaves
+  camelCase — §11.
+- **Divergente (legado vigente):** ids de nota são BIGINT serializados como string
+  (`F1 src/modules/internalNotes/internalNotes.service.ts:34`) e o checkpoint usa o mesmo BIGINT
+  (`F1 src/modules/internalNotes/internalNotes.schema.ts:15-20`). §15.1/ADR-0003 determinam PK UUID
+  v4 gerada pela aplicação; a §11 só admite exceção de auditoria, não de observações.
+- **Divergente (legado vigente):** ids numéricos de status no wire (`triages[].triage.exitStatus` e
+  `mappings[].mapping.targetStatus`) — §15.1, ADR-0021.
+- **Divergente (legado vigente):** a autorização é só por nome de perfil, sem capability nem escopo
+  `own`/`all`, e a leitura dos históricos de triagem/mapeamento ignora a custódia que a rota de
+  triagem exige (D-N11) — ADR-0025 e convenção §6 ("autorização verificada no servidor em um lugar
+  só por domínio").
+- **Desatualizado no legado:** `F1 docs/internal-notes-contract.md` descreve a v1 do endpoint —
+  "Lista todas as observações em ordem cronológica crescente" sem paginação
+  (`F1 docs/internal-notes-contract.md:37-40`), resposta só com `items`/`unseenCount` e sem `type`
+  (`F1 docs/internal-notes-contract.md:44-60,72-76`) e ausência de `triages`/`mappings`. O código
+  vigente pagina por keyset, devolve `nextCursor`, adiciona os tipos `note`/`event` e os dois
+  históricos de topo (`F1 src/modules/DTOs/internalNotes/InternalNotes.dto.ts:52-58`;
+  `F1 docs/internal-observations.md:1-14`). O documento v1 continua citando `requests.internal_notes`
+  como legado fora do contrato (`F1 docs/internal-notes-contract.md:9`), o que o código atual mantém.
+- **Desatualizado no legado:** `F1 docs/internal-observations.md:87` grafia a mensagem de senha
+  pendente como `"Troca de senha obrigatórica antes de continuar"`; a mensagem emitida é
+  `"Troca de senha obrigatória antes de continuar"` (`F1 src/shared/middleware/auth.ts:59`).
+- **Desatualizado no legado:** `F1 docs/internal-observations.md:597-601` exemplifica o 403 com
+  `"Acesso restrito aos perfis internos"` (mensagem do controller, inalcançável); o 403 efetivo de
+  perfil vem do `requireRole` (`F1 src/shared/middleware/requireRole.ts:21-22`).
+
+**Cobertura da seção:** 3 de 3 rotas do inventário.
+
+- `GET /requests/:protocol/internal-notes` (#52)
+- `POST /requests/:protocol/internal-notes` (#53)
+- `PUT /requests/:protocol/internal-notes/read` (#54)
