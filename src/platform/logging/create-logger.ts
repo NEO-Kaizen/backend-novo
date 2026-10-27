@@ -45,7 +45,22 @@ function write(
     time: new Date().toISOString(),
     message,
   };
-  process.stdout.write(`${JSON.stringify(line)}\n`);
+  process.stdout.write(`${serialize(line)}\n`);
+}
+
+function serialize(line: Record<string, unknown>): string {
+  try {
+    return JSON.stringify(line, (_key, value) =>
+      typeof value === "bigint" ? value.toString() : value,
+    );
+  } catch (cause) {
+    return JSON.stringify({
+      level: "error",
+      time: new Date().toISOString(),
+      message: "falha ao serializar log",
+      reason: cause instanceof Error ? cause.message : String(cause),
+    });
+  }
 }
 
 /**
