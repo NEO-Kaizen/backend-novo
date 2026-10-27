@@ -100,7 +100,8 @@
           "pageSize": {
             "type": "integer",
             "minimum": 1,
-            "description": "Tamanho efetivo da página; default 20 e máximo 100 na convenção."
+            "maximum": 100,
+            "description": "Tamanho efetivo da página; máximo 100 (§4.2)."
           },
           "total": {
             "type": "integer",
