@@ -1,18 +1,18 @@
 # Modelo de Dados — Vocabulário para Schema
 
-Índice **termo → tabela**. O glossário é a fonte do vocabulário ([`../GLOSSARY.md`](../GLOSSARY.md)); este arquivo é só o mapa de onde cada termo mora no schema.
+Índice **termo → tabela**. O glossário é a fonte do vocabulário ([`../../GLOSSARY.md`](../../GLOSSARY.md)); este arquivo é só o mapa de onde cada termo mora no schema.
 
-É um índice de leitura, não parte da especificação: a definição de cada tabela está na seção do domínio, em [`03-Data-Model.md`](./03-Data-Model.md).
+É um índice de leitura, não parte da especificação: a definição de cada tabela está na seção do domínio, em [`../03-Data-Model.md`](../03-Data-Model.md). A navegação da documentação do banco está em [`README.md`](./README.md).
 
 | Termo (`GLOSSARY.md`) | Onde vive | Observação |
 | --- | --- | --- |
 | **Solicitação** | `requests.requests` | O registro e seu ciclo de vida |
 | **Protocolo** | `requests.requests.protocol` | Identificador público, único, nunca reemitido |
 | **Solicitante** | as respostas do bloco `requester` + `requests.requester_user_id` | Quem preencheu a solicitação; pode ser anônimo, e nesse caso não há conta |
-| **Anexo** | `requests.attachments` | Vinculado à solicitação e, opcionalmente, a uma pendência |
+| **Anexo** | `requests.attachments` | Vinculado à solicitação e, opcionalmente, a um item de pendência |
 | **Fila** | — | Projeção de leitura sobre `requests`; sem tabela própria |
-| **Status** | `portal-config.statuses` | Etapa do ciclo de vida, com visibilidade pública ou interna |
-| **Categoria** | `portal-config.categories`, `requests.category_id` | Classificação ordenável da solicitação — o solicitante propõe, a triagem confirma |
+| **Status** | `portal-config.statuses` | Etapa do ciclo de vida; `is_public` define a visibilidade e `is_restricted` exige `request:status_override` |
+| **Categoria** | `portal-config.categories`, `requests.category_id` | Classificação ordenável da solicitação — o solicitante escolhe na abertura; a triagem pode reclassificar |
 | **Prioridade** | `prioritization.prioritization_evaluations.priority_id` | Faixa de criticidade, definida por faixa de score; a avaliação corrente é a única casa |
 | **Classificação** | `requests.status_id`, `requests.category_id`, `prioritization.prioritization_evaluations.priority_id` | Os três atributos que situam a solicitação no fluxo — status e categoria na própria solicitação, prioridade na avaliação corrente |
 | **Triagem** | `triage.triages` | Conjunto append-only de triagens; a triagem atual é a última linha |
@@ -26,7 +26,7 @@
 | **Linha do tempo** | — | Projeção: `audit_entries` + `internal_notes` |
 | **Auditoria** | `audit.audit_entries` | O que foi criado ou alterado, com autor, momento, valor anterior e novo |
 | **Tentativa** | `audit.attempts` | O que foi recusado, gravado fora da transação |
-| **Perfil** | `users.profiles` | Cinco perfis fixos; permissões em código ([ADR-0006](./adr/0006-static-profile-authorization.md), [ADR-0025](./adr/0025-authorization-capability-scope.md)) |
+| **Perfil** | `users.profiles` | Cinco perfis fixos; permissões em código ([ADR-0006](../adr/0006-static-profile-authorization.md), [ADR-0025](../adr/0025-authorization-capability-scope.md)) |
 | **Permissão** | `core/authorization` (matriz em código) | Catálogo do Apêndice B; no alvo, tabela `permissions` |
 | **Escopo** | `core/authorization` (matriz em código) | `none`/`owner`; `own`/`all`; no alvo, `profile_permissions.scope` |
 | **Custódia** | `requests.requests.responsible_id`; `mapping.mappings.responsible_id` | Vínculo consultado pelo escopo `own`; a coluna de mapeamento só vale para as chaves `mapping:*` |

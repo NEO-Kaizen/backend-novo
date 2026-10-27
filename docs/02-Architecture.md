@@ -1255,7 +1255,7 @@ export type Actor =
 ```
 
 - `authenticated` — há sessão. O `profile` diz o que a pessoa pode fazer.
-- `requester` — sem sessão. O e-mail vem do header `X-Requester-Email` e serve **como chave de busca, não como autenticação**: o header não prova identidade e não autoriza nada por si. Vale só no modo de acesso público; no modo autenticado ele é ignorado. O ator cobre o acompanhamento por protocolo e a resposta a pendências de campo. O serviço libera o acesso apenas quando o e-mail confere com a resposta `corporate_email` da **própria** solicitação (trim e comparação case-insensitive); sem correspondência, a resposta é `404`, nunca `403` — `403` confirmaria que o protocolo existe. O nome exibido vem da resposta gravada, nunca do cliente. O endpoint público tem rate limit por IP e por protocolo.
+- `requester` — sem sessão. O e-mail vem do header `X-Requester-Email` e serve **como chave de busca, não como autenticação**: o header não prova identidade e não autoriza nada por si. Vale só no modo de acesso público; no modo autenticado ele é ignorado. O ator cobre o acompanhamento por protocolo e a resposta a pendências de campo. O serviço libera o acesso apenas quando o e-mail confere com a resposta `corporateEmail` da **própria** solicitação (trim e comparação case-insensitive); sem correspondência, a resposta é `404`, nunca `403` — `403` confirmaria que o protocolo existe. O nome exibido vem da resposta gravada, nunca do cliente. O endpoint público tem rate limit por IP e por protocolo.
 - `anonymous` — sem sessão e sem identidade.
 
 O header é validado na borda (formato de e-mail, Zod) e o middleware monta o ator; a comparação com o e-mail gravado é feita no serviço, em um lugar só. O `CODING_STANDARDS.md` § 8 proíbe confiar em identidade enviada pelo cliente — este header não autoriza nada: ele só localiza uma solicitação cujo e-mail já gravado coincide. A decisão está em [ADR-0023](./adr/0023-requester-email-is-a-lookup-key.md).
@@ -1423,6 +1423,8 @@ export interface Config {
   readonly protocolSecret: string;
 }
 ```
+
+> **Seed-only.** `ADMIN_ROOT_EMAIL` e `ADMIN_ROOT_PASSWORD` são lidas pelo comando de seed, não pelo `EnvironmentSchema`; o boot da aplicação não as exige. A regra e o comportamento do seed estão em [`03-Data-Model.md` § 25.3](./03-Data-Model.md#253-admin-root).
 
 | Regra | Motivo |
 | --- | --- |

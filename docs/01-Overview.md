@@ -111,8 +111,13 @@ O inventário completo, com responsabilidades e portas publicadas por cada domí
 01-Overview.md      → o que é, por que, escopo
 02-Architecture.md  → como o código se organiza e por quê
 03-Data-Model.md    → as tabelas, as relações e as invariantes do banco
-03-Data-Model-Vocabulary.md → índice termo → tabela
-03-Data-Model-Diagrams.md  → diagramas de entidade, de orientação
+db/README.md        → porta de entrada da documentação do banco
+  db/01-vocabulary.md → índice termo → tabela
+  db/02-reference.md  → referência do schema (colunas, constraints, índices, FKs)
+  db/03-erd.md        → diagramas de entidade
+  db/04-seeds.md      → inventário e ordem dos seeds
+  db/05-operations.md → operação, migrations, seeds e verificação
+  db/schema.dbml      → schema para dbdiagram/dbdocs
 GLOSSARY.md         → o que cada termo do domínio significa
 adr/                → decisões que custam caro para reverter
 CODING_STANDARDS.md → como escrever o código
