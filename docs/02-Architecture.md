@@ -1421,7 +1421,7 @@ export function createApp(container: Container): Express {
 | Depois de `headersSent`, o handler delega com `next(err)` | Não se responde duas vezes                                                            |
 | `app.ts` não cria dependência                             | Recebe o `Container` pronto; a aplicação pode ser montada em teste sem subir servidor |
 
-`/health` é sonda de infraestrutura, não contrato de domínio: responde 200 sem autenticação, fora do prefixo `/api/v1` e fora do OpenAPI. Ela não consulta o banco — o pool abre a conexão na primeira consulta.
+`/health` é sonda de infraestrutura, não contrato de domínio: responde 200 sem autenticação, fora do prefixo `/api/v1` e fora do OpenAPI. É liveness, não readiness: não consulta o banco — o pool abre a conexão na primeira consulta.
 
 ---
 
@@ -1494,6 +1494,7 @@ export interface Config {
 | Nenhum `process.env` fora de `platform/config`                       | Uma fonte de configuração                                                                                                      |
 | `Config` (interface) e `EnvironmentSchema` (Zod) têm nomes distintos | O schema valida; a interface é o contrato interno                                                                              |
 | Variáveis planas, `Config` aninhado                                  | `strictObject` sobre `process.env` rejeitaria PATH, HOME e afins; `loadConfig` seleciona as chaves conhecidas antes de validar |
+| `DATABASE_ENGINE` lista o alvo de portabilidade                      | Só `postgres` tem dialeto hoje; engine sem dialeto falha no boot com mensagem clara (§ 10.2)                                   |
 | `NODE_ENV` sem default                                               | Produção não cai em modo development por variável ausente                                                                      |
 | `DATABASE_PASSWORD` pode ser vazio                                   | Autenticação por trust local; a variável precisa existir                                                                       |
 | `COOKIE_NAME` e `JWT_EXPIRES_IN` no schema                           | Requeridos pelo C6 (`04-API-Conventions.md` § 5)                                                                               |

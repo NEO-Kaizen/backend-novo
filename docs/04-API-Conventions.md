@@ -54,6 +54,7 @@ divergência exige emenda aqui e emenda ao ADR correspondente.
 ## 1. Base path e versionamento
 
 - Todos os endpoints públicos vivem sob `/api/v1` (ex.: `POST /api/v1/requests`).
+- Exceção: `/health` é sonda de infraestrutura, vive fora do prefixo e não é contrato de domínio (`02-Architecture.md` § 15).
 - Sem versionamento por header ou por conteúdo; a versão está no path.
 - `v2` não existe; quando existir, convive com `v1` por janela documentada.
 - O frontend configura a origem via `PUBLIC_API_URL`; o path do backend é fixo em `/api/v1`.
