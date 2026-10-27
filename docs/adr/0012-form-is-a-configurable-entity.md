@@ -10,7 +10,7 @@ Para que o formulário possa ser configurável sem reescrever o backend, a defin
 
 A **chave do campo é a chave do contrato**: `form_fields.key` guarda a chave que o frontend envia (`processName`, `desiredDeadline`) e `form_blocks.key` guarda a chave do bloco (`demand`). A definição passa a ser o vocabulário único do formulário — o legado tinha dois, `approximate_volume` no banco e `volumetry` no payload — e a API lê e devolve a mesma forma aninhada, agrupando as respostas por bloco.
 
-A tabela `request_details` desaparece: os valores do formulário passam a ser linhas de `form_answers`, com colunas de valor tipadas (`value_text`, `value_lookup`, `value_number`, `value_date`, `value_boolean`, `value_json`). O catálogo de 33 chaves é a origem do seed — das quais 32 são campos, e uma é a classificação, que sai do formulário e vira coluna.
+A tabela `request_details` desaparece: os valores do formulário passam a ser linhas de `form_answers`, com colunas de valor (`value_text`, `value_number`, `value_date`, `value_boolean`, `value_json`) e a projeção derivada `value_lookup` para busca. O catálogo de 33 chaves é a origem do seed — das quais 32 são campos, e uma é a classificação, que sai do formulário e vira coluna.
 
 ## Alternativas consideradas
 

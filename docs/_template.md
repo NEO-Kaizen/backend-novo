@@ -1,6 +1,6 @@
 # Template de spec de domínio
 
-§4 deste template é ponteiro para `docs/04-API-Conventions.md`: toda convenção transversal (base path, envelope de erro, paginação, sessão, autorização, concorrência, content types, datas, idioma, request-id, rate limit, CORS) está lá e **não é redefinida aqui**.
+§4 deste template é ponteiro para [`docs/04-API-Conventions.md`](./04-API-Conventions.md): toda convenção transversal (base path, envelope de erro, paginação, sessão, autorização, concorrência, content types, datas, idioma, request-id, rate limit, CORS) está lá e **não é redefinida aqui**.
 
 ## 1. Contexto
 
@@ -10,7 +10,7 @@
 
 ## 4. Convenções de API
 
-Ver `docs/04-API-Conventions.md`. Esta spec apenas referencia as convenções herdadas; divergência exige emenda naquele documento.
+Ver [`docs/04-API-Conventions.md`](./04-API-Conventions.md). Esta spec apenas referencia as convenções herdadas; divergência exige emenda naquele documento.
 
 ## 5. Endpoints
 
@@ -26,24 +26,24 @@ Ver `docs/04-API-Conventions.md`. Esta spec apenas referencia as convenções he
 
 ## 8. Validação
 
-- campos, limites, mensagens pt-BR.
+- campos, limites e mensagens pt-BR (ver §3 daquele documento).
 
 ## 9. Multipart
 
-- rotas, limites, 400/413/415.
+- rotas, limites e 400/413/415 (ver §9 daquele documento).
 
 ## 10. Concorrência
 
-- operações com `expectedStatusKey`.
+- operações com `targetStatusKey` e `expectedStatusKey` (ver §8.1 daquele documento).
 
 ## 11. Idempotência
 
-- endpoints idempotentes listados.
+- endpoints classificados pela tabela de idempotência (§8.2 daquele documento).
 
 ## 12. Datas
 
-- tipo (timestamp vs data pura) por campo.
+- tipo (timestamp vs data pura) por campo (ver §10 daquele documento).
 
 ## 13. Checklist de revisão
 
-Ver `docs/04-API-Conventions.md` §16.
+Ver [`docs/04-API-Conventions.md`](./04-API-Conventions.md) §16.

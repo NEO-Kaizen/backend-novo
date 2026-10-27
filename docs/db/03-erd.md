@@ -1,6 +1,6 @@
 # Modelo de Dados — Diagramas de Entidade
 
-> **Derivado, não normativo.** Os diagramas são de orientação: mostram entidades e relações, não cada detalhe de constraint. A definição completa está em [`../03-Data-Model.md`](../03-Data-Model.md); o dicionário de consulta em [`02-reference.md`](./02-reference.md); a versão para ferramenta em [`schema.dbml`](./schema.dbml).
+> **Derivado, não normativo.** Os diagramas são de orientação: mostram entidades e relações, não cada detalhe de constraint. A definição completa está em [`../03-Data-Model.md`](../03-Data-Model.md); a referência do schema em [`02-reference.md`](./02-reference.md); a versão para ferramenta em [`schema.dbml`](./schema.dbml).
 
 **Legenda.** `PK` chave primária · `FK` chave estrangeira · `UK` unicidade. A cardinalidade segue a nulabilidade e a unicidade da FK: `||` exatamente um, `|o` zero ou um, `o{` zero ou muitos, `o|` zero ou um.
 
