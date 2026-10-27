@@ -1680,7 +1680,7 @@ Cada linha aponta a seção que define a regra. Um PR que muda mais de uma camad
 | [ ] | Exemplos no spec sem PII                                                                | [§ 23](#23-contrato-http-openapi)                                         | Revisão manual                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | [ ] | Autorização verificada no servidor, em um lugar só por domínio                          | [§ 14.4](#144-autorização)                                                | `AuthorizationService.assert`                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | [ ] | Log estruturado com request id; sem PII; sem `console.log`                              | [§ 17](#17-log)                                                           | `rg "console\.(log\|error)" src/`                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| [ ] | Segredo vem de ambiente validado; nunca no repositório                                  | [§ 16](#16-configuração)                                                  | `.env.example` sem valor                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| [ ] | Segredo vem de ambiente validado; nunca no repositório                                  | [§ 16](#16-configuração)                                                  | `.env.example` sem segredo real (placeholders de desenvolvimento)                                                                                                                                                                                                                                                                                                                                                                                                        |
 
 ---
 
@@ -1726,7 +1726,7 @@ O contrato HTTP será derivado dos schemas Zod e dos metadados de rota. A polít
 src/
 ├── docs/
 │   ├── openapi.ts          # compõe createDocument a partir dos *.openapi.ts
-│   ├── components.ts       # ErrorEnvelope, PaginatedResponse, securitySchemes
+│   ├── components.ts       # ErrorEnvelope, variantes de erro, PaginatedResponse, securitySchemes
 │   └── generate-openapi.ts  # escreve openapi/openapi.json
 ├── domains/
 │   └── <domínio>/
@@ -1744,14 +1744,11 @@ docs/openapi/
 
 ### 23.2 Regras
 
-| Regra                                                                      | Motivo                                                                            |
-| -------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| `*.openapi.ts` não importa `platform`                                      | Metadados de rota ficam no domínio; a composição é feita em `src/docs/openapi.ts` |
-| `src/platform/http/docs-router.ts` é o único lugar que serve o spec e a UI | Uma porta de exposição                                                            |
+`*.openapi.ts` não importa `platform`; a composição é feita em `src/docs/openapi.ts` (regra de dependências em §19). `src/platform/http/docs-router.ts` é o único lugar que serve o spec e a UI.
 
 ### 23.3 Montagem
 
-O `container` compõe o documento a partir dos `*.openapi.ts` e entrega o router de docs ao `app.ts`, que o registra em `/api/v1`. A UI (Scalar self-hosted) consome `/api/v1/openapi.json`; o esquema de segurança é `sessionCookie` (`apiKey`, `in: cookie`, `name: session_id`) e operações públicas declaram `security: []`.
+Quando o kernel existir, o `container` vai compor o documento a partir dos `*.openapi.ts` e vai entregar o router de docs ao `app.ts`, que o registrará em `/api/v1`. A UI (Scalar self-hosted) consumirá `/api/v1/openapi.json`; o esquema de segurança é `sessionCookie` (`apiKey`, `in: cookie`, `name: session_id`) e operações públicas declaram `security: []`.
 
 Ver [ADR-0026](./adr/0026-openapi-generated-from-zod.md).
 

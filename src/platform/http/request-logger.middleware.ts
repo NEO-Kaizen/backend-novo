@@ -4,14 +4,21 @@ import type { Logger } from "../../core/service/logger.ts";
 const UNMATCHED_ROUTE = "unmatched";
 
 /**
- * Uma linha por requisição, emitida em `finish`. Só campos da allowlist:
- * sem query string, sem body e sem header — nada de PII.
+ * Uma linha por requisição, emitida em `finish` ou, quando o cliente desconecta
+ * antes, em `close` com `aborted: true`. Só campos da allowlist: sem query
+ * string, sem body e sem header — nada de PII.
  */
 export function createRequestLoggerMiddleware(logger: Logger): RequestHandler {
   return (req, res, next) => {
     const startedAt = performance.now();
+    let logged = false;
 
-    res.on("finish", () => {
+    const log = (aborted: boolean): void => {
+      if (logged) {
+        return;
+      }
+      logged = true;
+
       logger.info(
         {
           correlationId: req.id,
@@ -19,9 +26,18 @@ export function createRequestLoggerMiddleware(logger: Logger): RequestHandler {
           route: routeOf(req),
           status: res.statusCode,
           durationMs: Math.round(performance.now() - startedAt),
+          ...(aborted ? { aborted } : {}),
         },
-        "requisição concluída",
+        aborted ? "requisição interrompida" : "requisição concluída",
       );
+    };
+
+    res.once("finish", () => {
+      log(false);
+    });
+    res.once("close", () => {
+      // `close` também segue `finish`; só conta como aborto se a resposta não terminou.
+      log(!res.writableEnded);
     });
 
     next();
