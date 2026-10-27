@@ -39,6 +39,12 @@ function toAppErrorFromTransport(error: unknown): AppError | null {
       },
     );
   }
+  if (type === "request.aborted") {
+    return new AppError("validation_error", VALIDATION_STATUS, "Requisição interrompida.", {
+      cause: error,
+      expose: true,
+    });
+  }
   if (type === "entity.parse.failed" || type === "entity.verify.failed") {
     return new AppError("validation_error", VALIDATION_STATUS, "Corpo da requisição inválido.", {
       cause: error,
