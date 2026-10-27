@@ -11,14 +11,30 @@ function start(): void {
   const container = createContainer(config);
   const app = createApp(container);
 
-  const server = app.listen(config.port, () => {
+  const server = app.listen(config.port);
+
+  server.once("listening", () => {
     container.logger.info(
       { port: config.port, environment: config.environment },
       "servidor iniciado",
     );
   });
 
+  // Express 5 entrega o erro de bind no callback do listen; `listening`/`error`
+  // deixam a falha explícita e o processo sai com código diferente de zero.
+  server.once("error", (error) => {
+    container.logger.error({ err: error }, "falha ao abrir o servidor");
+    process.exitCode = 1;
+  });
+
+  let isShuttingDown = false;
+
   const shutdown = async (signal: NodeJS.Signals): Promise<void> => {
+    if (isShuttingDown) {
+      return;
+    }
+    isShuttingDown = true;
+
     container.logger.info({ signal }, "encerrando servidor");
 
     const forceExit = setTimeout(() => {
