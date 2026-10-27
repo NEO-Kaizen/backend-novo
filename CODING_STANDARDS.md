@@ -180,6 +180,8 @@ if (!parsed.success) {
 - Use `res.status(...).json(...)`; não responda duas vezes.
 - Metadados de rota (OpenAPI) ficam co-localizados em `*.openapi.ts` no domínio; o handler não define contrato.
 
+**Nomenclatura de middleware.** Middleware de plataforma vive em `platform/http/<conceito>.middleware.ts` e exporta `create<Conceito>Middleware(...)`, que devolve `RequestHandler` — inclusive quando não recebe dependência. O error handler mantém `createErrorHandler`, pela assinatura de quatro parâmetros do Express. Rotas de domínio seguem `docs/02-Architecture.md` §4 (`<domínio>.router.ts`, `.controller.ts`, …).
+
 ```ts
 const getUser: RequestHandler<{ id: string }, UserDto, never, never, AppLocals> = async (
   req,
@@ -195,7 +197,7 @@ const errorHandler: ErrorRequestHandler = (err, req, res, next) => {
   if (res.headersSent) return next(err);
 
   const appErr = toAppError(err);
-  req.log.error({ err, code: appErr.code }, "falha ao processar requisição");
+  logger.error({ err, correlationId: req.id, code: appErr.code }, "falha ao processar requisição");
 
   res.status(appErr.status).json({
     error: {
