@@ -22,7 +22,7 @@ export const EnvironmentSchema = z.strictObject({
 
   DATABASE_ENGINE: z
     .enum(DATABASE_ENGINES, {
-      error: "use postgres, sqlite ou mysql",
+      error: `use ${DATABASE_ENGINES.join(", ")}`,
     })
     .default("postgres"),
   DATABASE_HOST: z.string({ error: "obrigatória" }).min(1, "não pode ser vazia"),
@@ -47,12 +47,12 @@ export const EnvironmentSchema = z.strictObject({
       }
 
       const origins: string[] = [];
-      for (const rawOrigin of rawOrigins) {
+      for (const [index, rawOrigin] of rawOrigins.entries()) {
         const origin = normalizeOrigin(rawOrigin);
         if (origin === null) {
           ctx.addIssue({
             code: "custom",
-            message: `origem inválida: "${rawOrigin}" (use esquema, host e porta, sem caminho)`,
+            message: `origem inválida na posição ${index + 1}: use esquema, host e porta, sem caminho, credencial, query ou hash`,
           });
           continue;
         }
