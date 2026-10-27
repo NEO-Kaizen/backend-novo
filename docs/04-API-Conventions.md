@@ -24,10 +24,10 @@ divergência exige emenda aqui e emenda ao ADR correspondente.
 | 1   | Base path e versionamento      | decidido | `/api/v1` para todos os endpoints; sem prefixo em v2 por ora                                                                                                                                  | `02-Architecture.md` §15; `01-Overview.md` §3                                                                                                  | Backend         |
 | 2   | Envelope de erro (legado)      | decidido | `{ status, statusCode, message }` + `code` e `requestId` aditivos; vigente até a migração                                                                                                     | ADR-0005; `02-Architecture.md` §12.5                                                                                                           | Backend + FE    |
 | 3   | Envelope de erro (alvo)        | decidido | `{ error: { code, message, requestId } }`, em cutover coordenado                                                                                                                              | `CODING_STANDARDS.md` §5; ADR-0005                                                                                                             | Backend + FE    |
-| 4   | Catálogo de códigos            | decidido | snake_case; 400/401/403/404/409/413/415/429/500; regra de `expose`                                                                                                                            | `02-Architecture.md` §12.2/§12.4/§12.6 (seis códigos base); 413/415/429: extensão (§2.3)                                                       | Backend         |
+| 4   | Catálogo de códigos            | decidido | snake_case; 400/401/403/404/409/413/415/429/500; regra de `expose`                                                                                                                            | `02-Architecture.md` §12.2 (catálogo), §12.4 (mapeamento) e §12.6 (exposição)                                                                  | Backend         |
 | 5   | Validação (400)                | decidido | 400 + `validation_error` + mensagem pt-BR + `fields: [{ path, message }]`; o legado misto (422/objeto no fluxo de requests e 400/mensagem em outros endpoints) é unificado                    | `CODING_STANDARDS.md` §6; C2                                                                                                                   | Backend + FE    |
 | 6   | Paginação                      | decidido | `{ data, page, pageSize, total, totalPages }`; default 20, máximo 100, clamp de página; `totalPages: 0` quando vazio; exceções em §4.3                                                        | `02-Architecture.md` §10.6; C3/C4/C5                                                                                                           | Backend         |
-| 7   | Sessão e cookie                | decidido | `session_id`, HttpOnly, SameSite=Lax, Secure em produção, TTL 1 dia; env `COOKIE_NAME` e `JWT_EXPIRES_IN` (implementação pendente)                                                            | C6; `02-Architecture.md` §14.1; F1 (`src/configs.ts`; `src/modules/auth/auth.controller.ts`)                                                   | Backend + Infra |
+| 7   | Sessão e cookie                | decidido | `session_id`, HttpOnly, SameSite=Lax, Secure em produção, TTL 1 dia; env `COOKIE_NAME` e `JWT_EXPIRES_IN`                                                                                     | C6; `02-Architecture.md` §14.1; F1 (`src/configs.ts`; `src/modules/auth/auth.controller.ts`)                                                   | Backend + Infra |
 | 8   | Autorização                    | decidido | 26 keys; escopo `none`/`owner` (`own`/`all`); atribuibilidade; 5 perfis; FE por perfil                                                                                                        | ADR-0025; `02-Architecture.md` §14.4–§14.6                                                                                                     | Backend + FE    |
 | 9   | `/auth/me` — DTO               | decidido | `id, name, email, role, permissions?, mustChangePassword, avatarUrl (string ou null)`                                                                                                         | C7; `02-Architecture.md` §14.4; F2 (`src/lib/types/auth.ts`)                                                                                   | Backend + FE    |
 | 10  | Concorrência                   | decidido | `PATCH` de status com `targetStatusKey` (destino) e `expectedStatusKey` (precondição); 409 com `currentStatusKey` e `currentStatusId?` no corpo do erro; leitura e escrita na mesma transação | C8; `02-Architecture.md` §11.1                                                                                                                 | Backend + FE    |
@@ -108,7 +108,7 @@ divergência exige emenda aqui e emenda ao ADR correspondente.
 - Códigos estáveis em `snake_case`, registrados em `core/errors/error-codes.ts` (expostos) e `core/errors/internal-codes.ts` (internos, nunca expostos).
 - Regra de `expose`: `expose: true` envia a mensagem; `expose: false` (padrão) envia `internal_error` com mensagem genérica. Stack, SQL, nome de tabela, path e versão interna **nunca** saem do servidor.
 - Códigos de domínio entram em `STATUS_BY_CODE` (`core/http/error-mapper.ts`) para mapear para status HTTP.
-- `413`, `415` e `429` são extensões desta convenção. **Pendência de implementação:** Dono Backend; Destino `02-Architecture.md` §12.2 e `core/errors/error-codes.ts`; Prazo/gatilho: antes da primeira rota que use os códigos.
+- `413`, `415` e `429` são extensões desta convenção. **Catalogado:** os três códigos estão em `core/errors/error-codes.ts` e em `02-Architecture.md` §12.2; `payload_too_large` e `invalid_content_type` já têm produtor parcial na borda (corpo acima do limite e charset não suportado); `rate_limited` só entra com o rate limiting (C12).
 
 ## 3. Forma do erro de validação (C2)
 
@@ -163,7 +163,6 @@ Os valores 20/100 da auditoria são os globais; a exceção é o parâmetro `lim
 - Atributos: `HttpOnly`, `SameSite=Lax`, `Secure` em produção, `Path=/`, `credentials: true` no CORS.
 - TTL: 1 dia (configurável via `JWT_EXPIRES_IN`, default `1d`).
 - Validação por requisição: assinatura + expiração; relê usuário/perfil no banco; compara `password_changed_at` com o do token.
-- **Pendência de implementação (não é decisão de API):** o env schema (`src/platform/config/environment-schema.ts`) ainda não tem `COOKIE_NAME` nem `JWT_EXPIRES_IN`. Dono: Backend + Infra. Destino: o próprio env schema. Prazo/gatilho: antes do primeiro deploy com sessão.
 - Tokens, cookies e segredos nunca em URL nem em body; a única exceção é a senha de `POST /auth/login`, que vai no body, nunca em URL ou log.
 
 ## 6. Autorização (ADR-0025)
@@ -241,7 +240,7 @@ Os valores 20/100 da auditoria são os globais; a exceção é o parâmetro `lim
 | `PATCH /api/v1/portal-config/assets`                                       | 8        | favicon 1 MiB; logo e avatar 2 MiB; imagem de login 5 MiB | 20 MiB       | conforme a chave (PNG, SVG, ICO, JPEG, WebP) |
 
 - O total é a soma dos máximos da rota; o multer limita a contagem e o tamanho de cada arquivo.
-- JSON body: 1 MiB (`express.json({ limit: "1mb" })`); quando a rota tiver parte JSON no multipart (`payload` ou `assets`), o limite da parte é 2 MiB.
+- JSON body: 1 MiB por default (`JSON_BODY_MAX_BYTES`, aplicado em `express.json`); quando a rota tiver parte JSON no multipart (`payload` ou `assets`), o limite da parte é 2 MiB.
 - **Harmonização registrada:** o legado de requests/pendências devolvia 400 para tamanho e o de requests para MIME; a convenção nova usa **413** para tamanho e **415** para MIME. O FE lê `message`, então a mudança de status não quebra a renderização.
 - Rotas multipart: requests (anexos), pendências (anexos), avatar do usuário e assets do portal.
 - Fontes dos limites: F1 (`src/shared/middleware/upload*.ts`; `docs/solicitations-api-requests-0_4.md` §1; `docs/contract-pendencias_03.md` §7; `docs/portal-config-api-0_4.md` §5; `docs/users-api-profile-0_1.md` — avatar).
@@ -289,7 +288,7 @@ Os valores 20/100 da auditoria são os globais; a exceção é o parâmetro `lim
 - Origens explícitas (lista configurável), sem wildcard.
 - `credentials: true`.
 - `exposedHeaders`: `Content-Disposition` (obrigatório, para downloads) e `x-request-id`.
-- Métodos e headers permitidos registrados no bootstrap (`app.ts`).
+- Métodos e headers permitidos registrados no middleware de CORS (`platform/http/cors.middleware.ts`).
 
 ## 15. Convenções correlatas
 
