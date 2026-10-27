@@ -66,7 +66,7 @@ Rotas públicas não recebem `security` explícito neste documento; a coluna de 
 
 ## 1. Escopo e fora de escopo
 
-**Escopo:** as 54 rotas registradas em `F1 src/router.ts:16-32` nos 10 routers de domínio, mais a
+**Escopo:** as 54 rotas registradas em `F1 src/router.ts:16-32` nos 11 módulos de router de domínio, mais a
 gramática do payload de formulário (§6) que não tem superfície HTTP própria.
 
 **Fora de escopo:** deltas intencionais, geração de OpenAPI, implementação em `src/`, migração de
@@ -192,8 +192,13 @@ fluxo de requests. A distribuição exata é registrada em cada seção de domí
 
 ### 3.5 Códigos de sucesso
 
-Predomina `200` com corpo JSON, inclusive em criação e atualização. `201` e `204` só aparecem onde
-a seção do domínio registra. Não há uso de `Location` nem de `ETag`.
+Leitura e atualização respondem `200` com corpo JSON. A criação responde `201` em `POST /users`,
+`POST /requests`, `POST /requests/:protocol/triage`, `POST /requests/:protocol/pending-items`
+(inclusive o anexo) e `POST /requests/:protocol/internal-notes`; `PUT /queue/requests/:protocol/mapping`
+cria com `200`; `PUT /requests/:protocol/internal-notes/read` responde `204` sem corpo. Não há uso de
+`Location` nem de `ETag`.
+
+**Divergente (legado vigente):** criação com `200` no mapping — convenção §15.4 (#20).
 
 ### 3.6 Paginação
 
@@ -211,9 +216,11 @@ cada endpoint está na seção do domínio; nenhuma delas é normalizada aqui.
 | `PATCH /portal-config/assets`                                       | `assets` (JSON, 1) + 8 chaves de imagem | 8 arquivos; 2 MB por campo; por chave: logo/avatar 2 MB, favicon 1 MB, imagem de login 5 MB | por chave (`ASSET_FILE_RULES`) → senão 415               | 413 por tamanho; 400 demais           | `F1 src/shared/middleware/uploadAssets.ts:11-139,146-166`        |
 | `POST /requests/:protocol/pending-items/:pendingItemId/attachments` | `file` (1)                              | 10 MB; 1 arquivo                                                                            | mesma allowlist de anexos → senão 400                    | 400 com mensagem por código           | `F1 src/modules/pendingItems/pendingItems.router.ts:19-33,50-67` |
 
-O corpo JSON trafega como parte multipart quando a rota aceita arquivo (campo `payload` em
-`POST /requests`; campo `assets` em `PATCH /portal-config/assets`; campo `avatar` convive com um
-único campo JSON em `PUT /users/me`).
+Quando a rota aceita arquivo, o JSON trafega como parte multipart (campo `payload` em
+`POST /requests`; campo `assets` em `PATCH /portal-config/assets`; campo `payload` em `PUT /users/me`,
+ao lado do arquivo `avatar`). Sem arquivo, as mesmas rotas aceitam corpo `application/json` com esse
+campo como string: o `express.json` roda antes do multer e o multer ignora requisições não multipart
+(`F1 src/app.ts:26`; `F1 src/shared/middleware/upload.ts:48-64`).
 
 **Divergente (legado vigente):** 400 para MIME inválido em requests/pendências, 415 em avatar e
 assets; convenção §9 e #17.
@@ -277,7 +284,7 @@ Só o verify público de pendências aplica limite: 10 tentativas por 10 minutos
 | 10  | portal-config  | PATCH  | `/portal-config/categories`                                    | Administrador                                                     | `updateCategories`                 | `F1 src/modules/portalConfig/portalConfig.router.ts:29`        |
 | 11  | portal-config  | PATCH  | `/portal-config/statuses`                                      | Administrador                                                     | `updateStatuses`                   | `F1 src/modules/portalConfig/portalConfig.router.ts:30`        |
 | 12  | portal-config  | PATCH  | `/portal-config/prioritization-weights`                        | Administrador                                                     | `updatePrioritizationWeights`      | `F1 src/modules/portalConfig/portalConfig.router.ts:31`        |
-| 13  | users          | GET    | `/users/analysts`                                              | sessão (qualquer perfil interno)                                  | `listAnalysts`                     | `F1 src/modules/users/users.router.ts:23`                      |
+| 13  | users          | GET    | `/users/analysts`                                              | sessão (qualquer sessão autenticada, inclusive Solicitante)       | `listAnalysts`                     | `F1 src/modules/users/users.router.ts:23`                      |
 | 14  | users          | GET    | `/users/me`                                                    | sessão                                                            | `getMyProfile`                     | `F1 src/modules/users/users.router.ts:26`                      |
 | 15  | users          | PUT    | `/users/me`                                                    | sessão; multipart opcional                                        | `updateMyProfile`                  | `F1 src/modules/users/users.router.ts:29`                      |
 | 16  | users          | GET    | `/users/metrics`                                               | Administrador                                                     | `getUserMetrics`                   | `F1 src/modules/users/users.router.ts:32`                      |
@@ -2324,18 +2331,18 @@ de criação/atualização administrativa.
 
 ### 8.2 Rotas
 
-| #   | Método | Path                        | Autenticação/autorização         | Handler             | Sucesso                              | Evidência                                 |
-| --- | ------ | --------------------------- | -------------------------------- | ------------------- | ------------------------------------ | ----------------------------------------- |
-| 13  | GET    | `/users/analysts`           | sessão (qualquer perfil interno) | `listAnalysts`      | 200 `AssignAnalyst[]`                | `F1 src/modules/users/users.router.ts:23` |
-| 14  | GET    | `/users/me`                 | sessão                           | `getMyProfile`      | 200 `UserProfileResponseDTO`         | `F1 src/modules/users/users.router.ts:26` |
-| 15  | PUT    | `/users/me`                 | sessão; multipart                | `updateMyProfile`   | 200 `UserProfileResponseDTO`         | `F1 src/modules/users/users.router.ts:29` |
-| 16  | GET    | `/users/metrics`            | Administrador                    | `getUserMetrics`    | 200 `UserMetricsResponse`            | `F1 src/modules/users/users.router.ts:32` |
-| 17  | GET    | `/users`                    | Administrador                    | `listUsers`         | 200 `PaginatedResponse<UserSummary>` | `F1 src/modules/users/users.router.ts:33` |
-| 18  | POST   | `/users`                    | Administrador                    | `createUser`        | 201 `CreateUserResponse`             | `F1 src/modules/users/users.router.ts:34` |
-| 19  | GET    | `/users/:id`                | Administrador                    | `getUser`           | 200 `UserProfileResponseDTO`         | `F1 src/modules/users/users.router.ts:35` |
-| 20  | PUT    | `/users/:id`                | Administrador                    | `updateUser`        | 200 `UserProfileResponseDTO`         | `F1 src/modules/users/users.router.ts:36` |
-| 21  | PATCH  | `/users/:id/status`         | Administrador                    | `changeUserStatus`  | 200 `ChangeUserStatusResponse`       | `F1 src/modules/users/users.router.ts:37` |
-| 22  | POST   | `/users/:id/reset-password` | Administrador                    | `resetUserPassword` | 200 `ResetPasswordResponse`          | `F1 src/modules/users/users.router.ts:38` |
+| #   | Método | Path                        | Autenticação/autorização                                    | Handler             | Sucesso                              | Evidência                                 |
+| --- | ------ | --------------------------- | ----------------------------------------------------------- | ------------------- | ------------------------------------ | ----------------------------------------- |
+| 13  | GET    | `/users/analysts`           | sessão (qualquer sessão autenticada, inclusive Solicitante) | `listAnalysts`      | 200 `AssignAnalyst[]`                | `F1 src/modules/users/users.router.ts:23` |
+| 14  | GET    | `/users/me`                 | sessão                                                      | `getMyProfile`      | 200 `UserProfileResponseDTO`         | `F1 src/modules/users/users.router.ts:26` |
+| 15  | PUT    | `/users/me`                 | sessão; multipart                                           | `updateMyProfile`   | 200 `UserProfileResponseDTO`         | `F1 src/modules/users/users.router.ts:29` |
+| 16  | GET    | `/users/metrics`            | Administrador                                               | `getUserMetrics`    | 200 `UserMetricsResponse`            | `F1 src/modules/users/users.router.ts:32` |
+| 17  | GET    | `/users`                    | Administrador                                               | `listUsers`         | 200 `PaginatedResponse<UserSummary>` | `F1 src/modules/users/users.router.ts:33` |
+| 18  | POST   | `/users`                    | Administrador                                               | `createUser`        | 201 `CreateUserResponse`             | `F1 src/modules/users/users.router.ts:34` |
+| 19  | GET    | `/users/:id`                | Administrador                                               | `getUser`           | 200 `UserProfileResponseDTO`         | `F1 src/modules/users/users.router.ts:35` |
+| 20  | PUT    | `/users/:id`                | Administrador                                               | `updateUser`        | 200 `UserProfileResponseDTO`         | `F1 src/modules/users/users.router.ts:36` |
+| 21  | PATCH  | `/users/:id/status`         | Administrador                                               | `changeUserStatus`  | 200 `ChangeUserStatusResponse`       | `F1 src/modules/users/users.router.ts:37` |
+| 22  | POST   | `/users/:id/reset-password` | Administrador                                               | `resetUserPassword` | 200 `ResetPasswordResponse`          | `F1 src/modules/users/users.router.ts:38` |
 
 **Split de autenticação/autorização.** As duas primeiras rotas (`/analysts` e `GET /me`) declaram
 `authMiddleware` individualmente e ficam **antes** do gate administrativo
@@ -2490,8 +2497,10 @@ analista sem linha (`F1 src/modules/users/users.service.ts:291-294`).
 
 O `payload` precisa chegar como string não vazia; caso contrário → `400 "Parte 'payload' ausente no
 corpo da requisição."`; JSON inválido → `400 "A parte 'payload' contém um JSON inválido."`
-(`F1 src/modules/users/users.controller.ts:124-136`). Um corpo JSON puro (sem multipart) cai no primeiro
-erro, porque `req.body.payload` não existe.
+(`F1 src/modules/users/users.controller.ts:124-136`). O controller não exige multipart: com
+`application/json`, o `express.json` (`F1 src/app.ts:26`) popula `req.body.payload` e o corpo
+`{ "payload": "{...}" }` funciona sem arquivo; com multipart, `payload` é a parte texto e `avatar` o
+arquivo opcional. O `400` ocorre quando a parte está ausente, vazia ou não é string.
 
 Campos aceitos no `payload` (schema estrito; chave desconhecida é recusada):
 
@@ -2553,7 +2562,7 @@ departamento e gestor só podem ser alterados por administrador. Use PUT /users/
 
 | Status | code | Mensagem literal                                                                                    | Condição                                                                                                                                                                    |
 | ------ | ---- | --------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 400    | —    | `"Parte 'payload' ausente no corpo da requisição."`                                                 | parte ausente, vazia ou corpo não multipart                                                                                                                                 |
+| 400    | —    | `"Parte 'payload' ausente no corpo da requisição."`                                                 | parte ausente, vazia ou não textual (qualquer content-type)                                                                                                                 |
 | 400    | —    | `"A parte 'payload' contém um JSON inválido."`                                                      | `JSON.parse` falha                                                                                                                                                          |
 | 400    | —    | `"Envie 'removeAvatar' ou 'avatar', não ambos."`                                                    | remoção e upload na mesma requisição                                                                                                                                        |
 | 400    | —    | mensagem agregada do Zod (ex.: `Campos inválidos: professional — Unrecognized key: "professional"`) | schema estrito/limites (`F1 src/modules/users/users.controller.ts:162-165`)                                                                                                 |
@@ -2573,7 +2582,9 @@ departamento e gestor só podem ser alterados por administrador. Use PUT /users/
 
 **Transporte** — multipart com `multer.memoryStorage()`; limites `fileSize` 2 MB, `files: 1`, `fields: 1`,
 `fieldSize` 2 MB (`F1 src/shared/middleware/uploadAvatar.ts:20-29`). O `payload` é o único campo de texto
-aceito. JSON trafega como parte texto; datas não aparecem na resposta.
+aceito; sem arquivo, o mesmo campo pode chegar em corpo `application/json` como string, porque o
+`express.json` (`F1 src/app.ts:26`) roda antes do multer. Com multipart, o JSON trafega como parte
+texto. Datas não aparecem na resposta.
 
 **Evidência** — `F1 src/modules/users/users.router.ts:28-29`;
 `F1 src/modules/users/users.controller.ts:118-175`; `F1 src/modules/users/users.service.ts:312-441`;
@@ -3958,6 +3969,9 @@ O `422` é o único erro de validação do domínio que devolve `fields` como ob
 
 - Limites do multer (`F1 src/shared/middleware/upload.ts:13-23`): 10 MB por arquivo, 5 arquivos,
   2 MB por campo de texto.
+- Sem arquivos, a rota também aceita `application/json` com `payload` como string JSON; o
+  `express.json` popula `req.body` antes de `uploadFields` e o multer ignora requisições não
+  multipart (`F1 src/app.ts:26`; `F1 src/shared/middleware/upload.ts:48-64`).
 - MIME aceito (`F1 src/shared/middleware/upload.ts:5-11`): `application/pdf`,
   `application/vnd.openxmlformats-officedocument.wordprocessingml.document`,
   `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`, `image/png`,
@@ -4027,7 +4041,7 @@ recebe a mensagem genérica com `400`; a convenção §9 pede `413 payload_too_l
 **Divergente (legado vigente):** o prefixo `MAAT` é constante de código; o ADR-0008 define o
 prefixo como máscara configurada no portal (`protocol_mask`).
 
-**Transporte:** multipart; o `Content-Type` da parte `payload` é ignorado pelo parser de campos de
+**Transporte:** multipart ou JSON sem anexos; o `Content-Type` da parte `payload` é ignorado pelo parser de campos de
 texto (`F1 docs/solicitations-api-requests-0_4.md` §1 — nota de implementação); os metadados do
 anexo (`fileName`, `mimeType`, `sizeBytes`) são derivados da parte, nunca declarados no payload
 (`F1 src/shared/storage/fileStorage.ts:34-40`); o nome em disco recebe um UUID, e o nome original
@@ -4199,14 +4213,16 @@ O `400` de path é produzido por `formatZodIssues` (`F1 src/modules/requests/tri
 
 #### Erros
 
-| Status | Mensagem literal                                                  | Condição                                | Evidência                                                |
-| ------ | ----------------------------------------------------------------- | --------------------------------------- | -------------------------------------------------------- |
-| 401    | `"Token não fornecido"`                                           | sem cookie                              | `F1 src/shared/middleware/auth.ts:27-45`                 |
-| 401    | `"Token inválido ou expirado"`                                    | token inválido/expirado/usuário inativo | `F1 src/shared/middleware/auth.ts:87-95`                 |
-| 403    | `"Troca de senha obrigatória antes de continuar"`                 | `must_change_password`                  | `F1 src/shared/middleware/requireRole.ts:11-13`          |
-| 403    | `"Acesso restrito ao perfil Analista ou Gestor ou Administrador"` | perfil fora da lista                    | `F1 src/shared/middleware/requireRole.ts:21-22`          |
-| 404    | `"Protocolo não encontrado"`                                      | protocolo inexistente                   | `F1 src/modules/requests/triage/triage.service.ts:44-47` |
-| 403    | `"Acesso negado a esta solicitação"`                              | Analista sem custódia                   | `F1 src/modules/requests/triage/triage.service.ts:53-55` |
+| Status | Mensagem literal                                                  | Condição                                                               | Evidência                                                   |
+| ------ | ----------------------------------------------------------------- | ---------------------------------------------------------------------- | ----------------------------------------------------------- |
+| 400    | `"Protocolo é obrigatório."`                                      | protocolo vazio (guarda defensiva; `/:protocol` vazio não casa a rota) | `F1 src/modules/requests/triage/triage.controller.ts:31-37` |
+| 401    | `"Token não fornecido"`                                           | sem cookie                                                             | `F1 src/shared/middleware/auth.ts:27-45`                    |
+| 401    | `"Token inválido ou expirado"`                                    | token inválido/expirado/usuário inativo                                | `F1 src/shared/middleware/auth.ts:87-95`                    |
+| 403    | `"Troca de senha obrigatória antes de continuar"`                 | `must_change_password`                                                 | `F1 src/shared/middleware/requireRole.ts:11-13`             |
+| 403    | `"Acesso restrito ao perfil Analista ou Gestor ou Administrador"` | perfil fora da lista                                                   | `F1 src/shared/middleware/requireRole.ts:21-22`             |
+| 404    | `"Protocolo não encontrado"`                                      | protocolo inexistente                                                  | `F1 src/modules/requests/triage/triage.service.ts:44-47`    |
+| 403    | `"Acesso negado a esta solicitação"`                              | Analista sem custódia                                                  | `F1 src/modules/requests/triage/triage.service.ts:53-55`    |
+| 500    | `"Erro interno do servidor"`                                      | falha não prevista                                                     | `F1 src/shared/middleware/errorHandler.ts:32-45`            |
 
 O `403` da leitura é `AppError` sem `code` (`F1 src/modules/requests/triage/triage.service.ts:54`), ao contrário do `403` da escrita.
 
@@ -4488,12 +4504,14 @@ Sem nenhuma linha, a resposta é o estado vazio — `id: null`, todos os campos 
 
 #### Erros
 
-| Status | Mensagem literal                                                  | Condição                                | Evidência                                         |
-| ------ | ----------------------------------------------------------------- | --------------------------------------- | ------------------------------------------------- |
-| 401    | `"Token não fornecido"` / `"Token inválido ou expirado"`          | sessão                                  | `F1 src/shared/middleware/auth.ts:27-45,87-95`    |
-| 403    | `"Troca de senha obrigatória antes de continuar"`                 | `must_change_password`                  | `F1 src/shared/middleware/requireRole.ts:11-13`   |
-| 403    | `"Acesso restrito ao perfil Analista ou Gestor ou Administrador"` | perfil fora da lista                    | `F1 src/shared/middleware/requireRole.ts:21-22`   |
-| 404    | `"Solicitação não encontrada"`                                    | protocolo inexistente (sem ponto final) | `F1 src/modules/queue/mapping.service.ts:285-288` |
+| Status | Mensagem literal                                                  | Condição                                                               | Evidência                                          |
+| ------ | ----------------------------------------------------------------- | ---------------------------------------------------------------------- | -------------------------------------------------- |
+| 400    | `"Protocolo é obrigatório"`                                       | protocolo vazio (guarda defensiva; `/:protocol` vazio não casa a rota) | `F1 src/modules/queue/mapping.controller.ts:13-21` |
+| 401    | `"Token não fornecido"` / `"Token inválido ou expirado"`          | sessão                                                                 | `F1 src/shared/middleware/auth.ts:27-45,87-95`     |
+| 403    | `"Troca de senha obrigatória antes de continuar"`                 | `must_change_password`                                                 | `F1 src/shared/middleware/requireRole.ts:11-13`    |
+| 403    | `"Acesso restrito ao perfil Analista ou Gestor ou Administrador"` | perfil fora da lista                                                   | `F1 src/shared/middleware/requireRole.ts:21-22`    |
+| 404    | `"Solicitação não encontrada"`                                    | protocolo inexistente (sem ponto final)                                | `F1 src/modules/queue/mapping.service.ts:285-288`  |
+| 500    | `"Erro interno do servidor"`                                      | falha não prevista                                                     | `F1 src/shared/middleware/errorHandler.ts:32-45`   |
 
 ### 11.4 PUT `/queue/requests/:protocol/mapping`
 
@@ -6769,7 +6787,7 @@ auditoria compartilham a seção §16; as duas de mapping, a §11; as três de i
 Antes do fechamento do port foram executadas quatro verificações pontuais (scripts descartáveis, não
 versionados):
 
-1. **Paridade de rotas** — extração de todas as chamadas de método nos 10 routers de `F1` e nos
+1. **Paridade de rotas** — extração de todas as chamadas de método nos 11 módulos de router de `F1` e nos
    `publicVerifyRouter`/`auditLogsRouter`, com a montagem de `F1 src/router.ts:16-32`, comparada ao
    inventário da §4: **54 registros no legado, 54 linhas no inventário, zero diferenças**.
 2. **Resolução de citações** — leitura de cada `F1 <arquivo>:<linha>`/`F2 <arquivo>:<linha>` no SHA
@@ -6804,7 +6822,7 @@ comentário de consolidação da issue #35 (deltas herdados de #15–#27); os AD
 | Multipart e MIME          | `400` para MIME inválido em requests/pendências; `413`/`415` em avatar/assets                                | §3.7; §7.7; §8.5; §9.12; §13.7               | Convenção §9; #17; #18                                       |
 | Anexos                    | Sem download; limite de 3 anexos só no frontend                                                              | §9.13; §13.9                                 | #19; #23                                                     |
 | Prazo e atraso            | `desiredDeadline` e métrica `overdueRequests` tratados como atraso                                           | §9; §14.3; §15                               | ADR-0024; #23; #25                                           |
-| Prioridade                | `requests.priority_id` e avaliação convivem; faixas fixas                                                    | §9; §12; §14                                 | ADR-0016; #22; #24                                           |
+| Prioridade                | `requests.priority_id` e avaliação convivem; faixas na tabela `priorities`, sem CRUD por API                 | §9; §12; §14                                 | ADR-0016; #22; #24                                           |
 | Mapeamento                | Rotas sob `/queue`; `PUT` faz merge e `id` seleciona o alvo                                                  | §11                                          | ADR-0001; #21                                                |
 | Auditoria                 | `audit_id` numérico, `action_type` composto, 6 entidades efetivas, envelope legado                           | §16                                          | ADR-0020; #26                                                |
 | Notas internas            | Cursor por `(created_at, id)`, `unseenCount` global, eventos normalizados na leitura                         | §17                                          | #27                                                          |
@@ -6815,7 +6833,7 @@ comentário de consolidação da issue #35 (deltas herdados de #15–#27); os AD
 
 1. Fixe o novo commit do legado em §2 e, se for o caso, atualize a referência `F1` do Apêndice B de
    `docs/04-API-Conventions.md` para o mesmo SHA.
-2. Reextraia o inventário da §4 a partir de `src/router.ts` e dos 10 routers de domínio. A contagem
+2. Reextraia o inventário da §4 a partir de `src/router.ts` e dos 11 módulos de router de domínio. A contagem
    esperada é a soma das rotas registradas; qualquer diferença é mudança de contrato, não de
    documentação.
 3. Atualize as seções afetadas mantendo a regra de citação: `F1 caminho:linha` lido no SHA fixado.
