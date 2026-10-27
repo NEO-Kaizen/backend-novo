@@ -1,6 +1,6 @@
 # Setup do ambiente de desenvolvimento
 
-Este documento reúne os passos para preparar o ambiente local. A primeira dependência coberta é o **GitHub CLI** (`gh`). As demais serão adicionadas conforme o projeto evoluir.
+Este documento reúne os passos para preparar o ambiente local: GitHub CLI, autenticação e Context7 MCP.
 
 ## Pré-requisitos
 
@@ -106,6 +106,101 @@ Instale a extensão usada pelo fluxo de pull requests do repositório:
 gh extension install github/gh-stack
 ```
 
+## 3. Context7 MCP
+
+O [Context7](https://context7.com) fornece documentação atualizada de bibliotecas para o agente. O projeto usa o servidor remoto `https://mcp.context7.com/mcp`; **não há instalador** para Windows, Linux ou macOS. O único passo local é criar o arquivo `.context7API` na raiz com a chave.
+
+### 3.1 Criar a chave no Context7
+
+1. Abra [context7.com/dashboard](https://context7.com/dashboard) e entre ou crie a conta.
+2. No card **API Keys**, clique em **Create API Key**.
+3. Dê um nome reconhecível, por exemplo `backend-novo-opencode`.
+4. Copie a chave `ctx7sk-...` imediatamente; ela não é exibida novamente.
+5. Guarde-a no gerenciador de senhas.
+
+### 3.2 Criar o arquivo do secret
+
+1. No VS Code, clique com o botão direito na **raiz do projeto** e escolha **New File**.
+2. Nomeie o arquivo como `.context7API`.
+3. Cole **apenas a chave**, sem `CONTEXT7_API_KEY=`, sem quotes e sem texto extra.
+4. Salve. O OpenCode remove espaços e quebras de linha nas pontas do conteúdo.
+5. Confira que `.context7API` aparece no `.gitignore`. O arquivo deve ficar ao lado do `opencode.jsonc`.
+
+O `opencode.jsonc` lê o arquivo com `{file:.context7API}`. Não é preciso exportar variável, editar o shell ou reiniciar o serviço. Se o OpenCode já estava aberto, rode `/reload` para reler a configuração.
+
+### 3.3 Permissões do arquivo (opcional, por SO)
+
+O arquivo já fica fora do Git e a política do OpenCode nega leitura/edição pelo agente. Se quiser restringir o acesso no sistema:
+
+| SO | Passo prático |
+| --- | --- |
+| **Linux** | No gerenciador de arquivos, `Ctrl+H` para mostrar ocultos; botão direito em `.context7API` → **Properties** → **Permissions**; dono com leitura/escrita, grupo e outros sem acesso. |
+| **macOS** | No Finder, `Cmd+Shift+.` para mostrar ocultos; botão direito → **Get Info** → **Sharing & Permissions**; remova o acesso dos demais usuários. |
+| **Windows** | No Explorer, **View** → **Show** → **Hidden items**; botão direito → **Properties** → **Security** → **Advanced**; desative a herança e mantenha apenas seu usuário com leitura/escrita. |
+
+### 3.4 Como o projeto consome
+
+O trecho relevante do `opencode.jsonc` é:
+
+```jsonc
+"mcp": {
+  "servers": {
+    "context7": {
+      "type": "remote",
+      "url": "https://mcp.context7.com/mcp",
+      "oauth": false,
+      "headers": {
+        "Authorization": "Bearer {file:.context7API}"
+      }
+    }
+  }
+}
+```
+
+- `{file:...}` lê o arquivo relativo ao `opencode.jsonc`; não usa variável de ambiente.
+- `oauth: false` usa a API key; OAuth usaria o endpoint `/mcp/oauth`.
+- Se o arquivo não existir, o header fica vazio e a chave não é usada; o servidor pode operar com os limites anônimos ou responder `401`.
+
+### 3.5 Validar
+
+1. Abra o OpenCode.
+2. Rode `/mcps` e confira `context7 connected`.
+3. Peça: “Use o Context7 para consultar a documentação atual do Prisma sobre migrations.” O `connected` sozinho não prova que a chave foi usada, porque o Context7 permite uso anônimo; a consulta real confirma.
+4. Opcional: rode `opencode mcp list` no terminal.
+
+### 3.6 Problemas comuns
+
+| Sintoma | Causa provável | Solução prática |
+| --- | --- | --- |
+| `/mcps` mostra `needs authentication` | OpenCode tentando OAuth | Confirme `oauth: false` no `opencode.jsonc`; o projeto já vem assim. |
+| `401` | `.context7API` ausente, vazio ou com chave revogada | Abra o arquivo, confira a chave e recrie no dashboard se necessário; rode `/reload`. |
+| Ferramentas não aparecem | Servidor desconectado ou configuração antiga | Use `/mcps` para reconectar e `/reload` para reler a configuração. |
+| Alterei a chave e continua `401` | Configuração antiga em memória | Rode `/reload` ou reabra o OpenCode. |
+| Rate limit | Limite da conta ou do plano | Confira o dashboard e o plano do Context7. |
+
+### 3.7 Alternativa via terminal (opcional)
+
+Para quem preferir criar o arquivo por comando, em Linux/macOS:
+
+```bash
+printf "Cole a chave do Context7: "
+read -rs CONTEXT7_API_KEY
+printf '\n'
+(umask 077; printf '%s' "$CONTEXT7_API_KEY" > .context7API)
+unset CONTEXT7_API_KEY
+```
+
+No Windows PowerShell:
+
+```powershell
+$secure = Read-Host "Cole a chave do Context7" -AsSecureString
+$key = [System.Net.NetworkCredential]::new("", $secure).Password
+Set-Content -NoNewline -Path .context7API -Value $key
+Remove-Variable secure, key
+```
+
+Esses comandos citam `.context7API`; a política do projeto os nega ao agente. Execute no seu terminal.
+
 ## Problemas comuns
 
 | Sintoma                   | Causa provável                      | Solução                              |
@@ -124,3 +219,8 @@ gh extension install github/gh-stack
 - `gh auth refresh`: https://cli.github.com/manual/gh_auth_refresh
 - `gh auth status`: https://cli.github.com/manual/gh_auth_status
 - Releases do GitHub CLI: https://github.com/cli/cli/releases/latest
+- Dashboard do Context7: https://context7.com/dashboard
+- API keys do Context7: https://context7.com/docs/howto/api-keys
+- Context7 no OpenCode: https://context7.com/docs/clients/opencode
+- MCP no OpenCode V2: https://opencode.ai/v2/docs/mcp-servers
+- Troubleshooting do Context7: https://context7.com/docs/resources/troubleshooting
