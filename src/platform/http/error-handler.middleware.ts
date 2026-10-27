@@ -25,12 +25,13 @@ export function createErrorHandler(logger: Logger): ErrorRequestHandler {
       correlationId: req.id,
       code: appError.code,
       status: appError.status,
-      err: error,
     };
 
     if (appError.status >= SERVER_ERROR_STATUS) {
-      logger.error(fields, "falha ao processar requisição");
+      // 5xx: a causa bruta entra no log para diagnóstico.
+      logger.error({ ...fields, err: error }, "falha ao processar requisição");
     } else {
+      // 4xx: sem mensagem/stack crus — o parser pode ecoar trecho do body.
       logger.warn(fields, "requisição recusada");
     }
 
