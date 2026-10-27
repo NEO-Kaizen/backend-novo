@@ -121,7 +121,7 @@ da §4.
 
 ### 3.2 Sessão e cookie
 
-- O cookie é `Config.COOKIE_NAME`, default `session_id` (`F1 src/configs.ts:20`); o conteúdo é um
+- O cookie é `Config.COOKIE_NAME`, default `session_id` (`F1 src/configs.ts:23`); o conteúdo é um
   JWT assinado com `JWT_SECRET` e validade `JWT_EXPIRES_IN`, default `1d`
   (`F1 src/configs.ts:15-19`; `F1 src/shared/utils/jwtUtil.ts:22-31`).
 - Atributos na emissão: `maxAge` igual à validade, `httpOnly: true`, `sameSite: "lax"`,
@@ -172,8 +172,8 @@ Formato vigente (`F1 src/shared/middleware/errorHandler.ts:9-45`):
 - Não há `requestId` no envelope no legado.
 
 **Divergente (legado vigente):** `fields` como objeto e uso de `422` em parte do fluxo — convenções
-§5 e #5 de `docs/04-API-Conventions.md` (alvo `400` + `fields` como lista). Não há `requestId` —
-convenção §15.
+§3 e #5 de `docs/04-API-Conventions.md` (alvo `400` + `fields` como lista). Não há `requestId` —
+convenção §12.
 
 ### 3.4 Validação
 
@@ -188,7 +188,7 @@ O primeiro é usado, por exemplo, em `auth` (`F1 src/modules/auth/auth.controlle
 verify público (`F1 src/modules/pendingItems/pendingItems.controller.ts:114-115`); o segundo, no
 fluxo de requests. A distribuição exata é registrada em cada seção de domínio.
 
-**Divergente (legado vigente):** mistura 400/422 — convenção §5 (C2) e decisão D12 de #19.
+**Divergente (legado vigente):** mistura 400/422 — convenção §3 (C2) e #19.
 
 ### 3.5 Códigos de sucesso
 
@@ -216,7 +216,7 @@ O corpo JSON trafega como parte multipart quando a rota aceita arquivo (campo `p
 único campo JSON em `PUT /users/me`).
 
 **Divergente (legado vigente):** 400 para MIME inválido em requests/pendências, 415 em avatar e
-assets; convenção §9 e D6 de #17.
+assets; convenção §9 e #17.
 
 ### 3.8 Datas e horas
 
@@ -234,19 +234,19 @@ o header; sem cookie e sem header válido responde
 (nome/e-mail contra a solicitação) acontece no service de cada domínio.
 
 **Divergente (legado vigente):** header `X-Requester-Identity` com nome+e-mail, 401 e verificação
-por `POST .../public/verify`; ADR-0023 e convenção §19 apontam `X-Requester-Email`, 404 e a
+por `POST .../public/verify`; ADR-0023 e convenção §15.3 apontam `X-Requester-Email`, 404 e a
 aposentadoria gradual do verify.
 
 ### 3.10 CORS, headers e request-id
 
 - CORS com origens explícitas de `CORS_ORIGINS` (default `http://localhost:5173`), `credentials:
-true` e `exposedHeaders: ["Content-Disposition"]` (`F1 src/app.ts:11-19`; `F1 src/configs.ts:16-19`).
-- `x-powered-by` desligado (`F1 src/app.ts:21`).
+true` e `exposedHeaders: ["Content-Disposition"]` (`F1 src/app.ts:11-18`; `F1 src/configs.ts:19-21`).
+- `x-powered-by` desligado (`F1 src/app.ts:19`).
 - Não há middleware de `x-request-id` nem headers de segurança no legado; também não há handler de
   404 dedicado — rota inexistente cai no `errorHandler` (`F1 src/app.ts:28-31`).
 
 **Divergente (legado vigente):** sem request-id, sem headers de segurança e sem 404 explícito —
-convenções §15 e §17; `02-Architecture.md` §9.4.
+convenções §12 e §14; `02-Architecture.md` §9.4.
 
 ### 3.11 Rate limit
 
@@ -257,7 +257,7 @@ Só o verify público de pendências aplica limite: 10 tentativas por 10 minutos
 `F1 src/shared/middleware/rateLimit.ts:7-29`).
 
 **Divergente (legado vigente):** storage não compartilhado e ausência de `Retry-After` — convenção
-§16 (C12). Login não tem limite no legado — decisão aberta #24.
+§13 (C12). Login não tem limite no legado — decisão aberta #24.
 
 ## 4. Inventário de rotas
 
@@ -1298,7 +1298,7 @@ compatibilidade").
 | Convenção                                                                 | Comportamento no legado (§6)                                                | Situação                    | Ponteiro                                                           |
 | ------------------------------------------------------------------------- | --------------------------------------------------------------------------- | --------------------------- | ------------------------------------------------------------------ |
 | §2 / §2.3 — envelope e `code`                                             | 400 `{ status, statusCode, message }`, sem `code` e sem `requestId`         | divergente (legado vigente) | ADR-0005; convenção §2.3                                           |
-| §3 — validação `400` + `validation_error` + `fields: [{ path, message }]` | `POST /requests` responde 400 com **uma string agregada** e nenhum `fields` | divergente (legado vigente) | convenção §3 (C2) e tabela 0.1 #5; decisão D12 de #19              |
+| §3 — validação `400` + `validation_error` + `fields: [{ path, message }]` | `POST /requests` responde 400 com **uma string agregada** e nenhum `fields` | divergente (legado vigente) | convenção §3 (C2) e tabela 0.1 #5; #19                             |
 | §9 — MIME inválido → 415; arquivo acima do limite → 413                   | MIME e tamanho respondem 400, com mensagens próprias                        | divergente (legado vigente) | convenção §9                                                       |
 | §9 — parte `payload` acima de 2 MiB → 413                                 | 400 com a mensagem de fallback do multer                                    | divergente (legado vigente) | convenção §9                                                       |
 | §9 — 5 arquivos × 10 MiB, parte JSON de 2 MiB                             | mesmos limites                                                              | compatível                  | convenção §9; `F1 src/shared/middleware/upload.ts:13-22,35-38`     |
@@ -1598,8 +1598,9 @@ Efeitos: `system_settings.solicitation_mode`, `updated_by`, `updated_at`
 | 400    | —      | `"Campos inválidos: solicitationMode — Modo de acesso inválido — opções: PUBLIC ou AUTHENTICATED."` | ausência **ou** valor fora da allowlist — o enum responde a mesma mensagem nos dois casos (`F1 src/modules/portalConfig/portalConfig.schema.ts:72-74`) |
 | 400    | —      | `"Campos inválidos: payload — Unrecognized key: \"modo\""`                                          | chave desconhecida (objeto `.strict()`; issue sem path é rotulada `payload` — `F1 src/shared/validation/zodErrors.ts:74,89-91`)                        |
 | 401    | —      | `"Token não fornecido"`                                                                             | sem cookie de sessão (`F1 src/shared/middleware/auth.ts:27-31`)                                                                                        |
-| 401    | —      | `"Token inválido ou expirado"`                                                                      | token inválido/expirado, usuário inativo ou sessão revogada (`F1 src/shared/middleware/auth.ts:37-52,68-76`)                                           |
-| 403    | —      | `"Troca de senha obrigatória antes de continuar"`                                                   | `must_change_password` (`F1 src/shared/middleware/auth.ts:39-42`)                                                                                      |
+| 401    | —      | `"Token inválido ou expirado"`                                                                      | token inválido/expirado, usuário inativo ou perfil inativo (`F1 src/shared/middleware/auth.ts:37-45,87-95`)                                            |
+| 401    | —      | `"Sua sessão foi revogada. Faça login novamente."`                                                  | `password_changed_at` do token difere do banco (`F1 src/shared/middleware/auth.ts:63-72`)                                                              |
+| 403    | —      | `"Troca de senha obrigatória antes de continuar"`                                                   | `must_change_password` (`F1 src/shared/middleware/auth.ts:58-61`)                                                                                      |
 | 403    | —      | `"Acesso restrito ao perfil Administrador"`                                                         | perfil diferente de Administrador (`F1 src/shared/middleware/requireRole.ts:21-22`)                                                                    |
 | 500    | —      | `"Erro interno do servidor"`                                                                        | falha não prevista                                                                                                                                     |
 
@@ -1654,9 +1655,10 @@ campos (`F1 src/modules/portalConfig/portalConfig.service.ts:146-161`):
 | 400    | —      | `"Campos inválidos: platformName — Campo obrigatório."`                                        | `platformName` só com espaços/inválido (`F1 src/modules/portalConfig/portalConfig.schema.ts:80-84`)               |
 | 400    | —      | `"Campos inválidos: protocolMask — Máscara do protocolo deve conter apenas letras e números."` | caractere fora de `[A-Za-z0-9]` (`F1 src/modules/portalConfig/portalConfig.schema.ts:86-90`)                      |
 | 400    | —      | mensagem agregada do Zod em `payload`                                                          | chave desconhecida (`.strict()`)                                                                                  |
-| 401    | —      | `"Token não fornecido"` / `"Token inválido ou expirado"`                                       | ausência/invalidade de sessão (`F1 src/shared/middleware/auth.ts:27-45,68-76`)                                    |
+| 401    | —      | `"Token não fornecido"` / `"Token inválido ou expirado"`                                       | ausência/invalidade de sessão (`F1 src/shared/middleware/auth.ts:27-45,87-95`)                                    |
+| 401    | —      | `"Sua sessão foi revogada. Faça login novamente."`                                             | `password_changed_at` do token difere do banco (`F1 src/shared/middleware/auth.ts:63-72`)                         |
 | 403    | —      | `"Acesso restrito ao perfil Administrador"`                                                    | perfil diferente de Administrador (`F1 src/shared/middleware/requireRole.ts:21-22`)                               |
-| 403    | —      | `"Troca de senha obrigatória antes de continuar"`                                              | `must_change_password` (`F1 src/shared/middleware/auth.ts:39-42`)                                                 |
+| 403    | —      | `"Troca de senha obrigatória antes de continuar"`                                              | `must_change_password` (`F1 src/shared/middleware/auth.ts:58-61`)                                                 |
 | 500    | —      | `"Erro interno do servidor"`                                                                   | falha não prevista                                                                                                |
 
 **Transporte:** JSON; `updated_by`/`updated_at` gravados em `system_settings`
@@ -3044,7 +3046,7 @@ Drift anotado, sem decisão:
 | Validação                 | §3 e #5 — `400` + `fields` lista                                                             | **Divergente (legado vigente):** `POST /users` e `PUT /users/:id` respondem `422` com `fields` objeto (`F1 src/modules/users/users.controller.ts:48-54,61-67`; `F1 src/shared/errors/ValidationError.ts:10-17`)                            |
 | Paginação                 | §4.1/§4.2/§4.3 — default 20, máximo 100, clamp                                               | **Divergente (legado vigente):** default 10, máximo 50, sem clamp (`F1 src/modules/users/users.schema.ts:67-78`; `F1 src/modules/users/users.repository.ts:397`)                                                                           |
 | Listagem não paginada     | §4.3 — exige linha de exceção                                                                | `GET /users/analysts` não é paginada e não tem linha em §4.3 (`F1 src/modules/users/users.router.ts:20-23`); o contrato do legado a define como direta (`F1 docs/contract-assign-action.md` §GET /users/analysts)                          |
-| Sessão e cookie           | §5 — `session_id`, relê usuário/perfil                                                       | Compatível (`F1 src/shared/middleware/auth.ts:20-86`; `F1 src/configs.ts:20`)                                                                                                                                                              |
+| Sessão e cookie           | §5 — `session_id`, relê usuário/perfil                                                       | Compatível (`F1 src/shared/middleware/auth.ts:20-86`; `F1 src/configs.ts:23`)                                                                                                                                                              |
 | Autorização               | §6 e ADR-0025 — capabilities, diretório com `assignee_directory:read`, cinco perfis          | **Divergente (legado vigente):** gate por perfil (`requireRole("Administrador")`) e diretório aberto a qualquer sessão, sem capability; não existe `Admin Root` (`F1 src/modules/users/users.router.ts:23,30`)                             |
 | Gestão de contas          | ADR-0006 e `03-Data-Model.md` §7.5                                                           | Parcialmente compatível: bloqueia alvo `Administrador`, promovê-lo e a própria conta (`F1 src/modules/users/users.service.ts:62-66,179-181,217-219,466-475`); não há `Admin Root` nem a matriz ator × operação × perfil de destino         |
 | Ids                       | §15.1 e ADR-0003 — UUID v4                                                                   | **Divergente (legado vigente):** `id` e `:id` são inteiros serializados como string (`F1 src/modules/users/users.service.ts:46-52,160`; `F1 src/modules/users/users.repository.ts:401`)                                                    |
@@ -4087,7 +4089,7 @@ Drift anotado, sem decisão:
 | §1 base path `/api/v1`                                      | rotas na raiz (`F1 src/router.ts:24`)                                                                | divergente (legado vigente)                                        |
 | §2 envelope de erro                                         | `{ status, statusCode, message }` + `code` aditivo                                                   | compatível                                                         |
 | §2.3/§11 `code` em `snake_case`                             | `"INSUFFICIENT_ROLE_PERMISSIONS"` em maiúsculas (`F1 src/modules/requests/requests.service.ts:891`)  | divergente (legado vigente)                                        |
-| §3/§5 validação `400` + `fields` array                      | `422` + `fields` objeto em `PATCH .../internal` (§9.11); `400` + mensagem agregada nas demais        | divergente (legado vigente) — C2, decisão D12 de #19               |
+| §3 validação `400` + `fields` array                         | `422` + `fields` objeto em `PATCH .../internal` (§9.11); `400` + mensagem agregada nas demais        | divergente (legado vigente) — C2; #19                              |
 | §4/§4.2 paginação `20`/`100` + clamp                        | `GET /requests` usa `10`/`10` e não faz clamp (`F1 src/modules/requests/requests.schema.ts:155-165`) | divergente (legado vigente)                                        |
 | §4.3 listagem não paginada                                  | `GET /requests/assignees` sem paginação e sem linha de exceção (§9.4)                                | divergente (legado vigente)                                        |
 | §8.1 concorrência com `targetStatusKey`/`expectedStatusKey` | `targetStatus` numérico e precondição lida no servidor (§9.8)                                        | divergente (legado vigente)                                        |
@@ -4367,7 +4369,7 @@ O rascunho inicial de `createEmptyTriageAssessment` traz `lastTechnicalMessage: 
 | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------- |
 | Base path           | Divergente (legado vigente): rotas na raiz, sem `/api/v1`                                                                                                                           | convenção §1 (#1)               |
 | Sucesso             | Compatível: `200` leitura, `201` criação                                                                                                                                            | #20 / §15.4                     |
-| Validação           | Divergente (legado vigente): `422` + `fields` como objeto; `400` de path via mensagem agregada                                                                                      | #5 / §3; decisão D12 de #19     |
+| Validação           | Divergente (legado vigente): `422` + `fields` como objeto; `400` de path via mensagem agregada                                                                                      | #5 / §3; #19                    |
 | `code` de erro      | Divergente (legado vigente): `403` da leitura e `404`/`409`/`422` sem `code`; `code` de domínio em `UPPER_SNAKE` (`INSUFFICIENT_ROLE_PERMISSIONS`) em vez de snake_case do catálogo | #4 / §2.3                       |
 | Referência a status | Divergente (legado vigente): `exitStatus` é `statuses.status_id` numérico; a `key` não vai ao wire                                                                                  | #18 / ADR-0003, ADR-0021; §15.1 |
 | Concorrência        | Divergente (legado vigente): o `409` existe, mas o corpo não traz `currentStatusKey`/`currentStatusId` e o cliente não envia precondição                                            | #10 / §8.1                      |
@@ -4649,7 +4651,7 @@ JSON puro, sem multipart e sem paginação. `scheduledFor` de entrada aceita off
 | Concorrência          | Divergente (legado vigente): mudança de status embutida no `PUT`, com `targetStatus` numérico e sem `targetStatusKey`/`expectedStatusKey`; o `409` não traz `currentStatusKey`/`currentStatusId`       | #10 / §8.1                       |
 | Referência a status   | Divergente (legado vigente): `targetStatus` é `statuses.status_id` numérico; a `key` não vai ao wire                                                                                                   | #18 / ADR-0003, ADR-0021 / §15.1 |
 | Ids no wire           | Divergente (legado vigente): `participants[].id` é `users.user_id` numérico serializado como string                                                                                                    | #18 / §15.1                      |
-| Validação             | Divergente (legado vigente): `422` + `fields` objeto; `400` apenas para corpo não-objeto e para "nenhum campo"                                                                                         | #5 / §3; decisão D12 de #19      |
+| Validação             | Divergente (legado vigente): `422` + `fields` objeto; `400` apenas para corpo não-objeto e para "nenhum campo"                                                                                         | #5 / §3; #19                     |
 | `code` de erro        | Divergente (legado vigente): `INSUFFICIENT_ROLE_PERMISSIONS` em `UPPER_SNAKE`; `404`/`409`/`422` sem `code`                                                                                            | #4 / §2.3                        |
 | Autorização           | Divergente (legado vigente): perfis + custódia no service, em vez de capability keys com escopo `own`/`all`                                                                                            | #8 / ADR-0025 / §6               |
 | Datas                 | Compatível: `scheduledFor` trafega em ISO-8601 UTC com `Z` (entrada aceita offset e é normalizada)                                                                                                     | #13 / §10                        |
@@ -4890,7 +4892,7 @@ Evidência: `F1 src/modules/prioritization/prioritization.controller.ts:30-48`; 
 | ---------------- | ---------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
 | Base path        | `/prioritization/*`, sem prefixo                                                                           | **Divergente (legado vigente):** `/api/v1` — §1                                                                                          |
 | Envelope de erro | `{ status, statusCode, message }`, sem `code`                                                              | Compatível com o envelope legado da §2.1; a ausência de `code` é **divergente (legado vigente)** — §2.3 e §4                             |
-| Validação        | `400` com mensagem agregada, sem `code` e sem `fields`                                                     | **Divergente (legado vigente):** §5 congela `400` + `validation_error` + `fields` como lista                                             |
+| Validação        | `400` com mensagem agregada, sem `code` e sem `fields`                                                     | **Divergente (legado vigente):** §3 congela `400` + `validation_error` + `fields` como lista                                             |
 | Sucesso          | `200` em leitura e em atualização                                                                          | Compatível — §15.4                                                                                                                       |
 | Paginação        | `GET /prioritization/criteria` é lista não paginada com envelope `{ criteria }`                            | **Divergente (legado vigente):** §4/§4.3 só admitem lista não paginada com linha de exceção registrada                                   |
 | Autorização      | `GET /criteria` aceita `Gestor`                                                                            | **Divergente (legado vigente):** ADR-0017 retira a leitura de critérios do `Gestor`; a Prioridade continua visível pela solicitação — §6 |
@@ -5365,7 +5367,7 @@ O `protocol` ecoado é o do path, já com `trim` (`F1 src/modules/pendingItems/p
 | ------------------------- | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Base path                 | `/requests/:protocol/pending-items` e `/requests/:protocol/public/verify`, sem prefixo                                      | **Divergente (legado vigente):** `/api/v1` — §1                                                                                                               |
 | Envelope de erro          | `{ status, statusCode, message }`, sem `code`                                                                               | Compatível com o envelope legado da §2.1; a ausência de `code` é **divergente (legado vigente)** — §2.3 e §4                                                  |
-| Validação                 | `400` com mensagem agregada, sem `code` e sem `fields`; não há `422` neste domínio                                          | **Divergente (legado vigente):** §5 congela `400` + `validation_error` + `fields` como lista                                                                  |
+| Validação                 | `400` com mensagem agregada, sem `code` e sem `fields`; não há `422` neste domínio                                          | **Divergente (legado vigente):** §3 congela `400` + `validation_error` + `fields` como lista                                                                  |
 | Paginação                 | `GET .../pending-items` sem paginação e sem envelope de página                                                              | **Divergente (legado vigente):** §4/§4.3 exigem linha de exceção para listagem não paginada                                                                   |
 | Multipart                 | 1 arquivo, 10 MiB, allowlist de MIME; MIME inválido → `400`; tamanho → `400`                                                | Limites compatíveis; status **divergente (legado vigente):** §9 congela `415` para MIME e `413` para tamanho                                                  |
 | Rate limit                | 10 tentativas/10 min por IP+protocolo, em memória, `429` com mensagem textual                                               | **Divergente (legado vigente):** §13 congela `429` com `rate_limited`, `Retry-After` e storage compartilhado                                                  |
@@ -5998,7 +6000,7 @@ CSV (`F2 src/lib/api/report.api.ts:27-39`):
   `filename="([^"]+)"`, com fallback `"solicitacoes.csv"`
   (`F2 src/lib/api/report.api.ts:7,21-25`).
 - o download depende de o header estar exposto por CORS
-  (`F1 src/app.ts:11-19`; `F1 src/configs.ts:16-19`).
+  (`F1 src/app.ts:11-18`; `F1 src/configs.ts:19-21`).
 - `exportQueueCsv` do F2 traduz `403` para `"Seu perfil não possui permissão para exportar a fila."`
   e os demais erros para `"Não foi possível exportar a fila centralizada."`
   (`F2 src/lib/services/report.service.ts:6-27`) — a mensagem literal do backend não é exibida.
@@ -6385,7 +6387,7 @@ Evidência: `F1 src/modules/internalNotes/internalNotes.router.ts:10-17`; montag
   (`F1 src/shared/middleware/requireRole.ts:16-22`).
 - Não há checagem de custódia: qualquer perfil interno lê e escreve a timeline de qualquer
   solicitação. A leitura embutida dos históricos de triagem/mapeamento segue o gate da rota, sem o
-  check de responsável do `GET /requests/:protocol/triage` — decisão D-N11
+  check de responsável do `GET /requests/:protocol/triage` — #27
   (`F1 docs/internal-observations.md:91-95,641`).
 
 ### 17.3 GET /requests/:protocol/internal-notes
@@ -6697,7 +6699,7 @@ Sem corpo (`F1 src/modules/internalNotes/internalNotes.controller.ts:75`).
   `mappings[].mapping.targetStatus`) — §15.1, ADR-0021.
 - **Divergente (legado vigente):** a autorização é só por nome de perfil, sem capability nem escopo
   `own`/`all`, e a leitura dos históricos de triagem/mapeamento ignora a custódia que a rota de
-  triagem exige (D-N11) — ADR-0025 e convenção §6 ("autorização verificada no servidor em um lugar
+  triagem exige (#20/#27) — ADR-0025 e convenção §6 ("autorização verificada no servidor em um lugar
   só por domínio").
 - **Desatualizado no legado:** `F1 docs/internal-notes-contract.md` descreve a v1 do endpoint —
   "Lista todas as observações em ordem cronológica crescente" sem paginação
@@ -6789,25 +6791,25 @@ Este índice não decide nada: ele apenas agrupa, por tema, onde o legado diverg
 congeladas e onde estão as decisões correspondentes. As tabelas de decisão consolidadas estão no
 comentário de consolidação da issue #35 (deltas herdados de #15–#27); os ADRs estão em `docs/adr/`.
 
-| Tema                      | O que o legado faz                                                                                           | Onde aparece                                 | Ponteiro                                                                       |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------ | -------------------------------------------- | ------------------------------------------------------------------------------ |
-| Base path                 | Rotas na raiz, sem `/api/v1`                                                                                 | §3.1; todas as seções                        | Convenção §1; #19 D14; #24 D-Q15                                               |
-| Envelope de erro          | `{ status, statusCode, message }`, `code` opcional, sem `requestId`                                          | §3.3; todas as seções                        | ADR-0005; convenções §2, §15; #19 D9; #23 D-P18                                |
-| Validação                 | Mistura `400` (mensagem agregada) e `422` (`fields` como objeto)                                             | §3.4; §5.3; §9.12; §10.4; §13                | Convenção §5 (C2); #19 D12                                                     |
-| Paginação                 | Sem convenção única; auditoria usa `{ items, total, page, limit }`; fila usa envelope próprio                | §3.6; §14.4; §16.3                           | Convenção §6; #18 D10; #24 D-Q2; #26 D-A10                                     |
-| Ids                       | Números em auditoria, fila, triagem, priorização, status e portal-config; `id` de sessão como string decimal | §3.2; §5.3; §7.3; §10.3; §12.3; §14.4; §16.3 | ADR-0003; ADR-0021; convenção §18; #17 D8; #20 D4; #22 D10; #24 D-Q3; #26 D-A3 |
-| Status no wire            | Nome ou id numérico; `key` não existe                                                                        | §9; §10; §11; §14; §15; §16                  | ADR-0021; convenções §15.1; #19 D4; #20 D4; #21 D-M3; #24 D-Q6                 |
-| Perfis e autorização      | 4 perfis fixos; sem capabilities; escopo por perfil no service                                               | §3.2; §7; §8; §9; §14; §15; §16              | ADR-0006; ADR-0017; ADR-0025; #15 D1; #18 D2; #20 D1                           |
-| Identidade do solicitante | `X-Requester-Identity` com nome+e-mail; `401`; verify por `POST .../public/verify`                           | §3.9; §9.7; §13.8                            | ADR-0023; convenção §19; #19 D1/D2; #23 D-P11                                  |
-| Multipart e MIME          | `400` para MIME inválido em requests/pendências; `413`/`415` em avatar/assets                                | §3.7; §7.7; §8.5; §9.12; §13.7               | Convenção §9; #17 D6; #18 D9                                                   |
-| Anexos                    | Sem download; limite de 3 anexos só no frontend                                                              | §9.13; §13.9                                 | #19 D10; #23 D-P16                                                             |
-| Prazo e atraso            | `desiredDeadline` e métrica `overdueRequests` tratados como atraso                                           | §9; §14.3; §15                               | ADR-0024; #23 D-P13; #25 D1                                                    |
-| Prioridade                | `requests.priority_id` e avaliação convivem; faixas fixas                                                    | §9; §12; §14                                 | ADR-0016; #22 D8/D11; #24 D5                                                   |
-| Mapeamento                | Rotas sob `/queue`; `PUT` faz merge e `id` seleciona o alvo                                                  | §11                                          | ADR-0001; #21 D-M1/D-M4                                                        |
-| Auditoria                 | `audit_id` numérico, `action_type` composto, 6 entidades efetivas, envelope legado                           | §16                                          | ADR-0020; #26 D-A3/A10                                                         |
-| Notas internas            | Cursor por `(created_at, id)`, `unseenCount` global, eventos normalizados na leitura                         | §17                                          | #27 ON-2/ON-4/ON-5                                                             |
-| Formulário                | Catálogo estático de 33 chaves; sem `GET /forms`; `fieldKey` pontilhado                                      | §6                                           | ADR-0012; ADR-0019; ADR-0022; #16                                              |
-| Portal-config             | `id` numérico e status por nome no payload público; assets como 8 variantes                                  | §7                                           | ADR-0015; ADR-0018; ADR-0021                                                   |
+| Tema                      | O que o legado faz                                                                                           | Onde aparece                                 | Ponteiro                                                     |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------ | -------------------------------------------- | ------------------------------------------------------------ |
+| Base path                 | Rotas na raiz, sem `/api/v1`                                                                                 | §3.1; todas as seções                        | Convenção §1; #19; #24                                       |
+| Envelope de erro          | `{ status, statusCode, message }`, `code` opcional, sem `requestId`                                          | §3.3; todas as seções                        | ADR-0005; convenções §2, §12; #19; #23                       |
+| Validação                 | Mistura `400` (mensagem agregada) e `422` (`fields` como objeto)                                             | §3.4; §5.3; §9.12; §10.4; §13                | Convenção §3 (C2); #19                                       |
+| Paginação                 | Sem convenção única; auditoria usa `{ items, total, page, limit }`; fila usa envelope próprio                | §3.6; §14.4; §16.3                           | Convenção §6; #18; #24; #26                                  |
+| Ids                       | Números em auditoria, fila, triagem, priorização, status e portal-config; `id` de sessão como string decimal | §3.2; §5.3; §7.3; §10.3; §12.3; §14.4; §16.3 | ADR-0003; ADR-0021; convenção §15.1; #17; #20; #22; #24; #26 |
+| Status no wire            | Nome ou id numérico; `key` não existe                                                                        | §9; §10; §11; §14; §15; §16                  | ADR-0021; convenções §15.1; #19; #20; #21; #24               |
+| Perfis e autorização      | 4 perfis fixos; sem capabilities; escopo por perfil no service                                               | §3.2; §7; §8; §9; §14; §15; §16              | ADR-0006; ADR-0017; ADR-0025; #15; #18; #20                  |
+| Identidade do solicitante | `X-Requester-Identity` com nome+e-mail; `401`; verify por `POST .../public/verify`                           | §3.9; §9.7; §13.8                            | ADR-0023; convenção §15.3; #19; #23                          |
+| Multipart e MIME          | `400` para MIME inválido em requests/pendências; `413`/`415` em avatar/assets                                | §3.7; §7.7; §8.5; §9.12; §13.7               | Convenção §9; #17; #18                                       |
+| Anexos                    | Sem download; limite de 3 anexos só no frontend                                                              | §9.13; §13.9                                 | #19; #23                                                     |
+| Prazo e atraso            | `desiredDeadline` e métrica `overdueRequests` tratados como atraso                                           | §9; §14.3; §15                               | ADR-0024; #23; #25                                           |
+| Prioridade                | `requests.priority_id` e avaliação convivem; faixas fixas                                                    | §9; §12; §14                                 | ADR-0016; #22; #24                                           |
+| Mapeamento                | Rotas sob `/queue`; `PUT` faz merge e `id` seleciona o alvo                                                  | §11                                          | ADR-0001; #21                                                |
+| Auditoria                 | `audit_id` numérico, `action_type` composto, 6 entidades efetivas, envelope legado                           | §16                                          | ADR-0020; #26                                                |
+| Notas internas            | Cursor por `(created_at, id)`, `unseenCount` global, eventos normalizados na leitura                         | §17                                          | #27                                                          |
+| Formulário                | Catálogo estático de 33 chaves; sem `GET /forms`; `fieldKey` pontilhado                                      | §6                                           | ADR-0012; ADR-0019; ADR-0022; #16                            |
+| Portal-config             | `id` numérico e status por nome no payload público; assets como 8 variantes                                  | §7                                           | ADR-0015; ADR-0018; ADR-0021                                 |
 
 ## 20. Como atualizar este port
 
