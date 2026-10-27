@@ -1,4 +1,0 @@
-# Segredos locais: não versionar; o grep do harness também os ignora em buscas amplas.
-*.env
-*.env.*
-!*.env.example*
