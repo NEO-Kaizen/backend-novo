@@ -19,7 +19,7 @@ Decidimos **manter o envelope legado** enquanto o frontend não for alterado, e 
 - O campo `code` pode ser adicionado ao envelope legado como passo intermediário — é aditivo e não quebra o cliente atual.
 - Quando a migração acontecer, `core/http/error-mapper.ts` e o error handler mudam em um único lugar.
 
-## Gatilho da migração (emenda — issue #30)
+## Gatilho da migração (emenda)
 
 A migração do envelope legado para `{ error: { code, message, requestId } }` ocorre em um único cutover coordenado quando **todos** os itens abaixo estiverem prontos:
 

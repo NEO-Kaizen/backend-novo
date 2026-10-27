@@ -107,6 +107,18 @@ Instale a extensão usada pelo fluxo de pull requests do repositório:
 gh extension install github/gh-stack
 ```
 
+## 3. Rodar o backend
+
+```bash
+npm ci
+npm run dev
+npm run check
+npm run build
+npm start:prod
+```
+
+`npm run dev` usa `--watch` sobre `src/server.ts`; `npm start:prod` executa `dist/server.js`. O `.env` é opcional: os scripts usam `--env-file-if-exists=.env`.
+
 ## Problemas comuns
 
 | Sintoma                   | Causa provável                      | Solução                              |
