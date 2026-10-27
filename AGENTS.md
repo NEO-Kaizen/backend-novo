@@ -16,6 +16,12 @@ Layout single-context: `GLOSSARY.md` na raiz e `docs/adr/`. Consulte `docs/agent
 
 O modelo de dados é a especificação do schema em `docs/03-Data-Model.md`. A ordem de leitura obrigatória para agentes está em `docs/agents/domain.md`.
 
+## Context7
+
+Use o Context7 MCP durante a sessão para consultar documentação atualizada de bibliotecas quando a resposta depender de API, configuração ou versão.
+
+A chave fica em `.context7API` na raiz, ignorado pelo Git e negado ao agente pelas regras de `read`, `edit` e `shell` em `opencode.jsonc`. O `opencode.jsonc` lê o arquivo com `{file:.context7API}`, sem exportar variável de ambiente.
+
 ## Convenções de Git
 
 - Branches: `<type>/<issue>-<slug>` — ex.: `docs/12-coding-standards`, `feat/34-sales-report`.
