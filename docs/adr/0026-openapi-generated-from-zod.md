@@ -6,15 +6,15 @@ status: aceito
 
 O backend-novo não tinha contrato HTTP publicado. Uma proposta não mergeada do legado tem um `src/swagger.json` escrito à mão em OpenAPI 3.0.0, servido em `/docs` por `swagger-ui-express`. Esse arquivo documenta só `/auth/login` e `/auth/logout`, fixa `http://localhost:3000` e declara `bearerAuth`, embora a sessão real seja cookie HttpOnly. Não havia contrato HTTP de máquina nem documento de contrato versionado neste repositório.
 
-Decidimos adotar **OpenAPI 3.1.0 gerado a partir dos schemas Zod**, com metadados de rota co-localizados no domínio, como fonte única de contrato HTTP, publicado em `/api/v1/openapi.json` e visualizado por uma UI dedicada (Scalar self-hosted).
+Decidimos adotar **OpenAPI 3.1.0 gerado a partir dos schemas Zod**, com metadados de rota co-localizados no domínio, como fonte única de contrato HTTP, publicado em `/api/v1/openapi.json` e visualizado por uma UI dedicada (Scalar).
 
 ## Decisões
 
 | Decisão               | Escolha                                                                                                                                                                                                              |
 | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Versão OpenAPI        | 3.1.0                                                                                                                                                                                                                |
-| Gerador               | `zod-openapi` 6.x (sem monkey patch; `.meta()`), condicionado ao spike da §Validação pendente                                                                                                                        |
-| UI                    | Scalar self-hosted (fallback `swagger-ui-express` se assets locais forem obrigatórios)                                                                                                                               |
+| Gerador               | `zod-openapi` 6.x (sem monkey patch; `.meta()`), validado no spike em **6.0.2** (`~6.0.2` é o pin)                                                                                                                   |
+| UI                    | Scalar via `@scalar/express-api-reference` (bundle oficial em CDN por padrão; assets locais exigem o pacote `@scalar/api-reference` completo ou o fallback `swagger-ui-express`)                                     |
 | Fonte de verdade      | Zod + metadados de rota                                                                                                                                                                                              |
 | Artefato              | `openapi/openapi.json`, commitado e versionado                                                                                                                                                                       |
 | Versionamento         | `/api/v1` para todos os endpoints                                                                                                                                                                                    |
@@ -28,15 +28,33 @@ Decidimos adotar **OpenAPI 3.1.0 gerado a partir dos schemas Zod**, com metadado
 | Breaking change       | Exige label e plano de `/api/v2`; `oasdiff breaking` quando o workflow existir                                                                                                                                       |
 | Depreciação           | `deprecated: true`, remoção só em v2                                                                                                                                                                                 |
 
-## Validação pendente
+## Spike de compatibilidade
 
-A decisão de adotar OpenAPI 3.1 gerado está aceita; a escolha do gerador fica condicionada à validação abaixo. O spike de compatibilidade ainda não foi executado. Antes da adoção do gerador, validar `zod-openapi` 6.x contra a stack instalada (`~6.0.3` no `package.json`), `nodenext`, Node 24, `z.iso.datetime()`/`z.iso.date()` e `z.file()`; registrar aqui o comando, as versões e a saída. Quando o TypeScript 7 for adotado, repetir o spike.
+Executado em **2026-10-28** com Node **24.22.1**, TypeScript **6.0.3**, Zod **4.6.7** e `zod-openapi` **6.0.2**, em modo `nodenext`. O spike é um script `.ts` avulso num projeto descartável fora do repositório (`/tmp/opencode/issue34-spike`), verificado com `npx tsc --noEmit` e executado com `node` (type stripping do Node 24), chamando `createDocument` do `zod-openapi` e validando a saída com `node:assert`.
+
+```bash
+npm install zod@4.6.7 zod-openapi@6.0.2 typescript@6.0.3 @types/node@24
+npx tsc --noEmit
+node spike.ts
+# spike OK: openapi=3.1.0, file={"type":"string","format":"binary","contentEncoding":"binary"}, security={"type":"apiKey","in":"cookie","name":"session_id"}
+```
+
+Resultados:
+
+- `createDocument` produz `openapi: "3.1.0"`.
+- `.meta({ id, example })` registra componentes reutilizáveis e emite `$ref`.
+- `z.iso.datetime()` renderiza `format: date-time`.
+- `z.file()` dentro de `multipart/form-data` renderiza `{ type: "string", format: "binary", contentEncoding: "binary" }`.
+- O security scheme de cookie renderiza `{ type: "apiKey", in: "cookie", name: "session_id" }`.
+- `components.parameters` com `meta` no `param` renderiza `PageSize` com default 20 e máximo 100.
+
+O `6.0.3` **não está publicado no registry npm**; o pin é `~6.0.2`. Quando o TypeScript 7 for adotado, o spike é repetido e a saída é registrada aqui.
 
 ## Alternativas consideradas
 
 - **`swagger-ui-express` + `src/swagger.json` à mão (proposta do legado).** Cobre só 2 endpoints, fixa `http://localhost:3000` e declara `bearerAuth` (incorreto, a sessão é cookie). Rejeitado por incompleto e por drift.
 - **`tsoa`, decorators ou geração por AST do TypeScript.** Introduz decoradores/AST e viola a regra de DI manual e "sem decorator" de `02-Architecture.md` §8 e do ADR-0002. Rejeitado.
-- **OpenAPI 3.2.** É a versão mais recente e aparece nas typings do `zod-openapi` 6.x, mas o suporte documentado cobre 3.1.x. Rejeitado até o spike comprovar o suporte completo.
+- **OpenAPI 3.2.** É a versão mais recente e aparece nas typings do `zod-openapi` 6.x, mas o suporte documentado cobre 3.1.x. Rejeitado: o contrato adotado é 3.1.0, e 3.2 ainda não tem suporte documentado completo.
 - **Gerar SDK/client.** Fora de escopo; o frontend continua tipado manualmente até migração coordenada.
 - **Validar resposta em runtime em produção.** Custo e risco; a validação fica em testes de contrato.
 
@@ -44,13 +62,14 @@ A decisão de adotar OpenAPI 3.1 gerado está aceita; a escolha do gerador fica 
 
 - A fonte de verdade passa a ser Zod + metadados de rota. O OpenAPI é o único artefato versionado do contrato HTTP; as regras de negócio ficam nos docs normativos e nas specs de domínio.
 - Cada domínio expõe `*.schema.ts` e `*.openapi.ts`, sem importar `platform`.
-- Serão criados `src/docs/openapi.ts`, que comporá o documento, e `src/docs/components.ts`, que será a única definição de `ErrorEnvelope`, `ValidationError`, `LegacyValidationError`, `ConflictError`, `PaginatedResponse` e `securitySchemes`.
-- `src/platform/http/docs-router.ts` servirá `/api/v1/openapi.json` e `/api/v1/docs`; o `container.ts` montará o router e o `app.ts` o registrará.
-- O artefato `openapi/openapi.json` é commitado; quando o script existir, `npm run docs:check` regenera e falha se estiver desatualizado.
+- `src/docs/openapi.ts` compõe o documento; `src/docs/components.ts` é a única definição de `ErrorEnvelope`, `ValidationError`, `LegacyValidationError`, `ConflictError`, `PaginatedResponse` e `securitySchemes`.
+- `src/platform/http/docs-router.ts` serve `/api/v1/openapi.json` e `/api/v1/docs`; o `container.ts` monta o router e o `app.ts` o registra em `/api/v1`.
+- O artefato `openapi/openapi.json` é commitado; `npm run docs:check` regenera e falha se estiver desatualizado. O gate de CI é um PR separado e ainda não existe.
+- A UI usa `@scalar/express-api-reference`, middleware oficial que serve o HTML em `/api/v1/docs` e carrega o bundle Scalar do CDN jsDelivr por padrão; assets totalmente locais exigem o pacote `@scalar/api-reference` completo ou o fallback `swagger-ui-express`. A spec continua local em `/api/v1/openapi.json`.
 - Exemplos não podem conter PII; operações públicas declaram `security: []`.
 - `POST /requests` documenta multipart (`payload` + `attachments`) e `415`; limites e MIME seguem `04-API-Conventions.md` §9.
 - `Set-Cookie` e seus atributos são documentados nas respostas de login e troca de senha.
-- A documentação e a UI ficam desabilitadas em produção por padrão.
+- A documentação e a UI ficam desabilitadas em produção por padrão; `DOCS_ENABLED=true` habilita em produção e `DOCS_ENABLED=false` desabilita em qualquer ambiente.
 
 ## Gatilho da migração
 
