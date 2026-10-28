@@ -5,7 +5,6 @@ import { MEBIBYTE } from "../../core/config/config.ts";
 import type { UploadConfig } from "../../core/config/config.ts";
 import { AppError } from "../../core/errors/app-error.ts";
 
-const MAX_PARTS = 20;
 const MAX_FIELDS = 10;
 const MAX_FIELD_BYTES = 2 * MEBIBYTE;
 const UNSUPPORTED_MEDIA_STATUS = 415;
@@ -38,20 +37,25 @@ export function createUploadMiddleware(
   uploads: UploadConfig,
   policy: UploadPolicy,
 ): RequestHandler {
+  const allowedExtensions = new Set(
+    policy.allowedExtensions.map((extension) => {
+      const normalized = extension.toLowerCase();
+      return normalized.startsWith(".") ? normalized : `.${normalized}`;
+    }),
+  );
+
   return multer({
     storage: multer.memoryStorage(),
     limits: {
       fileSize: policy.maxFileBytes ?? uploads.maxFileBytes,
       files: policy.maxFiles ?? uploads.maxFiles,
       fields: MAX_FIELDS,
-      parts: MAX_PARTS,
       fieldSize: MAX_FIELD_BYTES,
     },
     fileFilter: (_req, file, callback) => {
       const extension = extname(file.originalname).toLowerCase();
       const isAllowed =
-        policy.allowedMimeTypes.includes(file.mimetype) &&
-        policy.allowedExtensions.includes(extension);
+        policy.allowedMimeTypes.includes(file.mimetype) && allowedExtensions.has(extension);
 
       if (!isAllowed) {
         callback(
