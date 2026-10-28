@@ -929,12 +929,12 @@ export interface TransactionManager {
 }
 ```
 
-`KnexDatabase` (`src/platform/database/knex-database.ts`) implementa as duas portas. Trocar a engine significa trocar o `client` do Knex e o `Dialect` — nenhum repositório muda. Hoje só `postgres` tem dialeto; `sqlite` e `mysql` falham no boot.
+`KnexDatabase` (`src/platform/database/knex-database.ts`) implementa as duas portas. Trocar a engine significa trocar o `client` do Knex e o `Dialect` — nenhum repositório muda (dialetos disponíveis: §10.2).
 
 ```ts
 const database = createDatabase(config);
 // config.database.engine === "postgres" → KnexDatabase com PostgresDialect
-// config.database.engine === "sqlite"   → erro no boot: dialeto não implementado
+// engine ≠ postgres → erro no boot: dialeto não implementado
 ```
 
 ```ts
@@ -959,6 +959,7 @@ export interface Dialect {
   supportsReturning(): boolean;
   supportsRowLocks(): boolean;
   supportsUpsertMerge(): boolean;
+  // TODO: entram com as migrations; ver nota abaixo.
   /** Predicado de cor hexadecimal válida, na sintaxe da engine. */
   hexColorCheck(column: string): string;
   /** DDL da guarda append-only da auditoria, na sintaxe da engine. */
@@ -966,7 +967,7 @@ export interface Dialect {
 }
 ```
 
-Adiado: `hexColorCheck()` e `auditAppendOnlyGuard()` entram com as migrations, quando houver consumidor e suíte nas três engines.
+Adiado: `hexColorCheck()` e `auditAppendOnlyGuard()` entram com as migrations, quando houver consumidor e suíte.
 
 Implementações: `PostgresDialect`. `SqliteDialect` e `MySqlDialect` são o alvo de portabilidade e ainda não têm implementação. O `supportsUpsertMerge()` declara se a engine aceita merge no alvo do conflito: quem precisa de upsert consulta a capacidade e degrada para `insert` + `update` quando ela é falsa — a divergência fica declarada no `Dialect`, não espalhada em `if` de repositório.
 
@@ -1480,11 +1481,12 @@ export function createApp(container: Container): Express {
 
 ## 16. Configuração
 
-A configuração é lida e validada **no boot**. Aplicação com configuração inválida não sobe. O schema é plano por 12-factor; `toConfig` monta o bloco `DATABASE` aninhado.
+A configuração é lida e validada **no boot**. Aplicação com configuração inválida não sobe. Variáveis planas; `toConfig` monta os objetos aninhados (`database`, `cors`).
 
 ```ts
 // src/platform/config/environment-schema.ts
 // positiveInteger(): z.coerce.number().int().positive(), com mensagens pt-BR.
+// MEBIBYTE = 1024 * 1024 (src/core/config/config.ts).
 export const EnvironmentSchema = z.strictObject({
   NODE_ENV: z.enum(["development", "test", "production"]),
   PORT: positiveInteger().max(65_535).default(3000),
@@ -1503,9 +1505,9 @@ export const EnvironmentSchema = z.strictObject({
     .default("1d"),
   COOKIE_NAME: z.string().max(64).default("session_id"),
   PROTOCOL_SECRET: z.string().min(32),
-  UPLOAD_MAX_FILE_BYTES: positiveInteger().default(10 * 1024 * 1024),
+  UPLOAD_MAX_FILE_BYTES: positiveInteger().default(10 * MEBIBYTE),
   UPLOAD_MAX_FILES: positiveInteger().default(5),
-  JSON_BODY_MAX_BYTES: positiveInteger().default(1024 * 1024),
+  JSON_BODY_MAX_BYTES: positiveInteger().default(MEBIBYTE),
 });
 ```
 
@@ -1578,7 +1580,7 @@ export interface Logger {
 | Método, rota, status e duração em todo log de requisição                                             | Métrica de saúde                       |
 | Requisição abortada registra `aborted: true`                                                         | Rastro de desconexão                   |
 
-4xx não loga a causa: a `message` do parser pode ecoar trecho do body; o log do 4xx fica em `correlationId`, `code` e `status`. 5xx mantém a causa para diagnóstico.
+**Exceção:** 4xx não loga a causa — a `message` do parser pode ecoar trecho do body; a regra canônica está em `CODING_STANDARDS.md` §9.
 
 O nível mínimo vem do ambiente: `development` e `production` registram a partir de `info`; `test` não registra. Não há `LOG_LEVEL` no schema — o ambiente já decide o ruído aceitável.
 
