@@ -99,7 +99,7 @@ const [user, orders] = await Promise.all([users.findById(id), orders.listByUser(
 - `catch` recebe `unknown`; estreite com `isAppError` e, na borda HTTP, `toHttpAppError`.
 - Não engula erro. Se recuperar, registre o motivo e o que foi feito.
 - Logue a causa uma vez, na borda; não faça log-and-rethrow em cada camada.
-- Resposta de erro: `{ error: { code, message, requestId } }`. `code` é estável em `snake_case` e não é traduzido; `message` é em português e só é exposta quando `expose` é true, o código está no catálogo exposto e não é `internal_error` — o resto vira `internal_error` com mensagem genérica.
+- Resposta de erro: `{ error: { code, message, requestId } }`. `code` é estável em `snake_case` e não é traduzido; `message` é em português e só é exposta quando `expose` é true, o código está no catálogo exposto e não é `internal_error` — o resto vira `internal_error` com mensagem genérica e status 500.
 - No corpo do erro, `requestId` é o id HTTP (emenda ao C11 em `docs/04-API-Conventions.md` §12); no log estruturado, o id HTTP é `correlationId`. Fora do envelope, `requestId` é o id da solicitação de negócio.
 - Nunca devolva stack, SQL, path, nome de tabela ou versão interna.
 - Use exceção para condição excepcional; validação de entrada retorna 400, não lança erro genérico.
@@ -215,17 +215,17 @@ const errorHandler: ErrorRequestHandler = (err, req, res, next) => {
   if (res.headersSent) return next(err);
 
   const appErr = toHttpAppError(err);
-  const fields = { correlationId: req.id, code: appErr.code, status: appErr.status };
+  const { code, message, status } = toExposedError(appErr);
+  const fields = { correlationId: req.id, code: appErr.code, status };
 
-  if (isServerError(appErr.status)) {
+  if (isServerError(status)) {
     logger.error({ ...fields, err }, "falha ao processar requisição");
   } else {
     // 4xx: sem causa crua — a mensagem do parser pode ecoar trecho do body (§9).
     logger.warn(fields, "requisição recusada");
   }
 
-  const { code, message } = toExposedError(appErr);
-  res.status(appErr.status).json({
+  res.status(status).json({
     error: { code, message, requestId: req.id },
   });
 };

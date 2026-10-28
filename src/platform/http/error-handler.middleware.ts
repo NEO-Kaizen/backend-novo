@@ -24,13 +24,14 @@ export function createErrorHandler(logger: Logger): ErrorRequestHandler {
     }
 
     const appError = toHttpAppError(error);
+    const { code, message, status } = toExposedError(appError);
     const fields = {
       correlationId: req.id,
       code: appError.code,
-      status: appError.status,
+      status,
     };
 
-    if (isServerError(appError.status)) {
+    if (isServerError(status)) {
       // 5xx: a causa bruta entra no log para diagnóstico.
       logger.error({ ...fields, err: error }, "falha ao processar requisição");
     } else {
@@ -38,9 +39,6 @@ export function createErrorHandler(logger: Logger): ErrorRequestHandler {
       logger.warn(fields, "requisição recusada");
     }
 
-    const { code, message } = toExposedError(appError);
-    res
-      .status(appError.status)
-      .json(errorEnvelope(appError.status, message, { code, requestId: req.id }));
+    res.status(status).json(errorEnvelope(status, message, { code, requestId: req.id }));
   };
 }

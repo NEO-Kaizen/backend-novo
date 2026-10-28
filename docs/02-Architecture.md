@@ -1138,25 +1138,25 @@ O `TransactionManager` usa `AsyncLocalStorage` para propagar a transação corre
 ```ts
 // src/platform/database/knex-database.ts
 export class KnexDatabase implements Database, TransactionManager {
-  private readonly scope = new AsyncLocalStorage<Knex>();
+  private readonly transactionScope = new AsyncLocalStorage<Knex.Transaction>();
 
   get client(): Knex {
-    return this.scope.getStore() ?? this.knex;
+    return this.transactionScope.getStore() ?? this.knex;
   }
 
   async run<T>(work: () => Promise<T>): Promise<T> {
-    return this.nested(async (trx) => this.scope.run(trx, work));
+    return this.nested(async (trx) => this.transactionScope.run(trx, work));
   }
 
   async runSnapshot<T>(work: () => Promise<T>): Promise<T> {
-    return this.nested(async (trx) => this.scope.run(trx, work), "repeatable read");
+    return this.nested(async (trx) => this.transactionScope.run(trx, work), "repeatable read");
   }
 
   private async nested<T>(
     use: (trx: Knex.Transaction) => Promise<T>,
     isolationLevel?: Knex.IsolationLevels,
   ): Promise<T> {
-    const current = this.scope.getStore();
+    const current = this.transactionScope.getStore();
     if (current) {
       // Transação aninhada herda o isolamento da externa: é savepoint, não uma
       // transação independente. O nível só vale quando a transação é raiz.
@@ -1200,8 +1200,8 @@ A regra "escrita só dentro de transação" é garantida pelo **repositório**, 
 ```ts
 // src/platform/database/knex-database.ts
 assertInTransaction(): void {
-  if (!this.scope.getStore()) {
-    throw new AppError("transaction_required", 500, "escrita fora de transação");
+  if (!this.transactionScope.getStore()) {
+    throw new AppError("transaction_required", SERVER_ERROR_STATUS, "escrita fora de transação");
   }
 }
 ```
@@ -1280,7 +1280,7 @@ Esse envelope é **temporário**. O `CODING_STANDARDS.md` define `{ "error": { "
 | Regra                                             | Efeito                                                                   |
 | ------------------------------------------------- | ------------------------------------------------------------------------ |
 | `expose: true` e `code` no catálogo exposto       | A mensagem vai para o cliente (exceto `internal_error`)                  |
-| Qualquer outro caso (inclui `expose: false`)      | O cliente recebe `internal_error` com mensagem genérica                  |
+| Qualquer outro caso (inclui `expose: false`)      | O cliente recebe `internal_error` com mensagem genérica e status 500     |
 | Stack, SQL, nome de tabela, path e versão interna | Nunca saem do servidor                                                   |
 | Causa do erro                                     | Registrada **uma vez**, na borda; camada interna não faz log-and-rethrow |
 
