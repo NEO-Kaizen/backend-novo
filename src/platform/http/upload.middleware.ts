@@ -1,11 +1,13 @@
+import { extname } from "node:path";
 import type { RequestHandler } from "express";
 import multer from "multer";
+import { MEBIBYTE } from "../../core/config/config.ts";
 import type { UploadConfig } from "../../core/config/config.ts";
 import { AppError } from "../../core/errors/app-error.ts";
 
 const MAX_PARTS = 20;
 const MAX_FIELDS = 10;
-const MAX_FIELD_BYTES = 2 * 1024 * 1024;
+const MAX_FIELD_BYTES = 2 * MEBIBYTE;
 const UNSUPPORTED_MEDIA_STATUS = 415;
 
 export interface UploadPolicy {

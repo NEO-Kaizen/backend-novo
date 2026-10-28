@@ -1,8 +1,6 @@
 import { z } from "zod";
-import { DATABASE_ENGINES } from "../../core/config/config.ts";
+import { DATABASE_ENGINES, MEBIBYTE } from "../../core/config/config.ts";
 import type { Config } from "../../core/config/config.ts";
-
-export const MEBIBYTE = 1024 * 1024;
 
 const positiveInteger = () =>
   z.coerce
