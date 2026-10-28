@@ -215,7 +215,14 @@ const errorHandler: ErrorRequestHandler = (err, req, res, next) => {
   if (res.headersSent) return next(err);
 
   const appErr = toAppError(err);
-  logger.error({ err, correlationId: req.id, code: appErr.code }, "falha ao processar requisição");
+  const fields = { correlationId: req.id, code: appErr.code, status: appErr.status };
+
+  if (appErr.status >= 500) {
+    logger.error({ ...fields, err }, "falha ao processar requisição");
+  } else {
+    // 4xx: sem causa crua — a mensagem do parser pode ecoar trecho do body (§9).
+    logger.warn(fields, "requisição recusada");
+  }
 
   res.status(appErr.status).json({
     error: {

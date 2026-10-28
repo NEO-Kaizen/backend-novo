@@ -843,7 +843,7 @@ export interface AttemptRecorder {
 ```
 
 ```ts
-// src/platform/http/error-handler.ts
+// src/platform/http/error-handler.middleware.ts
 export function createErrorHandler(dependencies: {
   readonly attempts: AttemptRecorder;
   readonly clock: Clock;
@@ -959,11 +959,9 @@ export interface Dialect {
   supportsReturning(): boolean;
   supportsRowLocks(): boolean;
   supportsUpsertMerge(): boolean;
-  // TODO: entram com as migrations; ver nota abaixo.
-  /** Predicado de cor hexadecimal válida, na sintaxe da engine. */
-  hexColorCheck(column: string): string;
-  /** DDL da guarda append-only da auditoria, na sintaxe da engine. */
-  auditAppendOnlyGuard(): readonly string[];
+  // Adiado (ver nota abaixo):
+  // hexColorCheck(column: string): string;
+  // auditAppendOnlyGuard(): readonly string[];
 }
 ```
 
@@ -1481,7 +1479,7 @@ export function createApp(container: Container): Express {
 
 ## 16. Configuração
 
-A configuração é lida e validada **no boot**. Aplicação com configuração inválida não sobe. Variáveis planas; `toConfig` monta os objetos aninhados (`database`, `cors`).
+A configuração é lida e validada **no boot**. Aplicação com configuração inválida não sobe. Variáveis planas; `toConfig` monta os objetos aninhados (`database`, `cors`, `uploads`).
 
 ```ts
 // src/platform/config/environment-schema.ts
