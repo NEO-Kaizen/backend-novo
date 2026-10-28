@@ -6,7 +6,7 @@ import { createApp } from "../app.ts";
 import { createContainer } from "../container.ts";
 import { API_BASE_PATH, SCALAR_BUNDLE_PUBLIC_PATH } from "../core/http/api-base-path.ts";
 import { loadConfig } from "../platform/config/load-config.ts";
-import { createOpenApiDocument } from "./openapi.ts";
+import { createOpenApiDocument, OPENAPI_VERSION } from "./openapi.ts";
 import { assertRouteCoverage } from "./route-coverage.ts";
 
 /**
@@ -90,9 +90,7 @@ async function checkRouteCoverage(): Promise<void> {
 
 /** Prova que spec, UI e bundle local respondem conforme `DOCS_ENABLED` e o ambiente. */
 async function checkDocsMatrix(): Promise<void> {
-  for (const scenario of DOCS_SCENARIOS) {
-    await checkDocsScenario(scenario);
-  }
+  await Promise.all(DOCS_SCENARIOS.map((scenario) => checkDocsScenario(scenario)));
 }
 
 async function checkDocsScenario(scenario: DocsScenario): Promise<void> {
@@ -114,9 +112,9 @@ async function checkDocsScenario(scenario: DocsScenario): Promise<void> {
     assertStatus(scenario, "UI", ui.status, 200);
 
     const version = fieldOf(await spec.json(), "openapi");
-    if (version !== "3.1.0") {
+    if (version !== OPENAPI_VERSION) {
       throw new Error(
-        `${scenario.name}: o spec respondeu OpenAPI ${String(version ?? "desconhecido")}, esperava 3.1.0.`,
+        `${scenario.name}: o spec respondeu OpenAPI ${String(version ?? "desconhecido")}, esperava ${OPENAPI_VERSION}.`,
       );
     }
 

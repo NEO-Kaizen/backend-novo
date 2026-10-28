@@ -3,7 +3,11 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { apiReference } from "@scalar/express-api-reference";
 import { Router } from "express";
-import { API_BASE_PATH, SCALAR_BUNDLE_ROUTE } from "../../core/http/api-base-path.ts";
+import {
+  API_BASE_PATH,
+  SCALAR_BUNDLE_PUBLIC_PATH,
+  SCALAR_BUNDLE_ROUTE,
+} from "../../core/http/api-base-path.ts";
 
 /** Visão mínima do documento gerado que o router precisa para servir e titular a UI. */
 export interface ApiContractMetadata {
@@ -33,7 +37,7 @@ export function createApiContractRouter(document: ApiContractMetadata): Router {
     apiReference({
       url: `${API_BASE_PATH}/openapi.json`,
       pageTitle: document.info.title,
-      cdn: `${API_BASE_PATH}${SCALAR_BUNDLE_ROUTE}`,
+      cdn: SCALAR_BUNDLE_PUBLIC_PATH,
     }),
   );
 

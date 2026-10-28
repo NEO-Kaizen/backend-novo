@@ -19,7 +19,7 @@ npm run contract:check  # cobertura rota↔operação e matriz DOCS_ENABLED
 
 - Toda mudança de rota ou schema regenera o artefato no mesmo PR via `npm run docs:generate`.
 - `npm run docs:check` deve passar; diff inesperado no artefato é erro.
-- O job `quality` do CI roda `docs:check`, `docs:lint` e `contract:check`.
+- O job `quality` do CI roda `docs:check`, `docs:lint` e `contract:check`, mais `contract:check --probe`.
 - Breaking change exige label `breaking-change` e plano de `/api/v2` (gate `oasdiff breaking` quando o workflow existir).
 
 ## Lint

@@ -3,13 +3,19 @@ import { API_BASE_PATH } from "../core/http/api-base-path.ts";
 import { components } from "./components.ts";
 
 /**
+ * Versão do contrato. Fonte única para o gerador e para a guarda, que recusa um
+ * spec servido em versão diferente da decidida no ADR-0026.
+ */
+export const OPENAPI_VERSION = "3.1.0";
+
+/**
  * Compõe o documento OpenAPI. `paths` é o ponto de composição das operações
  * vindas dos `*.openapi.ts` de domínio; até o primeiro domínio publicar, fica
  * vazio e o artefato contém só os componentes compartilhados.
  */
 export function createOpenApiDocument(): ReturnType<typeof createDocument> {
   return createDocument({
-    openapi: "3.1.0",
+    openapi: OPENAPI_VERSION,
     info: {
       title: "MAAT Backend API",
       version: "0.0.0",
