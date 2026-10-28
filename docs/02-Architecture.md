@@ -1637,6 +1637,8 @@ container    → core + platform + domains + api-contract
 | `api-contract` **não** é importado por `core`, `domains` ou `platform`           | O spec é composto no container; o router recebe o documento pronto                                                                                     |
 | `app.ts` e `server.ts` **nunca** criam dependência                               | Eles consomem o `Container`                                                                                                                            |
 
+`src/api-contract/check-contract.ts` é a exceção da primeira coluna: é um CLI de composição (rodado por `npm run contract:check`), monta `app.ts`, `container.ts` e `loadConfig` para cobrar o contrato real, e não é importado por nenhum módulo de `src/`.
+
 ---
 
 ## 20. Anti-padrões
@@ -1727,6 +1729,8 @@ O banco nasce vazio, então não há dado a migrar; há **consumidores** a migra
 | `queue.overdueRequests`, `dashboard.overdue`, `situation=overdue` | Derivados de `operational.desiredDeadline`                                                         | Indefinidos até a regra de SLA ([ADR-0024](./adr/0024-requested-deadline-is-not-sla.md))                                                                | Não publicar atraso derivado do prazo desejado                         |
 
 A release é um **cutover coordenado**, não um adapter numérico: devolver id numérico ao frontend reintroduziria a decisão que o ADR-0003 eliminou. A ordem segura é o frontend aceitar os dois formatos e passar a usar a `key` do status; depois o backend novo entra.
+
+O contrato HTTP não está mais entre as pendências: `npm run docs:generate`, `npm run docs:lint`, `npm run docs:check` e `npm run contract:check` existem e rodam no job `quality` do CI.
 
 ---
 

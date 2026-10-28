@@ -47,5 +47,8 @@ jobs:
       - name: Contract coverage
         run: npm run contract:check
 
+      - name: Contract guard self-test
+        run: npm run contract:check -- --probe
+
       - name: Build
         run: npm run build

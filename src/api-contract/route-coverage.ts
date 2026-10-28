@@ -1,5 +1,5 @@
 import type { Express } from "express";
-import { API_BASE_PATH } from "../core/http/api-base-path.ts";
+import { API_BASE_PATH, SCALAR_BUNDLE_PUBLIC_PATH } from "../core/http/api-base-path.ts";
 
 /**
  * Cobertura bidirecional entre rotas Express e `openapi.paths`. A guarda falha
@@ -25,7 +25,7 @@ const EXCLUDED_PATHS: readonly string[] = [
   "/health",
   `${API_BASE_PATH}/openapi.json`,
   `${API_BASE_PATH}/docs`,
-  `${API_BASE_PATH}/docs/assets/standalone.js`,
+  SCALAR_BUNDLE_PUBLIC_PATH,
 ];
 
 const ROUTE_PARAMETER = /:([A-Za-z0-9_]+)/g;
@@ -79,10 +79,10 @@ export function assertRouteCoverage(app: Express, document: RouteCoverageDocumen
       );
     }
 
-    const routeParameters = parameterNames(route.path, ROUTE_PARAMETER);
-    const operationParameters = parameterNames(operation.path, OPENAPI_PARAMETER);
+    if (!parametersMatch(route, operation)) {
+      const routeParameters = parameterNames(route.path, ROUTE_PARAMETER);
+      const operationParameters = parameterNames(operation.path, OPENAPI_PARAMETER);
 
-    if (routeParameters.join(",") !== operationParameters.join(",")) {
       fail(
         `Operação ${formatMethod(operation.method)} ${operation.path} declara parâmetros (${operationParameters.join(", ") || "nenhum"}), mas a rota ${route.path} declara (${routeParameters.join(", ") || "nenhum"}).`,
       );
@@ -173,19 +173,20 @@ function isDocumented(
   method: HttpMethod,
   operations: readonly DocumentOperation[],
 ): boolean {
-  const routeParameters = parameterNames(route.path, ROUTE_PARAMETER).join(",");
+  return operations.some(
+    (operation) =>
+      operation.method === method &&
+      matchesRoute(route, `${API_BASE_PATH}${operation.path}`, method) &&
+      parametersMatch(route, operation),
+  );
+}
 
-  return operations.some((operation) => {
-    if (operation.method !== method) {
-      return false;
-    }
-
-    const fullPath = `${API_BASE_PATH}${operation.path}`;
-    return (
-      matchesRoute(route, fullPath, method) &&
-      parameterNames(operation.path, OPENAPI_PARAMETER).join(",") === routeParameters
-    );
-  });
+/** Uma rota só cobre a operação se declarar os mesmos nomes de parâmetro, na mesma ordem. */
+function parametersMatch(route: CollectedRoute, operation: DocumentOperation): boolean {
+  return (
+    parameterNames(operation.path, OPENAPI_PARAMETER).join(",") ===
+    parameterNames(route.path, ROUTE_PARAMETER).join(",")
+  );
 }
 
 /**

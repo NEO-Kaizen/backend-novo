@@ -1,9 +1,10 @@
 import { once } from "node:events";
 import type { Server } from "node:http";
-import express from "express";
+import express, { Router } from "express";
+import type { Express } from "express";
 import { createApp } from "../app.ts";
 import { createContainer } from "../container.ts";
-import { API_BASE_PATH } from "../core/http/api-base-path.ts";
+import { API_BASE_PATH, SCALAR_BUNDLE_PUBLIC_PATH } from "../core/http/api-base-path.ts";
 import { loadConfig } from "../platform/config/load-config.ts";
 import { createOpenApiDocument } from "./openapi.ts";
 import { assertRouteCoverage } from "./route-coverage.ts";
@@ -29,7 +30,8 @@ const BASE_ENVIRONMENT = {
   PROTOCOL_SECRET: "test-only-protocol-secret-with-at-least-32-chars",
 } satisfies NodeJS.ProcessEnv;
 
-const SCALAR_BUNDLE_ROUTE = `${API_BASE_PATH}/docs/assets/standalone.js`;
+/** Toda chamada HTTP da guarda tem teto; um servidor que não responde falha, não trava o CI. */
+const REQUEST_TIMEOUT_MS = 5_000;
 
 interface RunningServer {
   readonly baseUrl: string;
@@ -39,38 +41,40 @@ interface RunningServer {
 interface DocsScenario {
   readonly name: string;
   readonly environment: NodeJS.ProcessEnv;
-  readonly exposed: boolean;
+  readonly isExposed: boolean;
 }
 
 const DOCS_SCENARIOS: readonly DocsScenario[] = [
-  { name: "produção sem DOCS_ENABLED", environment: { NODE_ENV: "production" }, exposed: false },
+  {
+    name: "produção sem DOCS_ENABLED",
+    environment: { NODE_ENV: "production" },
+    isExposed: false,
+  },
   {
     name: "produção com DOCS_ENABLED=true",
     environment: { NODE_ENV: "production", DOCS_ENABLED: "true" },
-    exposed: true,
+    isExposed: true,
   },
-  { name: "teste sem DOCS_ENABLED", environment: {}, exposed: true },
+  { name: "teste sem DOCS_ENABLED", environment: {}, isExposed: true },
   {
     name: "desenvolvimento com DOCS_ENABLED=false",
     environment: { NODE_ENV: "development", DOCS_ENABLED: "false" },
-    exposed: false,
+    isExposed: false,
   },
 ];
 
 async function main(argv: readonly string[]): Promise<void> {
   if (argv.includes("--probe")) {
     runProbe();
-    console.log(
-      "contract:check --probe: a guarda falha nas divergências e passa no contrato válido.",
-    );
+    report("contract:check --probe: a guarda falha nas divergências e passa no contrato válido.");
     return;
   }
 
   await checkRouteCoverage();
-  console.log("contract:check: cobertura rota↔operação ok.");
+  report("contract:check: cobertura rota↔operação ok.");
 
   await checkDocsMatrix();
-  console.log("contract:check: matriz DOCS_ENABLED ok.");
+  report("contract:check: matriz DOCS_ENABLED ok.");
 }
 
 /** Cobre o app real contra o documento gerado, como o CI vai cobrar cada domínio. */
@@ -95,10 +99,10 @@ async function checkDocsScenario(scenario: DocsScenario): Promise<void> {
   const server = await startServer(scenario.environment);
 
   try {
-    const spec = await fetch(`${server.baseUrl}${API_BASE_PATH}/openapi.json`);
-    const ui = await fetch(`${server.baseUrl}${API_BASE_PATH}/docs`);
+    const spec = await request(`${server.baseUrl}${API_BASE_PATH}/openapi.json`);
+    const ui = await request(`${server.baseUrl}${API_BASE_PATH}/docs`);
 
-    if (!scenario.exposed) {
+    if (!scenario.isExposed) {
       assertStatus(scenario, "spec", spec.status, 404);
       assertStatus(scenario, "UI", ui.status, 404);
       assertCode(scenario, "spec", await spec.json(), "not_found");
@@ -109,24 +113,24 @@ async function checkDocsScenario(scenario: DocsScenario): Promise<void> {
     assertStatus(scenario, "spec", spec.status, 200);
     assertStatus(scenario, "UI", ui.status, 200);
 
-    const document = (await spec.json()) as { openapi?: string };
-    if (document.openapi !== "3.1.0") {
+    const version = fieldOf(await spec.json(), "openapi");
+    if (version !== "3.1.0") {
       throw new Error(
-        `${scenario.name}: o spec respondeu OpenAPI ${document.openapi ?? "desconhecido"}, esperava 3.1.0.`,
+        `${scenario.name}: o spec respondeu OpenAPI ${String(version ?? "desconhecido")}, esperava 3.1.0.`,
       );
     }
 
     const html = await ui.text();
-    if (!html.includes(SCALAR_BUNDLE_ROUTE)) {
+    if (!html.includes(SCALAR_BUNDLE_PUBLIC_PATH)) {
       throw new Error(
-        `${scenario.name}: a UI não referencia o bundle local ${SCALAR_BUNDLE_ROUTE}.`,
+        `${scenario.name}: a UI não referencia o bundle local ${SCALAR_BUNDLE_PUBLIC_PATH}.`,
       );
     }
     if (/jsdelivr/i.test(html)) {
       throw new Error(`${scenario.name}: a UI ainda carrega o Scalar de CDN.`);
     }
 
-    const asset = await fetch(`${server.baseUrl}${SCALAR_BUNDLE_ROUTE}`, { method: "HEAD" });
+    const asset = await request(`${server.baseUrl}${SCALAR_BUNDLE_PUBLIC_PATH}`, "HEAD");
     assertStatus(scenario, "bundle local", asset.status, 200);
 
     if (!/javascript/.test(asset.headers.get("content-type") ?? "")) {
@@ -149,11 +153,24 @@ function assertStatus(
 }
 
 function assertCode(scenario: DocsScenario, label: string, body: unknown, expected: string): void {
-  const code = (body as { code?: string }).code;
+  const code = fieldOf(body, "code");
 
   if (code !== expected) {
-    throw new Error(`${scenario.name}: ${label} respondeu code "${code}", esperava "${expected}".`);
+    throw new Error(
+      `${scenario.name}: ${label} respondeu code "${String(code)}", esperava "${expected}".`,
+    );
   }
+}
+
+/** Lê um campo de um corpo JSON sem confiar no shape; `unknown` até o teste. */
+function fieldOf(body: unknown, field: string): unknown {
+  return typeof body === "object" && body !== null && field in body
+    ? (body as Record<string, unknown>)[field]
+    : undefined;
+}
+
+function request(url: string, method = "GET"): Promise<Response> {
+  return fetch(url, { method, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
 }
 
 async function startServer(environment: NodeJS.ProcessEnv): Promise<RunningServer> {
@@ -189,12 +206,11 @@ function runProbe(): void {
   probeFailure(
     "rota sem operação",
     () => {
-      const app = express();
-      const router = express.Router();
-      router.get("/probe", (_req, res) => {
-        res.sendStatus(204);
+      const app = probeApp((router) => {
+        router.get("/probe", (_req, res) => {
+          res.sendStatus(204);
+        });
       });
-      app.use(API_BASE_PATH, router);
 
       assertRouteCoverage(app, { paths: {} });
     },
@@ -212,12 +228,11 @@ function runProbe(): void {
   probeFailure(
     "parâmetros divergentes",
     () => {
-      const app = express();
-      const router = express.Router();
-      router.get("/probe/:id", (_req, res) => {
-        res.sendStatus(200);
+      const app = probeApp((router) => {
+        router.get("/probe/:id", (_req, res) => {
+          res.sendStatus(200);
+        });
       });
-      app.use(API_BASE_PATH, router);
 
       assertRouteCoverage(app, { paths: { "/probe/{other}": { get: {} } } });
     },
@@ -227,12 +242,11 @@ function runProbe(): void {
   probeFailure(
     "router.all exige todos os métodos",
     () => {
-      const app = express();
-      const router = express.Router();
-      router.all("/probe", (_req, res) => {
-        res.sendStatus(204);
+      const app = probeApp((router) => {
+        router.all("/probe", (_req, res) => {
+          res.sendStatus(204);
+        });
       });
-      app.use(API_BASE_PATH, router);
 
       assertRouteCoverage(app, { paths: {} });
     },
@@ -240,12 +254,11 @@ function runProbe(): void {
   );
 
   probeSuccess("rota e operação coincidem", () => {
-    const app = express();
-    const router = express.Router();
-    router.get("/probe/:id", (_req, res) => {
-      res.sendStatus(200);
+    const app = probeApp((router) => {
+      router.get("/probe/:id", (_req, res) => {
+        res.sendStatus(200);
+      });
     });
-    app.use(API_BASE_PATH, router);
 
     assertRouteCoverage(app, { paths: { "/probe/{id}": { get: {} } } });
   });
@@ -260,11 +273,19 @@ function runProbe(): void {
   });
 }
 
+function probeApp(register: (router: Router) => void): Express {
+  const app = express();
+  const router = Router();
+  register(router);
+  app.use(API_BASE_PATH, router);
+  return app;
+}
+
 function probeFailure(name: string, run: () => void, expected: RegExp): void {
   try {
     run();
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = messageOf(error);
 
     if (!expected.test(message)) {
       throw new Error(`sonda "${name}": falhou com mensagem inesperada: ${message}`, {
@@ -282,9 +303,19 @@ function probeSuccess(name: string, run: () => void): void {
   try {
     run();
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`sonda "${name}": a guarda falhou indevidamente: ${message}`, { cause: error });
+    throw new Error(`sonda "${name}": a guarda falhou indevidamente: ${messageOf(error)}`, {
+      cause: error,
+    });
   }
+}
+
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/** Saída de CLI vai para o stdout; não é logging de aplicação. */
+function report(message: string): void {
+  process.stdout.write(`${message}\n`);
 }
 
 await main(process.argv);
