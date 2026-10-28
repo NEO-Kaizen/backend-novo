@@ -1,7 +1,8 @@
 import type { ErrorRequestHandler } from "express";
-import { errorEnvelope, SERVER_ERROR_STATUS } from "../../core/http/error-envelope.ts";
-import { toAppError, toExposedError } from "../../core/http/error-mapper.ts";
+import { errorEnvelope, isServerError } from "../../core/http/error-envelope.ts";
+import { toExposedError } from "../../core/http/error-mapper.ts";
 import type { Logger } from "../../core/service/logger.ts";
+import { toHttpAppError } from "./transport-error-mapper.ts";
 
 /**
  * Borda do erro: loga a causa uma única vez e responde no envelope legado
@@ -22,14 +23,14 @@ export function createErrorHandler(logger: Logger): ErrorRequestHandler {
       return;
     }
 
-    const appError = toAppError(error);
+    const appError = toHttpAppError(error);
     const fields = {
       correlationId: req.id,
       code: appError.code,
       status: appError.status,
     };
 
-    if (appError.status >= SERVER_ERROR_STATUS) {
+    if (isServerError(appError.status)) {
       // 5xx: a causa bruta entra no log para diagnóstico.
       logger.error({ ...fields, err: error }, "falha ao processar requisição");
     } else {
