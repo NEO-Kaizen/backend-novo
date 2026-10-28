@@ -30,7 +30,14 @@ function createKnex(database: DatabaseConfig): Knex {
       database: database.name,
       user: database.user,
       password: database.password,
+      connectionTimeoutMillis: database.connectTimeoutMs,
+      statement_timeout: database.statementTimeoutMs,
+      query_timeout: database.statementTimeoutMs,
     },
-    pool: { min: 0, max: POOL_MAX_CONNECTIONS },
+    pool: {
+      min: 0,
+      max: POOL_MAX_CONNECTIONS,
+      acquireTimeoutMillis: database.acquireTimeoutMs,
+    },
   });
 }

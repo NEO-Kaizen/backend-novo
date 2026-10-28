@@ -1,6 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { Knex } from "knex";
 import { AppError } from "../../core/errors/app-error.ts";
+import { SERVER_ERROR_STATUS } from "../../core/http/error-envelope.ts";
 import type { Database } from "../../core/repository/database.ts";
 import type { Dialect } from "../../core/repository/dialect.ts";
 import type { TransactionManager } from "../../core/repository/transaction-manager.ts";
@@ -37,7 +38,7 @@ export class KnexDatabase implements Database, TransactionManager {
 
   assertInTransaction(): void {
     if (this.transactionScope.getStore() === undefined) {
-      throw new AppError("transaction_required", 500, "escrita fora de transação");
+      throw new AppError("transaction_required", SERVER_ERROR_STATUS, "escrita fora de transação");
     }
   }
 

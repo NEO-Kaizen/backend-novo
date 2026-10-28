@@ -4,6 +4,11 @@ export const UNSUPPORTED_MEDIA_STATUS = 415;
 export const SERVER_ERROR_STATUS = 500;
 export const GENERIC_ERROR_MESSAGE = "Erro interno do servidor";
 
+/** 5xx é falha do servidor; o error handler usa o mesmo limiar do status base. */
+export function isServerError(status: number): boolean {
+  return status >= SERVER_ERROR_STATUS;
+}
+
 export interface FieldError {
   readonly path: string;
   readonly message: string;

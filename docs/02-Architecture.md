@@ -1230,7 +1230,7 @@ Todo erro exposto tem um `code` em `snake_case`, estável entre versões. O `cod
 | Códigos de domínio              | `not_the_assignee`, `invalid_status_transition`, …                                                                                                      | Erros de `DomainError`         |
 | `core/errors/internal-codes.ts` | `transaction_required`                                                                                                                                  | Erros internos; nunca expostos |
 
-`counter_missing` entra com o contador de protocolo.
+`counter_missing` entra com o contador de protocolo. Códigos de domínio entram em `core/errors/error-codes.ts` com o primeiro `DomainError`; a projeção de `expose` exige que o código esteja nesse catálogo e não seja `internal_error`.
 
 ### 12.3 Erro de Domínio com Contexto de Recusa
 
@@ -1247,10 +1247,10 @@ O `context` carrega **o que** foi tentado; a borda completa com **quem** e **ond
 
 ### 12.4 Mapeamento HTTP
 
-Erro de domínio não conhece status HTTP. O mapeamento acontece **uma vez**, na borda:
+Erro de domínio não conhece status HTTP. O mapeamento acontece **uma vez**, na borda. O reconhecimento de `body-parser`/`multer` fica em `platform/http/transport-error-mapper.ts`; o core só vê `AppError` e o mapa de domínio. O mapa abaixo é alvo: entra com o primeiro `DomainError`; hoje o `AppError` carrega o próprio status:
 
 ```ts
-// src/core/http/error-mapper.ts
+// alvo (core/http/error-mapper.ts); entra com o primeiro DomainError
 const STATUS_BY_CODE: Readonly<Record<string, number>> = {
   validation_error: 400,
   unauthorized: 401,
@@ -1279,8 +1279,8 @@ Esse envelope é **temporário**. O `CODING_STANDARDS.md` define `{ "error": { "
 
 | Regra                                             | Efeito                                                                   |
 | ------------------------------------------------- | ------------------------------------------------------------------------ |
-| `expose: true`                                    | A mensagem vai para o cliente                                            |
-| `expose: false` (padrão)                          | O cliente recebe `internal_error` com mensagem genérica                  |
+| `expose: true` e `code` no catálogo exposto       | A mensagem vai para o cliente (exceto `internal_error`)                  |
+| Qualquer outro caso (inclui `expose: false`)      | O cliente recebe `internal_error` com mensagem genérica                  |
 | Stack, SQL, nome de tabela, path e versão interna | Nunca saem do servidor                                                   |
 | Causa do erro                                     | Registrada **uma vez**, na borda; camada interna não faz log-and-rethrow |
 
@@ -1491,6 +1491,9 @@ export const EnvironmentSchema = z.strictObject({
   DATABASE_NAME: z.string().min(1),
   DATABASE_USER: z.string().min(1),
   DATABASE_PASSWORD: z.string(), // presente, pode ser vazio (trust local)
+  DATABASE_ACQUIRE_TIMEOUT_MS: positiveInteger().default(10_000),
+  DATABASE_CONNECT_TIMEOUT_MS: positiveInteger().default(5_000),
+  DATABASE_STATEMENT_TIMEOUT_MS: positiveInteger().default(30_000),
   // Lista separada por vírgula; normalizeOrigin() valida cada item (omitido no recorte).
   CORS_ORIGINS: z.string().transform((value) => value.split(",")),
   JWT_SECRET: z.string().min(32),
@@ -1515,6 +1518,9 @@ export interface DatabaseConfig {
   readonly name: string;
   readonly user: string;
   readonly password: string;
+  readonly acquireTimeoutMs: number;
+  readonly connectTimeoutMs: number;
+  readonly statementTimeoutMs: number;
 }
 
 export interface Config {
@@ -1547,6 +1553,7 @@ export interface Config {
 | `DATABASE_ENGINE` lista o alvo de portabilidade                      | Só `postgres` tem dialeto hoje; engine sem dialeto falha no boot com mensagem clara (§ 10.2)                                   |
 | `NODE_ENV` sem default                                               | Produção não cai em modo development por variável ausente                                                                      |
 | `DATABASE_PASSWORD` pode ser vazio                                   | Autenticação por trust local; a variável precisa existir                                                                       |
+| Pool e conexão têm timeout (`*_TIMEOUT_MS`)                          | Sem espera indefinida em aquisição, conexão ou query                                                                           |
 | `COOKIE_NAME` e `JWT_EXPIRES_IN` no schema                           | Requeridos pelo C6 (`04-API-Conventions.md` § 5)                                                                               |
 
 ---
