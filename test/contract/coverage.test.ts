@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import { createApp } from "../../src/app.ts";
 import { createContainer } from "../../src/container.ts";
-import { createOpenApiDocument } from "../../src/docs/openapi.ts";
+import { createOpenApiDocument } from "../../src/api-contract/openapi.ts";
 import { loadConfig } from "../../src/platform/config/load-config.ts";
 import { BASE_ENVIRONMENT } from "./harness.ts";
 import { assertRouteCoverage } from "./route-coverage.ts";

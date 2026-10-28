@@ -4,8 +4,8 @@ import { createOpenApiDocument } from "./openapi.ts";
 
 /**
  * Escreve o artefato commitado. `import.meta.dirname` resolve o mesmo caminho
- * relativo a partir de `src/docs/` e de `dist/docs/`, então o script roda no
- * código-fonte e no build sem depender de `ts-node`.
+ * relativo a partir de `src/api-contract/` e de `dist/api-contract/`, então o
+ * script roda no código-fonte e no build sem depender de `ts-node`.
  */
 const OUTPUT_PATH = resolve(import.meta.dirname, "../../openapi/openapi.json");
 

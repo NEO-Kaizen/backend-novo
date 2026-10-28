@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { API_BASE_PATH } from "../../src/core/http/api-base-path.ts";
 import { EXPOSED_ERROR_CODES } from "../../src/core/errors/error-codes.ts";
-import { createOpenApiDocument } from "../../src/docs/openapi.ts";
+import { createOpenApiDocument } from "../../src/api-contract/openapi.ts";
 
 interface SchemaLike {
   type?: string;

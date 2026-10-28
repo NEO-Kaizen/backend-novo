@@ -137,7 +137,7 @@ seeds/<domain>/                # seeds donos por cada domínio
 knexfile.ts
 ```
 
-> Pastas e arquivos são criados conforme a necessidade. Um domínio sem tabelas próprias não tem `schema/`; um domínio sem rotas públicas não precisa de subpastas. O diretório `src/docs/` (composição do OpenAPI) está detalhado na §23.1.
+> Pastas e arquivos são criados conforme a necessidade. Um domínio sem tabelas próprias não tem `schema/`; um domínio sem rotas públicas não precisa de subpastas. O diretório `src/api-contract/` (composição do OpenAPI) está detalhado na §23.1.
 
 Schema e migrations pertencem ao domínio — a definição da tabela vive em `src/domains/<domínio>/schema/`, ao lado da regra que a usa. Ver [ADR-0004](./adr/0004-domain-owned-schema-and-migrations.md).
 
@@ -1619,12 +1619,12 @@ Com `Clock` e `IdGenerator` injetados, o domínio é determinístico: nada de `M
 ## 19. Dependências Permitidas
 
 ```text
-core      → (nenhuma dependência interna)
-domains   → core
-domains   → outro domain: apenas via port publicada (import de tipo)
-platform  → core
-docs      → core + domains (metadados)
-container → core + platform + domains + docs
+core         → (nenhuma dependência interna)
+domains      → core
+domains      → outro domain: apenas via port publicada (import de tipo)
+platform     → core
+api-contract → core + domains (metadados)
+container    → core + platform + domains + api-contract
 ```
 
 | Proibição                                                                        | Por quê                                                                                                                                                |
@@ -1634,7 +1634,7 @@ container → core + platform + domains + docs
 | Um domínio **nunca** importa repositório, service ou controller de outro domínio | Fronteira entre áreas                                                                                                                                  |
 | Um service **nunca** recebe a porta `Database`                                   | A fábrica passa o banco ao repositório, não ao service ([§ 8.2](#82-fábrica-de-módulo)); sem a capacidade, o service não monta SQL fora do repositório |
 | `platform` **nunca** importa de `domains`                                        | Inclusive o _error handler_: ele recebe a porta `AttemptRecorder`, não o domínio                                                                       |
-| `docs` **não** é importado por `core`, `domains` ou `platform`                   | O spec é composto no container; o router recebe o documento pronto                                                                                     |
+| `api-contract` **não** é importado por `core`, `domains` ou `platform`           | O spec é composto no container; o router recebe o documento pronto                                                                                     |
 | `app.ts` e `server.ts` **nunca** criam dependência                               | Eles consomem o `Container`                                                                                                                            |
 
 ---
@@ -1738,7 +1738,7 @@ O contrato HTTP é derivado dos schemas Zod e dos metadados de rota. A política
 
 ```text
 src/
-├── docs/
+├── api-contract/
 │   ├── openapi.ts          # compõe createDocument a partir dos *.openapi.ts
 │   ├── components.ts       # ErrorEnvelope, variantes de erro, PaginatedResponse, securitySchemes
 │   └── generate-openapi.ts  # escreve openapi/openapi.json
@@ -1748,7 +1748,7 @@ src/
 │       └── <domínio>.openapi.ts  # metadados de rota, sem import de platform
 └── platform/
     └── http/
-        └── docs-router.ts  # serve /api/v1/openapi.json e /api/v1/docs
+        └── api-contract-router.ts  # serve /api/v1/openapi.json e /api/v1/docs
 openapi/
 └── openapi.json            # artefato commitado
 docs/openapi/
@@ -1758,11 +1758,11 @@ docs/openapi/
 
 ### 23.2 Regras
 
-`*.openapi.ts` não importa `platform`; a composição é feita em `src/docs/openapi.ts` (regra de dependências em §19). `src/platform/http/docs-router.ts` é o único lugar que serve o spec e a UI.
+`*.openapi.ts` não importa `platform`; a composição é feita em `src/api-contract/openapi.ts` (regra de dependências em §19). `src/platform/http/api-contract-router.ts` é o único lugar que serve o spec e a UI.
 
 ### 23.3 Montagem
 
-O `container` compõe o documento; `src/docs/openapi.ts` é o ponto de agregação dos `*.openapi.ts` (hoje `paths` está vazio, porque nenhum domínio publicou operações) e entrega o router de docs ao `app.ts`, que o registra em `/api/v1`. A UI (Scalar via `@scalar/express-api-reference`) consome `/api/v1/openapi.json`; o esquema de segurança é `sessionCookie` (`apiKey`, `in: cookie`, `name: session_id`) e operações públicas declaram `security: []`. O router só é montado quando `config.docs.enabled` é verdadeiro: fora de produção o default é ligado, em produção é desligado e `DOCS_ENABLED=true` faz o opt-in (`false` desliga em qualquer ambiente).
+O `container` compõe o documento; `src/api-contract/openapi.ts` é o ponto de agregação dos `*.openapi.ts` (hoje `paths` está vazio, porque nenhum domínio publicou operações) e entrega o router do contrato ao `app.ts`, que o registra em `/api/v1`. A UI (Scalar via `@scalar/express-api-reference`) consome `/api/v1/openapi.json`; o esquema de segurança é `sessionCookie` (`apiKey`, `in: cookie`, `name: session_id`) e operações públicas declaram `security: []`. O router só é montado quando `config.docs.enabled` é verdadeiro: fora de produção o default é ligado, em produção é desligado e `DOCS_ENABLED=true` faz o opt-in (`false` desliga em qualquer ambiente).
 
 Ver [ADR-0026](./adr/0026-openapi-generated-from-zod.md).
 
