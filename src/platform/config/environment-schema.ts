@@ -116,7 +116,7 @@ export function toConfig(environment: EnvironmentVariables): Config {
       maxFiles: environment.UPLOAD_MAX_FILES,
       jsonBodyMaxBytes: environment.JSON_BODY_MAX_BYTES,
     },
-    docs: { enabled: environment.DOCS_ENABLED ?? !isProduction },
+    docs: { isEnabled: environment.DOCS_ENABLED ?? !isProduction },
   };
 }
 
