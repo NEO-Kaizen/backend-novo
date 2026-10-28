@@ -1491,6 +1491,9 @@ export const EnvironmentSchema = z.strictObject({
   DATABASE_NAME: z.string().min(1),
   DATABASE_USER: z.string().min(1),
   DATABASE_PASSWORD: z.string(), // presente, pode ser vazio (trust local)
+  DATABASE_ACQUIRE_TIMEOUT_MS: positiveInteger().default(10_000),
+  DATABASE_CONNECT_TIMEOUT_MS: positiveInteger().default(5_000),
+  DATABASE_STATEMENT_TIMEOUT_MS: positiveInteger().default(30_000),
   // Lista separada por vírgula; normalizeOrigin() valida cada item (omitido no recorte).
   CORS_ORIGINS: z.string().transform((value) => value.split(",")),
   JWT_SECRET: z.string().min(32),
@@ -1515,6 +1518,9 @@ export interface DatabaseConfig {
   readonly name: string;
   readonly user: string;
   readonly password: string;
+  readonly acquireTimeoutMs: number;
+  readonly connectTimeoutMs: number;
+  readonly statementTimeoutMs: number;
 }
 
 export interface Config {
@@ -1547,6 +1553,7 @@ export interface Config {
 | `DATABASE_ENGINE` lista o alvo de portabilidade                      | Só `postgres` tem dialeto hoje; engine sem dialeto falha no boot com mensagem clara (§ 10.2)                                   |
 | `NODE_ENV` sem default                                               | Produção não cai em modo development por variável ausente                                                                      |
 | `DATABASE_PASSWORD` pode ser vazio                                   | Autenticação por trust local; a variável precisa existir                                                                       |
+| Pool e conexão têm timeout (`*_TIMEOUT_MS`)                          | Sem espera indefinida em aquisição, conexão ou query                                                                           |
 | `COOKIE_NAME` e `JWT_EXPIRES_IN` no schema                           | Requeridos pelo C6 (`04-API-Conventions.md` § 5)                                                                               |
 
 ---

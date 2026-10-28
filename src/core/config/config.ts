@@ -13,6 +13,9 @@ export interface DatabaseConfig {
   readonly name: string;
   readonly user: string;
   readonly password: string;
+  readonly acquireTimeoutMs: number;
+  readonly connectTimeoutMs: number;
+  readonly statementTimeoutMs: number;
 }
 
 export interface CorsConfig {

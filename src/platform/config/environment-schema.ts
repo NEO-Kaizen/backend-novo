@@ -18,6 +18,7 @@ export const EnvironmentSchema = z.strictObject({
   }),
   PORT: positiveInteger().max(65_535, "deve ser no máximo 65535").default(3000),
 
+  // Só postgres tem dialeto; sqlite/mysql falham no boot (§16/§10.2).
   DATABASE_ENGINE: z
     .enum(DATABASE_ENGINES, {
       error: `use ${DATABASE_ENGINES.join(", ")}`,
@@ -29,6 +30,9 @@ export const EnvironmentSchema = z.strictObject({
   DATABASE_USER: z.string({ error: "obrigatória" }).min(1, "não pode ser vazia"),
   // Autenticação por trust local é válida: exigida a presença, permitido o vazio.
   DATABASE_PASSWORD: z.string({ error: "obrigatória" }),
+  DATABASE_ACQUIRE_TIMEOUT_MS: positiveInteger().default(10_000),
+  DATABASE_CONNECT_TIMEOUT_MS: positiveInteger().default(5_000),
+  DATABASE_STATEMENT_TIMEOUT_MS: positiveInteger().default(30_000),
 
   CORS_ORIGINS: z
     .string({ error: "obrigatória" })
@@ -90,6 +94,9 @@ export function toConfig(environment: EnvironmentVariables): Config {
       name: environment.DATABASE_NAME,
       user: environment.DATABASE_USER,
       password: environment.DATABASE_PASSWORD,
+      acquireTimeoutMs: environment.DATABASE_ACQUIRE_TIMEOUT_MS,
+      connectTimeoutMs: environment.DATABASE_CONNECT_TIMEOUT_MS,
+      statementTimeoutMs: environment.DATABASE_STATEMENT_TIMEOUT_MS,
     },
     cors: { origins: environment.CORS_ORIGINS },
     jwtSecret: environment.JWT_SECRET,
