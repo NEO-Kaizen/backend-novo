@@ -22,6 +22,12 @@ intencionais vivem nas specs de domínio e em `docs/adr/`.
   exceção em `docs/04-API-Conventions.md` (por exemplo, a tabela de paginação da §4.3).
 - **Desatualizado no legado** — um documento do próprio legado (`F1 docs/...`) contradiz o código no
   mesmo commit. O código prevalece e a divergência é registrada.
+- **Parcialmente compatível** — parte do comportamento coincide e parte diverge; a célula diz qual
+  parte.
+- **Registrado (sem convenção correspondente)** — comportamento do legado que não tem convenção
+  congelada aplicável; fica registrado sem veredito.
+- **Registrado (decisão aberta)** — o comportamento depende de uma decisão da tabela 0.2 ainda não
+  congelada; o ponteiro indica a linha.
 - **Não verificado** — quando a evidência não permite afirmar o comportamento (por exemplo, regra
   que depende de dados ou de configuração externa).
 - **Fora do inventário** — rota servida por middleware estático ou de infraestrutura, que não é
@@ -36,7 +42,8 @@ Linhas foram lidas no commit fixado, nunca na árvore de trabalho.
 
 Ponteiros de convenção usam `§n` para a seção e `tabela 0.1 #n`/`tabela 0.2 #n` para a linha da
 tabela correspondente em `docs/04-API-Conventions.md`. Specs de domínio são citadas por nome — por
-exemplo, “spec de `requests`”. Este documento não referencia issues.
+exemplo, “spec de `requests`”. Este documento não referencia issues do backend-novo; caminhos
+`F1 docs/issues/...` são documentos do legado.
 
 ### Índice
 
@@ -873,7 +880,7 @@ Drift anotado (sem decisão):
 | `/auth/me` — DTO                    | Compatível: `name`, `email`, `mustChangePassword` e `avatarUrl (string \| null)` coincidem; a ausência de `permissions` é aceita, porque o campo é aditivo e opcional | tabela 0.1 #9; §7; ADR-0025            |
 | `/auth/me` — `id`                   | Divergente (legado vigente): `id` é string decimal de `users.user_id`, não UUID                                                                                       | §7 (exemplo `"uuid"`); §15.1; ADR-0003 |
 | `/auth/me` — `role`                 | Divergente (legado vigente): quatro perfis (`Solicitante`, `Analista`, `Gestor`, `Administrador`), sem `Admin Root`; `role` vem do banco a cada request               | §6; ADR-0006; ADR-0025                 |
-| Rate limit de login                 | Divergente (legado vigente): sem limite e sem 429 na rota                                                                                                             | §13; tabela 0.2 #24                    |
+| Rate limit de login                 | Registrado (decisão aberta): sem limite e sem 429 na rota                                                                                                             | §13; tabela 0.2 #24                    |
 | Idempotência                        | Compatível: login não idempotente; logout repetível com 200                                                                                                           | §8.2                                   |
 | Datas e horas                       | Compatível/não aplicável: nenhum campo de data nas respostas; `password_changed_at` só existe dentro do JWT                                                           | §10                                    |
 | Idioma                              | Compatível: chaves camelCase, mensagens e valores em pt-BR                                                                                                            | §11                                    |
@@ -1125,7 +1132,7 @@ de 33 chaves (`F1 src/modules/requests/requests.repository.ts:258-273`).
 | `hasManualControls` e flags de `complementary` | `false` ou string não vazia de até 1.000  | `F1 src/modules/requests/requests.schema.ts:15-23`             |
 
 As unions `RequestCategory`, `OperationalImpact` e `RequestPriority` em
-`F1 src/shared/types/requests.ts:54-68` são referência de tipo, não allowlist de runtime: só os dois
+`F1 src/shared/types/requests.ts:29-31,54-68` são referência de tipo, não allowlist de runtime: só os dois
 enums de impacto/criticidade e a categoria (via banco) são validados.
 
 #### Limites de transporte do formulário
@@ -1273,7 +1280,7 @@ payload: `IdentificationData`, `DemandData`, `OperationalData` e `ComplementaryD
   (`F2 src/routes/(public)/solicitacao/components/solicitation-form/SolicitationForm.svelte:380-387`).
 
 **Seleção de campos marcáveis.** `F2 src/lib/pendency/field-catalog.ts` monta as mesmas chaves do
-catálogo (33 no total) em quatro seções e envia apenas `fieldKey`
+catálogo (33 no total) em quatro blocos e envia apenas `fieldKey`
 (`F2 src/lib/pendency/field-catalog.ts:32-154`; `F2 src/lib/types/pendency.ts:17-24`).
 `fullName`/`corporateEmail` só entram com `includeIdentityFields`, que fica desligado por padrão
 porque o detalhe interno não expõe o id de origem
@@ -2385,7 +2392,7 @@ de criação/atualização administrativa.
 | 15  | PUT    | `/users/me`                 | sessão; multipart                                           | `updateMyProfile`   | 200 `UserProfileResponseDTO`         | 400, 401, 403, 404, 413, 415, 500 | `F1 src/modules/users/users.router.ts:29` |
 | 16  | GET    | `/users/metrics`            | Administrador                                               | `getUserMetrics`    | 200 `UserMetricsResponse`            | 401, 403, 500                     | `F1 src/modules/users/users.router.ts:32` |
 | 17  | GET    | `/users`                    | Administrador                                               | `listUsers`         | 200 `PaginatedResponse<UserSummary>` | 400, 401, 403, 500                | `F1 src/modules/users/users.router.ts:33` |
-| 18  | POST   | `/users`                    | Administrador                                               | `createUser`        | 201 `CreateUserResponse`             | 401, 403, 409, 422, 500           | `F1 src/modules/users/users.router.ts:34` |
+| 18  | POST   | `/users`                    | Administrador                                               | `createUser`        | 201 `CreateUserResponse`             | 400, 401, 403, 409, 422, 500      | `F1 src/modules/users/users.router.ts:34` |
 | 19  | GET    | `/users/:id`                | Administrador                                               | `getUser`           | 200 `UserProfileResponseDTO`         | 401, 403, 404, 500                | `F1 src/modules/users/users.router.ts:35` |
 | 20  | PUT    | `/users/:id`                | Administrador                                               | `updateUser`        | 200 `UserProfileResponseDTO`         | 400, 401, 403, 404, 409, 422, 500 | `F1 src/modules/users/users.router.ts:36` |
 | 21  | PATCH  | `/users/:id/status`         | Administrador                                               | `changeUserStatus`  | 200 `ChangeUserStatusResponse`       | 400, 401, 403, 404, 500           | `F1 src/modules/users/users.router.ts:37` |
@@ -3974,7 +3981,7 @@ JSON; sem query params; timestamps ISO-8601 UTC, `estimatedCompletion` e
 | `internalObservations`    | string \| null                               | extraído de `requests.internal_notes`, descartando o wrapper `__triage`                      |
 
 O mapeador completo está em `F1 src/modules/requests/requests.service.ts:194-374`; a extração de
-observações internas em `F1 src/modules/requests/requests.service.ts:376-410`. O bloco de
+notas internas em `F1 src/modules/requests/requests.service.ts:376-410`. O bloco de
 pendências tem degradação silenciosa para zeros em caso de erro (`F1 src/modules/requests/requests.service.ts:236-258`).
 
 ```json
@@ -4299,26 +4306,26 @@ Drift anotado, sem decisão:
 
 ### 9.14 Confronto com `docs/04-API-Conventions.md`
 
-| Convenção                                                   | Legado nesta seção                                                                                   | Confronto                                                          |
-| ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| §1 base path `/api/v1`                                      | rotas na raiz (`F1 src/router.ts:24`)                                                                | Divergente (legado vigente)                                        |
-| §2 envelope de erro                                         | `{ status, statusCode, message }` + `code` aditivo                                                   | Compatível                                                         |
-| §2.3/§11 `code` em `snake_case`                             | `"INSUFFICIENT_ROLE_PERMISSIONS"` em maiúsculas (`F1 src/modules/requests/requests.service.ts:891`)  | Divergente (legado vigente)                                        |
-| §3 validação `400` + `fields` array                         | `422` + `fields` objeto em `PATCH .../internal` (§9.11); `400` + mensagem agregada nas demais        | Divergente (legado vigente) — C2; spec de `requests`               |
-| §4/§4.2 paginação `20`/`100` + clamp                        | `GET /requests` usa `10`/`10` e não faz clamp (`F1 src/modules/requests/requests.schema.ts:155-165`) | Divergente (legado vigente)                                        |
-| §4.3 listagem não paginada                                  | `GET /requests/assignees` sem paginação e sem linha de exceção (§9.4)                                | Divergente (legado vigente)                                        |
-| §8.1 concorrência com `targetStatusKey`/`expectedStatusKey` | `targetStatus` numérico e precondição lida no servidor (§9.8)                                        | Divergente (legado vigente)                                        |
-| §8.2 idempotência                                           | `POST` não idempotente; `PATCH` de status repetido devolve `422`, não `409`                          | Divergente (legado vigente)                                        |
-| §9 content types e multipart                                | MIME e tamanho respondem `400`; parte JSON grande responde `400` genérico (§9.12)                    | Divergente (legado vigente)                                        |
-| §10 datas                                                   | timestamps ISO-8601 UTC; `desiredDeadline`/`mappingDate`/`estimatedCompletion` em `yyyy-mm-dd`       | Compatível                                                         |
-| §11 idioma                                                  | chaves camelCase, valores pt-BR                                                                      | Compatível (exceto `code`, acima)                                  |
-| §12 `x-request-id`                                          | ausente                                                                                              | Divergente (legado vigente) — ver §3.10                            |
-| §13 rate limit do tracking                                  | rota sem limite próprio                                                                              | Compatível; o gate do `verify` não é verificado no servidor (§9.7) |
-| §15.1 status por `key`, sem id numérico no wire             | `targetStatus` é `status_id` numérico (§9.8)                                                         | Divergente (legado vigente) — ADR-0021                             |
-| §15.3 header do solicitante                                 | `X-Requester-Identity` com nome+e-mail e `401` genérico (§9.7)                                       | Divergente (legado vigente) — ADR-0023                             |
-| §15.4 códigos de sucesso                                    | `200` em leitura/atualização, `201` só na criação (§9.12)                                            | Compatível                                                         |
-| ADR-0008 máscara de protocolo                               | prefixo `MAAT` fixo no código (§9.12)                                                                | Divergente (legado vigente)                                        |
-| ADR-0017 Gestor somente leitura                             | Gestor recebe `403` ao atribuir e ao trocar status (§9.5, §9.6, §9.8)                                | Compatível                                                         |
+| Convenção                                                   | Legado nesta seção                                                                                   | Confronto                                            |
+| ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| §1 base path `/api/v1`                                      | rotas na raiz (`F1 src/router.ts:24`)                                                                | Divergente (legado vigente)                          |
+| §2 envelope de erro                                         | `{ status, statusCode, message }` + `code` aditivo                                                   | Compatível                                           |
+| §2.3/§11 `code` em `snake_case`                             | `"INSUFFICIENT_ROLE_PERMISSIONS"` em maiúsculas (`F1 src/modules/requests/requests.service.ts:891`)  | Divergente (legado vigente)                          |
+| §3 validação `400` + `fields` array                         | `422` + `fields` objeto em `PATCH .../internal` (§9.11); `400` + mensagem agregada nas demais        | Divergente (legado vigente) — C2; spec de `requests` |
+| §4/§4.2 paginação `20`/`100` + clamp                        | `GET /requests` usa `10`/`10` e não faz clamp (`F1 src/modules/requests/requests.schema.ts:155-165`) | Divergente (legado vigente)                          |
+| §4.3 listagem não paginada                                  | `GET /requests/assignees` sem paginação e sem linha de exceção (§9.4)                                | Divergente (legado vigente)                          |
+| §8.1 concorrência com `targetStatusKey`/`expectedStatusKey` | `targetStatus` numérico e precondição lida no servidor (§9.8)                                        | Divergente (legado vigente)                          |
+| §8.2 idempotência                                           | `POST` não idempotente; `PATCH` de status repetido devolve `422`, não `409`                          | Divergente (legado vigente)                          |
+| §9 content types e multipart                                | MIME e tamanho respondem `400`; parte JSON grande responde `400` genérico (§9.12)                    | Divergente (legado vigente)                          |
+| §10 datas                                                   | timestamps ISO-8601 UTC; `desiredDeadline`/`mappingDate`/`estimatedCompletion` em `yyyy-mm-dd`       | Compatível                                           |
+| §11 idioma                                                  | chaves camelCase, valores pt-BR                                                                      | Compatível (exceto `code`, acima)                    |
+| §12 `x-request-id`                                          | ausente                                                                                              | Divergente (legado vigente) — ver §3.10              |
+| §13 rate limit do tracking                                  | rota sem limite próprio; o gate do `verify` não é verificado no servidor (§9.7)                      | Divergente (legado vigente)                          |
+| §15.1 status por `key`, sem id numérico no wire             | `targetStatus` é `status_id` numérico (§9.8)                                                         | Divergente (legado vigente) — ADR-0021               |
+| §15.3 header do solicitante                                 | `X-Requester-Identity` com nome+e-mail e `401` genérico (§9.7)                                       | Divergente (legado vigente) — ADR-0023               |
+| §15.4 códigos de sucesso                                    | `200` em leitura/atualização, `201` só na criação (§9.12)                                            | Compatível                                           |
+| ADR-0008 máscara de protocolo                               | prefixo `MAAT` fixo no código (§9.12)                                                                | Divergente (legado vigente)                          |
+| ADR-0017 Gestor somente leitura                             | Gestor recebe `403` ao atribuir e ao trocar status (§9.5, §9.6, §9.8)                                | Compatível                                           |
 
 ## 10. triage
 
@@ -4597,7 +4604,7 @@ O rascunho inicial de `createEmptyTriageAssessment` traz `lastTechnicalMessage: 
 | Idempotência        | Compatível: `POST` de criação não idempotente e não deduplicado                                                                                                                                        | tabela 0.1 #11 / §8.2                      |
 | Autorização         | Divergente (legado vigente): perfis por nome de perfil em `requireRole` + custódia no service, em vez de capability keys com escopo `own`/`all`                                                        | tabela 0.1 #8 / ADR-0025; §6               |
 | Datas               | Não se aplica: a rota não expõe timestamp                                                                                                                                                              | §10                                        |
-| Request-id          | Divergente (legado vigente): sem `x-request-id` e sem `requestId` no envelope                                                                                                                          | tabela 0.1 #15 / §12                       |
+| Request-id          | Divergente (legado vigente): sem header `x-request-id`; o `requestId` do envelope é aditivo (§2.1)                                                                                                     | tabela 0.1 #15 / §12                       |
 | Rate limit          | Não se aplica: rota autenticada                                                                                                                                                                        | §13                                        |
 
 ## 11. mapping
@@ -4790,8 +4797,8 @@ Nenhum campo de atualização e `completeMapping: false` → `400 "Informe ao me
 
 1. `targetStatus` ausente → `422` `"Validação falhou"` + `fields.targetStatus: "Informe o status de destino ao concluir o mapeamento"` (`F1 src/modules/queue/mapping.service.ts:483-489`).
 2. Elegibilidade: `is_active = true`, `is_restricted = false` e `mapping_mode = 'conclusion_only'` — igualmente só `conclusion_only` (`F1 src/modules/queue/mapping.repository.ts:113-137`). Falha → `422` + `fields.targetStatus: "Status deve ter mappingMode conclusion_only e isRestricted=false"` (`F1 src/modules/queue/mapping.service.ts:491-499`).
-3. **Destino diferente de `6`** — `6` é o status `"Mapeamento agendado"` do cadastro (`F1 migrations/requester_request/20260926000000_complete_status_transition_v4.js:57-67`): `justification` obrigatória (`422` + `fields.justification: "Justificativa obrigatória ao concluir o mapeamento (1..4000 caracteres)."`), `lastTechnicalMessage` obrigatório se o destino é público (`422` + `fields.lastTechnicalMessage: "Retorno ao solicitante obrigatório para status público (1..4000 caracteres)."`), e **todos os campos da reunião são zerados** (`values = emptyValues()`), com `participants: []` (`F1 src/modules/queue/mapping.service.ts:500-519,532-537`).
-4. **Destino `6`** (agendamento): exige modalidade compatível e os campos da reunião completos (`F1 src/modules/queue/mapping.service.ts:520-526`; ver abaixo). `justification` e `lastTechnicalMessage` não são exigidos e são gravados como `null` (`F1 src/modules/queue/mapping.service.ts:549-553,566-567`).
+3. **Destino diferente de `6`** — `6` é o status `"Mapeamento agendado"` do cadastro (`F1 migrations/requester_request/20260926000000_complete_status_transition_v4.js:57-67`): `justification` obrigatória (`422` + `fields.justification: "Justificativa obrigatória ao concluir o mapeamento (1..4000 caracteres)."`), `lastTechnicalMessage` obrigatório se o destino é público (`422` + `fields.lastTechnicalMessage: "Retorno ao solicitante obrigatório para status público (1..4000 caracteres)."`), e **todos os campos do mapeamento são zerados** (`values = emptyValues()`), com `participants: []` (`F1 src/modules/queue/mapping.service.ts:500-519,532-537`).
+4. **Destino `6`** (agendamento): exige modalidade compatível e os campos do mapeamento completos (`F1 src/modules/queue/mapping.service.ts:520-526`; ver abaixo). `justification` e `lastTechnicalMessage` não são exigidos e são gravados como `null` (`F1 src/modules/queue/mapping.service.ts:549-553,566-567`).
 5. Transição de status na mesma transação: `applyStatusTransition` com `expectedStatusId` lido do contexto; se o status mudou nesse intervalo → `409 "Solicitação foi atualizada por outra operação"` (`F1 src/modules/requests/statusTransition.ts:38-51`; `F1 src/modules/queue/mapping.service.ts:619-630`).
 6. `requests.meeting_scheduled_for`/`meeting_link` são atualizados **só** quando o destino é `6`; nos demais casos são zerados (`F1 src/modules/queue/mapping.service.ts:632-638`).
 7. Liberação automática do designado: quando o destino **não** é `6` e havia `mapping_professional_id`, `requests.mapping_professional_id = null` com auditoria `mapping.assign` `newValue: null`, `changeOrigin: "system"`. Agendar (6) mantém o designado (`F1 src/modules/queue/mapping.service.ts:657-672`; `F1 src/modules/queue/mapping.repository.ts:343-359`).
@@ -4892,7 +4899,7 @@ JSON puro, sem multipart e sem paginação. `scheduledFor` de entrada aceita off
 | Datas                 | Compatível: `scheduledFor` trafega em ISO-8601 UTC com `Z` (entrada aceita offset e é normalizada)                                                                                                     | tabela 0.1 #13 / §10                        |
 | Content types         | Compatível: só JSON                                                                                                                                                                                    | tabela 0.1 #12 / §9                         |
 | Paginação             | Não se aplica: recurso único, sem listagem                                                                                                                                                             | §4                                          |
-| Request-id            | Divergente (legado vigente): sem `x-request-id` e sem `requestId` no envelope                                                                                                                          | tabela 0.1 #15 / §12                        |
+| Request-id            | Divergente (legado vigente): sem header `x-request-id`; o `requestId` do envelope é aditivo (§2.1)                                                                                                     | tabela 0.1 #15 / §12                        |
 | Rate limit            | Não se aplica: rota autenticada                                                                                                                                                                        | §13                                         |
 
 ## 12. prioritization
@@ -5136,7 +5143,7 @@ Evidência: `F1 src/modules/prioritization/prioritization.controller.ts:30-48`; 
 | Datas            | `calculatedAt` ISO-8601 UTC                                                                                | Compatível — §10                                                                                                                     |
 | Idioma           | Chaves `camelCase`; valores de domínio em pt-BR; `id` de critério é um identificador opaco em `snake_case` | Compatível — §11                                                                                                                     |
 | Idempotência     | `PUT` substitui a avaliação vigente                                                                        | Compatível — §8.2                                                                                                                    |
-| Request-id       | Ausente                                                                                                    | Divergente (legado vigente): §12; anotado na §3                                                                                      |
+| Request-id       | Ausente                                                                                                    | Divergente (legado vigente): sem header `x-request-id`; o `requestId` do envelope é aditivo (§2.1) — §12; anotado na §3              |
 
 ## 13. pending-items
 
@@ -5167,7 +5174,7 @@ O domínio usa dois transportes de identidade: cookie de sessão nas rotas inter
 | F2  | `src/lib/types/request.ts`                                                                                                       | limites de anexo do consumidor                              |
 | F2  | `src/lib/api/requester-tracking.api.ts`; `src/lib/types/requester-tracking.ts`; `src/lib/services/requester-identity.service.ts` | verify público e identidade em `sessionStorage`             |
 
-O código não referencia `F1 docs/internal-observations.md`; o documento apenas menciona `pending_item.*` como fora da timeline de observações internas (`F1 docs/internal-observations.md` §2).
+O código não referencia `F1 docs/internal-observations.md`; o documento apenas menciona `pending_item.*` como fora da linha do tempo de notas internas (`F1 docs/internal-observations.md` §2).
 
 ### 13.2 Rotas
 
@@ -5613,7 +5620,7 @@ O `protocol` ecoado é o do path, já com `trim` (`F1 src/modules/pendingItems/p
 | Datas                     | timestamps ISO-8601 UTC; `deadline` como `yyyy-mm-dd`                                                                       | Compatível — §10                                                                                                                                                          |
 | Idioma                    | Chaves `camelCase`; valores de enum (`field_edit`, `observation`, `requested`, `responded`, `validated`) em inglês          | Compatível — §11; os valores de enum são identificadores internos, não texto de UI                                                                                        |
 | Idempotência              | `review` ignora reenvio de `id+decision`; `respond` não é idempotente (segunda chamada → `409`); `POST` não deduplica       | Compatível com a tabela da §8.2; a idempotência do `review` é regra do contrato legado (`F1 docs/contract-pendencias_03.md` §7; `D-P23` do contrato de pendências em §12) |
-| Request-id                | Ausente                                                                                                                     | Divergente (legado vigente): §12; anotado na §3                                                                                                                           |
+| Request-id                | Ausente                                                                                                                     | Divergente (legado vigente): sem header `x-request-id`; o `requestId` do envelope é aditivo (§2.1) — §12; anotado na §3                                                   |
 | `deadline` no wire        | A chave é sempre emitida, com `null` quando não há prazo (`F1 src/modules/pendingItems/pendingItems.repository.ts:764-766`) | Desatualizado no legado: o contrato marca `deadline` como opcional (`F1 docs/contract-pendencias_03.md` §7)                                                               |
 
 ## 14. queue
@@ -6263,7 +6270,7 @@ CSV (`F2 src/lib/api/report.api.ts:27-39`):
 ## 16. audit
 
 Trilha de auditoria somente leitura. Três rotas: a tabela administrativa (`/audit-history`), o
-detalhe de um evento (`/audit-history/:id`) e a timeline de uma solicitação (`/audit-logs/:protocol`).
+detalhe de um evento (`/audit-history/:id`) e a linha do tempo de uma solicitação (`/audit-logs/:protocol`).
 Não existe rota de escrita: `audit_history` é só-INSERT no banco
 (`F1 docs/audit-history-contract.md:372-374`; `F1 docs/audit-events.md:47`).
 
@@ -6484,7 +6491,7 @@ exatamente os da §16.4.
   `request.override_status_admin` sem normalização
   (`F1 src/modules/auditHistory/auditHistory.repository.ts:119-120`;
   `F1 src/shared/audit/auditCatalog.ts:30-44`).
-  A timeline de observações internas, ao contrário, filtra 5 ações e normaliza o override (§17.3).
+  A linha do tempo de notas internas, ao contrário, filtra 5 ações e normaliza o override (§17.3).
 - Eventos de `mapping` não entram: o `entity_id` deles é o `mapping_id`, não o protocolo
   (`F1 src/modules/auditHistory/auditHistory.repository.ts:119`;
   `F1 src/modules/internalNotes/internalNotes.repository.ts:95-103`).
@@ -6607,7 +6614,7 @@ Evidência: `F1 src/modules/internalNotes/internalNotes.router.ts:10-17`; montag
   do router barra o perfil antes, com a mensagem
   `"Acesso restrito ao perfil Analista ou Gestor ou Administrador"`
   (`F1 src/shared/middleware/requireRole.ts:16-22`).
-- Não há checagem de custódia: qualquer perfil interno lê e escreve a timeline de qualquer
+- Não há checagem de custódia: qualquer perfil interno lê e escreve a linha do tempo de qualquer
   solicitação. A leitura embutida dos históricos de triagem/mapeamento segue o gate da rota, sem o
   check de responsável do `GET /requests/:protocol/triage` — spec de `internal-notes`
   (`F1 docs/internal-observations.md:91-95,641`).
@@ -6715,7 +6722,7 @@ Composição de `text` (`F1 src/modules/internalNotes/internalNotes.service.ts:1
 Regras de leitura dos eventos:
 
 - `request.override_status_admin` é gravado pelo bypass de Administrador no
-  `PATCH /requests/:protocol/status` e **entra** no filtro da timeline, mas é normalizado na leitura
+  `PATCH /requests/:protocol/status` e **entra** no filtro da linha do tempo, mas é normalizado na leitura
   para `action: "request.status_change"`, herdando `text`, `justification` e `lastTechnicalMessage`; a
   ação bruta nunca sai (`F1 src/modules/internalNotes/internalNotes.service.ts:113-127,282-296`;
   `F1 src/modules/internalNotes/internalNotes.repository.ts:19-28`;
@@ -6759,7 +6766,7 @@ mappings WHERE request_id = :requestId)`; as demais ações de `mapping` não en
   `EVENT_RANK = 1` e `NOTE_RANK = 0`); no empate de rank, id decrescente
   (`F1 src/modules/internalNotes/internalNotes.service.ts:28-29,75-92`).
 - Cada fonte é consultada com `limit + 1` itens estritamente mais antigos que o cursor, para detectar
-  fim de timeline sem varrer a tabela
+  fim da linha do tempo sem varrer a tabela
   (`F1 src/modules/internalNotes/internalNotes.service.ts:306-312`).
 - O predicado de cursor é assimétrico entre as fontes: com cursor de nota, as notas usam
   `created_at < t OR (created_at = t AND id < cursorId)` e os eventos usam `occurred_at < t`; com
@@ -6889,7 +6896,7 @@ Sem corpo (`F1 src/modules/internalNotes/internalNotes.controller.ts:75`).
 - O F2 reimplementa a ordem canônica na apresentação, com `BigInt` nos ids para comparar
   `internal_note_id`/`audit_id` sem perda (`F2 src/routes/(admin)/fila/[protocolo]/components/InternalNotesSection.svelte:186-204`).
 - **Composição só do cliente:** o F2 cria itens sintéticos `type: "ref"` (um por entrada de
-  `triages`/`mappings`, com rank 2 no empate) para ancorar as tabelas de histórico na timeline
+  `triages`/`mappings`, com rank 2 no empate) para ancorar as tabelas de histórico na linha do tempo
   (`F2 src/routes/(admin)/fila/[protocolo]/components/InternalNotesSection.svelte:88-99`).
   Nada disso existe no wire: o backend devolve `triages`/`mappings` apenas como listas de topo.
 - O F2 valida `content` antes de enviar, com a mesma regra de 4.000 caracteres, e mensagem própria
@@ -6945,22 +6952,22 @@ Este índice não decide nada: ele apenas agrupa, por assunto, onde o legado div
 congeladas. As decisões correspondentes estão nas specs de domínio e nos ADRs em `docs/adr/`. A
 fonte de cada assunto é o confronto da própria seção; esta lista só serve de atalho.
 
-| Assunto                   | Onde aparece                                                              | Ponteiro                            |
-| ------------------------- | ------------------------------------------------------------------------- | ----------------------------------- |
-| Base path                 | §3.1; todas as seções                                                     | convenção §1                        |
-| Envelope de erro          | §3.3; todas as seções                                                     | ADR-0005; convenções §2 e §12       |
-| Validação                 | §3.4; §5.8; §6.7; §8.14; §9.14; §10.7; §11.6; §12.6; §13.10; §14.6; §15.6 | convenção §3 (C2); tabela 0.1 #5    |
-| Paginação                 | §3.6; §14.4; §16.5                                                        | convenção §4; tabela 0.1 #6         |
-| Ids                       | §3.2; §5.3; §7; §10.3; §12.3; §14.4; §16.3; §17                           | ADR-0003; ADR-0021; convenção §15.1 |
-| Status no wire            | §9; §10; §11; §14; §15; §16                                               | ADR-0021; convenção §15.1           |
-| Perfis e autorização      | §3.2; §7; §8; §9; §14; §15; §16                                           | ADR-0006; ADR-0017; ADR-0025        |
-| Identidade do solicitante | §3.9; §9.7; §13.8                                                         | ADR-0023; convenção §15.3           |
-| Multipart e MIME          | §3.7; §7.7; §8.5; §9.12; §13.7                                            | convenção §9; tabela 0.1 #22        |
-| Anexos                    | §9.13; §13.9                                                              | sem convenção correspondente        |
-| Prazo e atraso            | §9; §14.3; §15                                                            | ADR-0024                            |
-| Prioridade                | §9; §12; §14                                                              | ADR-0016                            |
-| Mapeamento                | §11                                                                       | ADR-0001                            |
-| Auditoria                 | §16                                                                       | ADR-0020; convenção §15.2           |
-| Notas internas            | §17                                                                       | ADR-0003; ADR-0021; ADR-0025        |
-| Formulário                | §6                                                                        | ADR-0012; ADR-0019; ADR-0022        |
-| Portal-config             | §7                                                                        | ADR-0015; ADR-0018; ADR-0021        |
+| Assunto                   | Onde aparece                                                                     | Ponteiro                            |
+| ------------------------- | -------------------------------------------------------------------------------- | ----------------------------------- |
+| Base path                 | §3.1; todas as seções                                                            | convenção §1                        |
+| Envelope de erro          | §3.3; todas as seções                                                            | ADR-0005; convenções §2 e §12       |
+| Validação                 | §3.4; §5.8; §6.7; §7.12; §8.14; §9.14; §10.7; §11.6; §12.6; §13.10; §14.6; §15.6 | convenção §3 (C2); tabela 0.1 #5    |
+| Paginação                 | §3.6; §14.4; §16.5                                                               | convenção §4; tabela 0.1 #6         |
+| Ids                       | §5.3; §7; §10.3; §12.3; §14.4; §16.3; §17                                        | ADR-0003; ADR-0021; convenção §15.1 |
+| Status no wire            | §9; §10; §11; §14; §15; §16                                                      | ADR-0021; convenção §15.1           |
+| Perfis e autorização      | §3.2; §7; §8; §9; §10.7; §11.6; §12.6; §13.10; §14; §15; §16; §17.7              | ADR-0006; ADR-0017; ADR-0025        |
+| Identidade do solicitante | §3.9; §9.7; §13.8                                                                | ADR-0023; convenção §15.3           |
+| Multipart e MIME          | §3.7; §7.7; §8.5; §9.12; §13.7                                                   | convenção §9; tabela 0.1 #22        |
+| Anexos                    | §9.13; §13.9                                                                     | sem convenção correspondente        |
+| Prazo e atraso            | §9; §14.3; §15                                                                   | ADR-0024                            |
+| Prioridade                | §9; §12; §14                                                                     | ADR-0016                            |
+| Mapeamento                | §11                                                                              | ADR-0001                            |
+| Auditoria                 | §16                                                                              | ADR-0020; convenção §15.2           |
+| Notas internas            | §17                                                                              | ADR-0003; ADR-0021; ADR-0025        |
+| Formulário                | §6                                                                               | ADR-0012; ADR-0019; ADR-0022        |
+| Portal-config             | §7                                                                               | ADR-0015; ADR-0018; ADR-0021        |
