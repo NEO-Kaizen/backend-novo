@@ -24,6 +24,8 @@ intencionais vivem nas specs de domínio e em `docs/adr/`.
   mesmo commit. O código prevalece e a divergência é registrada.
 - **Parcialmente compatível** — parte do comportamento coincide e parte diverge; a célula diz qual
   parte.
+- **Não se aplica** — a convenção não incide sobre o comportamento (por exemplo, rota autenticada sem
+  rate limit).
 - **Registrado (sem convenção correspondente)** — comportamento do legado que não tem convenção
   congelada aplicável; fica registrado sem veredito.
 - **Registrado (decisão aberta)** — o comportamento depende de uma decisão da tabela 0.2 ainda não
@@ -71,15 +73,18 @@ exemplo, “spec de `requests`”. Este documento não referencia issues do back
 Cada domínio (§5 a §17) segue a mesma estrutura:
 
 1. **Fontes** — código, documentos do legado e consumidor usados na seção.
-2. **Rotas** — tabela com método, path completo, autenticação/autorização, handler, sucesso e erros.
+2. **Rotas** — tabela com número de inventário, método, path completo, autenticação/autorização,
+   handler, sucesso, erros e evidência quando a linha tiver particularidade.
 3. **Uma subseção por rota** com `Request` (path/query/body e headers quando diferirem do padrão),
    `Response` de sucesso e `Erros` (status, `code` quando houver, mensagem literal e condição).
    `Transporte` e `Evidência` aparecem quando a rota tem particularidade de transporte ou de
-   implementação; fora isso, a evidência fica nas citações do próprio texto. A coluna `code` só
-   existe nas tabelas de erro dos domínios que emitem `code`.
+   implementação; fora isso, a evidência fica nas citações do próprio texto. As tabelas de erro trazem
+   status, mensagem literal e condição; o `code`, quando o domínio o emite, aparece na tabela ou na
+   própria mensagem.
 4. **Visão do consumidor (F2)** — o que o frontend chama e onde ele diverge do backend, sem decisão.
-5. **Confronto com `docs/04-API-Conventions.md`** — `Compatível` ou `Divergente (legado vigente)`,
-   com ponteiro para a convenção, o ADR ou a decisão da spec de origem.
+5. **Confronto com `docs/04-API-Conventions.md`** — `Compatível`, `Divergente (legado vigente)` ou um
+   dos marcadores de exceção da legenda, com ponteiro para a convenção, o ADR ou a decisão da spec de
+   origem.
 
 A §6 (`forms`) é a exceção: o legado não expõe rota de formulário, então a seção documenta a
 gramática do payload de `POST /requests` e o catálogo de 33 chaves no lugar das rotas.
@@ -135,7 +140,9 @@ O legado **não** tem prefixo `/api/v1`: o `router` é montado na raiz da aplica
 | `/audit-history`                     | `auditHistoryRoutes`              | `F1 src/router.ts:31`    |
 | `/audit-logs`                        | `auditLogsRouter`                 | `F1 src/router.ts:32`    |
 
-O JSON é lido com o limite default do Express (`F1 src/app.ts:26`), sem limite explícito. O
+O JSON é lido com o limite default de 100 kb do Express (`F1 src/app.ts:26`), sem limite explícito;
+corpo acima disso → `413` no envelope `{ status, statusCode, message }`, com a mensagem em inglês do
+`body-parser` (`request entity too large`) e sem `code: payload_too_large`. O
 `/uploads` é `express.static` público sobre `Config.UPLOAD_DIR`, com `fallthrough: false`
 (`F1 src/app.ts:24`) — serve os assets do portal, não é rota de domínio e não aparece no inventário
 da §4.
@@ -157,7 +164,7 @@ da §4.
   `F1 src/modules/auth/auth.router.ts:8`). O `clearCookie` passa apenas `httpOnly`
   (`F1 src/modules/auth/auth.controller.ts:27`).
 - O `authMiddleware` valida o cookie e recarrega o usuário a cada request; perfil e `is_active` vêm
-  do banco, não do JWT (`F1 src/shared/middleware/auth.ts:25-45,74-85`). Mensagens: ausência de
+  do banco, não do JWT (`F1 src/shared/middleware/auth.ts:25-45,74-84`). Mensagens: ausência de
   cookie → `401 "Token não fornecido"`; token inválido/expirado/usuário inativo → `401 "Token inválido
 ou expirado"` (`F1 src/shared/middleware/auth.ts:27-45,87-95`).
 - Com `must_change_password` verdadeiro, apenas `PUT /auth/change-password` e `GET /auth/me`
@@ -174,8 +181,7 @@ ou expirado"` (`F1 src/shared/middleware/auth.ts:27-45,87-95`).
   `session_id` em vez de `Config.COOKIE_NAME`; com `COOKIE_NAME` customizado, a rota dual-auth trata
   a sessão como anônima.
 
-**Divergente (legado vigente):** `clearCookie` sem os demais atributos — anotado na spec de `auth`
-(§3.2).
+**Registrado (sem convenção correspondente):** `clearCookie` repete só `httpOnly` — detalhe em §5.4.
 
 ### 3.3 Envelope de erro
 
@@ -186,7 +192,7 @@ Formato vigente (`F1 src/shared/middleware/errorHandler.ts:9-44`):
 ```
 
 - `code` é aditivo e só aparece quando o erro foi criado com ele
-  (`F1 src/shared/errors/AppError.ts:1-11`; `F1 src/shared/middleware/errorHandler.ts:19-22`).
+  (`F1 src/shared/errors/AppError.ts:1-11`; `F1 src/shared/middleware/errorHandler.ts:19-21`).
 - `fields` é aditivo e só aparece em `ValidationError` (`422`), como **objeto** chave → mensagem,
   indexado pela chave da UI (`F1 src/shared/errors/ValidationError.ts:10-17`;
   `F1 src/shared/middleware/errorHandler.ts:24-30`). Exemplo:
@@ -194,11 +200,10 @@ Formato vigente (`F1 src/shared/middleware/errorHandler.ts:9-44`):
   (`F1 src/shared/validation/zodErrors.ts:99-117`).
 - Erros não previstos respondem com o `status`/`statusCode` do erro quando existir, ou `500`, e a
   mensagem `"Erro interno do servidor"` para 5xx (`F1 src/shared/middleware/errorHandler.ts:32-44`).
-- Não há `requestId` no envelope no legado.
+- Não há `requestId` no envelope no legado — compatível, porque `requestId` é aditivo (§2.1).
 
 **Divergente (legado vigente):** `fields` como objeto e uso de `422` em parte do fluxo — convenções
-§3 e tabela 0.1 #5 de `docs/04-API-Conventions.md` (alvo `400` + `fields` como lista). Não há `requestId` —
-convenção §12.
+§3 e tabela 0.1 #5 de `docs/04-API-Conventions.md` (alvo `400` + `fields` como lista).
 
 ### 3.4 Validação
 
@@ -221,8 +226,8 @@ fluxo de requests. A distribuição exata é registrada em cada seção de domí
 Leitura e atualização respondem `200` com corpo JSON. A criação responde `201` em `POST /users`,
 `POST /requests`, `POST /requests/:protocol/triage`, `POST /requests/:protocol/pending-items`
 (inclusive o anexo) e `POST /requests/:protocol/internal-notes`; `PUT /queue/requests/:protocol/mapping`
-cria com `200`; `PUT /requests/:protocol/internal-notes/read` responde `204` sem corpo. Não há uso de
-`Location` nem de `ETag`.
+cria com `200`; `PUT /requests/:protocol/internal-notes/read` responde `204` sem corpo. Nenhuma rota define
+`Location` nem `ETag` explícito.
 
 **Divergente (legado vigente):** criação com `200` no mapping — convenção §15.4 (tabela 0.1 #20).
 
@@ -273,20 +278,28 @@ aposentadoria gradual do verify.
 ### 3.10 CORS, headers e request-id
 
 - CORS com origens explícitas de `CORS_ORIGINS` (default `http://localhost:5173`), `credentials:
-true` e `exposedHeaders: ["Content-Disposition"]` (`F1 src/app.ts:11-18`; `F1 src/configs.ts:19-21`).
+true` e `exposedHeaders: ["Content-Disposition"]` (`F1 src/app.ts:11-17`; `F1 src/configs.ts:19-21`).
 - `x-powered-by` desligado (`F1 src/app.ts:19`).
 - Não há middleware de `x-request-id` nem headers de segurança no legado; também não há handler de
   404 dedicado — rota não casada recebe o 404 HTML padrão do Express, e o `errorHandler` só trata
   erros encaminhados por `next(err)` (`F1 src/app.ts:28-31`).
 
-**Divergente (legado vigente):** sem request-id, sem headers de segurança e sem 404 explícito —
-convenções §12 e §14; `02-Architecture.md` §9.4.
+**Divergente (legado vigente):** sem header `x-request-id` — convenção §12; `02-Architecture.md`
+§9.4.
+
+**Divergente (legado vigente):** `exposedHeaders` traz só `Content-Disposition`, sem `x-request-id` —
+convenção §14.
+
+**Divergente (legado vigente):** rota não casada responde o 404 HTML padrão do Express, fora do
+envelope de erro — §2.1.
+
+**Registrado (sem convenção correspondente):** ausência de headers de segurança no legado.
 
 ### 3.11 Rate limit
 
 Só o verify público de pendências aplica limite: 10 tentativas por 10 minutos, chave
 `ip:protocolo` normalizado, storage em memória do processo; excedeu →
-`429 "Muitas tentativas. Tente novamente em alguns minutos."`, sem `Retry-After`
+`429 "Muitas tentativas. Tente novamente em alguns minutos."`, sem `code: rate_limited` e sem `Retry-After`
 (`F1 src/modules/pendingItems/pendingItems.controller.ts:8-12,109-112`;
 `F1 src/shared/middleware/rateLimit.ts:7-29`).
 
@@ -606,8 +619,9 @@ O handler não levanta erro próprio. Uma falha inesperada em `clearCookie`/`res
   troca/reset de senha (`F1 src/shared/middleware/auth.ts:63-72`).
 - Seguro repetir: qualquer número de chamadas devolve 200.
 
-**Divergente (legado vigente):** `clearCookie` sem os demais atributos da emissão — convenção §5 de
-`docs/04-API-Conventions.md` e spec de `auth`.
+**Registrado (sem convenção correspondente):** `clearCookie` repete só `httpOnly`; `SameSite` e
+`Secure` da emissão não são repetidos (irrelevantes para a remoção, que casa por nome, domínio e
+path; `Path=/` é default do Express nos dois lados).
 
 #### Evidência
 
@@ -818,7 +832,7 @@ O gate de troca obrigatória não incide aqui: a rota é uma das exceções de
 - `F1 src/modules/auth/auth.repository.ts:72-94`
 - `F1 src/shared/middleware/auth.ts:54-72`
 
-### 5.7 Visão do consumidor (F2) e drift
+### 5.7 Visão do consumidor (F2) e divergências
 
 Chamadas do frontend (`F2 src/lib/api/auth.api.ts:10-60`):
 
@@ -846,7 +860,7 @@ Convergências:
   e chama `GET /auth/me` depois do `PUT` (`F2 src/routes/(app)/redefinir-senha/+page.svelte:69-93`),
   compatível com a releitura no banco.
 
-Drift anotado (sem decisão):
+Divergências anotadas (sem decisão):
 
 - `changePassword` é tipado como `void` na API e como `Result<void>` no service
   (`F2 src/lib/api/auth.api.ts:50-59`; `F2 src/lib/services/auth.service.ts:53-56`), embora o backend
@@ -874,13 +888,13 @@ Drift anotado (sem decisão):
 | `code` nos erros de `auth`          | Compatível com o envelope vigente, em que `code` é aditivo; nenhum erro de `auth` o define, então `unauthorized`/`forbidden` do catálogo não aparecem                 | §2.1; tabela 0.1 #2                    |
 | Validação                           | Divergente (legado vigente): 400 apenas com `message` agregada, sem `code: "validation_error"` e sem `fields`                                                         | §3 (C2); tabela 0.1 #5                 |
 | Sessão e cookie na emissão          | Compatível: `session_id` configurável, HttpOnly, SameSite=Lax, Secure em produção, TTL 1 dia                                                                          | §5                                     |
-| Limpeza do cookie no logout         | Divergente (legado vigente): `clearCookie` só com `httpOnly`                                                                                                          | §5; spec de `auth`; §3.2               |
+| Limpeza do cookie no logout         | Registrado (sem convenção correspondente): `clearCookie` só com `httpOnly`                                                                                            | §5.4                                   |
 | `/auth/me` — DTO                    | Compatível: `name`, `email`, `mustChangePassword` e `avatarUrl (string \| null)` coincidem; a ausência de `permissions` é aceita, porque o campo é aditivo e opcional | tabela 0.1 #9; §7; ADR-0025            |
 | `/auth/me` — `id`                   | Divergente (legado vigente): `id` é string decimal de `users.user_id`, não UUID                                                                                       | §7 (exemplo `"uuid"`); §15.1; ADR-0003 |
 | `/auth/me` — `role`                 | Divergente (legado vigente): quatro perfis (`Solicitante`, `Analista`, `Gestor`, `Administrador`), sem `Admin Root`; `role` vem do banco a cada request               | §6; ADR-0006; ADR-0025                 |
 | Rate limit de login                 | Registrado (decisão aberta): sem limite e sem 429 na rota                                                                                                             | §13; tabela 0.2 #24                    |
 | Idempotência                        | Compatível: login não idempotente; logout repetível com 200                                                                                                           | convenção §8.2                         |
-| Datas e horas                       | Compatível/não aplicável: nenhum campo de data nas respostas; `password_changed_at` só existe dentro do JWT                                                           | §10                                    |
+| Datas e horas                       | Compatível: nenhum campo de data nas respostas; `password_changed_at` só existe dentro do JWT (não aplicável)                                                         | §10                                    |
 | Idioma                              | Compatível: chaves camelCase, mensagens e valores em pt-BR                                                                                                            | §11                                    |
 | 403 de senha pendente               | Compatível em status (403); a mensagem `"Troca de senha obrigatória antes de continuar"` não traz `code`                                                              | §2.3; §5                               |
 | Revogação por `password_changed_at` | Compatível com a validação por requisição descrita na convenção                                                                                                       | §5                                     |
@@ -1112,7 +1126,7 @@ de 33 chaves (`F1 src/modules/requests/requests.repository.ts:258-273`).
 - **Categoria:** resolvida para `category_id` na mesma transação; nome inexistente entre as
   categorias `active` interrompe a criação com
   `Categoria inválida — selecione uma opção da lista.` (`400`)
-  (`F1 src/modules/requests/requests.repository.ts:55-61,300-311`).
+  (`F1 src/modules/requests/requests.repository.ts:55-61,300-310`).
 - **Não verificado:** o conjunto aceito de `demand.category` depende dos dados de `categories`;
   o código não fixa a lista.
 - **Status inicial:** a criação grava `Solicitação enviada` e devolve esse nome no `201`
@@ -1253,7 +1267,7 @@ só o tipo numérico é checado (`F1 src/modules/pendingItems/pendingItems.servi
 `requests` e `complementary.*` nas flags + detalhe
 (`F1 src/modules/pendingItems/pendingItems.repository.ts:603-742`).
 
-### 6.6 Visão do consumidor (F2) e drift
+### 6.6 Visão do consumidor (F2) e divergências
 
 **Envio.** O consumidor serializa o payload na parte textual `payload` e anexa os binários em
 `attachments` (`F2 src/lib/api/request.api.ts:31-41`). O estado do formulário é separado dos tipos do
@@ -1285,7 +1299,7 @@ porque o detalhe interno não expõe o id de origem
 (`F2 src/lib/pendency/field-catalog.ts:27-46`); na prática a UI oferece 31 chaves, enquanto o backend
 aceita as 33 com a exceção de solicitação pública.
 
-Drift anotado (sem decisão):
+Divergências anotadas (sem decisão):
 
 | Ponto                                 | Legado (F1)                                             | Consumidor (F2)                                                                                                                                                                                                                         |
 | ------------------------------------- | ------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -1379,13 +1393,13 @@ Montagem: o router é montado em `/portal-config` (`F1 src/router.ts:29`). O `GE
 
 Transporte comum das rotas JSON:
 
-- `application/json`, sem `Content-Type` alternativo aceito; corpo lido pelo default do Express
+- `application/json`, sem `Content-Type` alternativo aceito; corpo lido pelo default de 100 kb do Express
   (`F1 src/app.ts:26`), sem limite explícito próprio.
 - Datas não aparecem no payload: o contrato não expõe `created_at`/`updated_at`/`updated_by`.
-- Não há `Location`, `ETag`, `x-request-id` nem `Cache-Control`.
+- Nenhuma rota define `Location`, `ETag`, `x-request-id` nem `Cache-Control`.
 - Toda escrita roda em transação com `lockSettings` (e `lockTheme` na Aparência) e grava auditoria
   `entityType: "settings"`, `entityId: "settings"`, `actionType: "settings.update"`
-  (`F1 src/modules/portalConfig/portalConfig.service.ts:106-122,135-160,173-191,204-223,236-257,270-346,357-378`).
+  (`F1 src/modules/portalConfig/portalConfig.service.ts:106-121,135-159,173-190,204-222,236-256,270-346,357-377`).
 - **Fora do inventário:** `GET /uploads/*` é `express.static` público sobre `Config.UPLOAD_DIR` com `fallthrough: false`
   (`F1 src/app.ts:24`): serve os binários de `/assets`, é infraestrutura e **não** integra o
   inventário da §4 (mesma classificação da §3.1).
@@ -1567,7 +1581,7 @@ mesma mensagem genérica para 5xx. Não há 401/403 nesta rota.
 
 JSON; resposta completa `200` (sem `201`/`204`); nenhum header de cache.
 
-**Confronto:** `GET /portal-config` é público e devolve status inativos e
+**Divergente (legado vigente):** `GET /portal-config` é público e devolve status inativos e
 `prioritizationWeights`; o ADR-0018 separa a leitura pública da administrativa.
 
 #### Evidência
@@ -1618,7 +1632,7 @@ Efeitos: `system_settings.solicitation_mode`, `updated_by`, `updated_at`
 | ------ | ------ | --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | 400    | —      | `"Campos inválidos: solicitationMode — Modo de acesso inválido — opções: PUBLIC ou AUTHENTICATED."` | ausência **ou** valor fora da allowlist — o enum responde a mesma mensagem nos dois casos (`F1 src/modules/portalConfig/portalConfig.schema.ts:72-74`) |
 | 400    | —      | `"Campos inválidos: payload — Unrecognized key: \"modo\""`                                          | chave desconhecida (objeto `.strict()`; issue sem path é rotulada `payload` — `F1 src/shared/validation/zodErrors.ts:74,89-91`)                        |
-| 401    | —      | `"Token não fornecido"`                                                                             | sem cookie de sessão (`F1 src/shared/middleware/auth.ts:27-31`)                                                                                        |
+| 401    | —      | `"Token não fornecido"`                                                                             | sem cookie de sessão (`F1 src/shared/middleware/auth.ts:27-30`)                                                                                        |
 | 401    | —      | `"Token inválido ou expirado"`                                                                      | token inválido/expirado, usuário inativo ou perfil inativo (`F1 src/shared/middleware/auth.ts:37-45,87-95`)                                            |
 | 401    | —      | `"Sua sessão foi revogada. Faça login novamente."`                                                  | `password_changed_at` do token difere do banco (`F1 src/shared/middleware/auth.ts:63-72`)                                                              |
 | 403    | —      | `"Troca de senha obrigatória antes de continuar"`                                                   | `must_change_password` (`F1 src/shared/middleware/auth.ts:58-61`)                                                                                      |
@@ -1652,7 +1666,8 @@ JSON; resposta `200` com a seção; o cookie é o único estado de sessão.
 
 O body é parcial (envie só o que muda), mas exige **ao menos um** dos dois campos; objeto `.strict()`
 (`F1 src/modules/portalConfig/portalConfig.schema.ts:92-100`). `protocolMask` é apenas o bloco inicial
-do protocolo (`F1 src/shared/types/portalConfig.ts:78-80`).
+do protocolo (`F1 src/shared/types/portalConfig.ts:171`), mas o protocolo gerado usa o prefixo fixo
+`MAAT` (§9.12): alterar a máscara não muda os protocolos emitidos.
 
 ```http
 PATCH /portal-config/identity HTTP/1.1
@@ -2294,7 +2309,7 @@ JSON; sem paginação; no máximo 10 chaves.
 `F1 src/modules/portalConfig/portalConfig.controller.ts:208-222`;
 `F1 src/modules/portalConfig/portalConfig.service.ts:353-381`.
 
-### 7.11 Visão do consumidor (F2) e drift
+### 7.11 Visão do consumidor (F2) e divergências
 
 Leitura: `hooks.server.ts` carrega a config em todas as rotas via `loadPortalConfig`
 (`F2 src/hooks.server.ts:18`; `F2 src/lib/config/portal-config.service.ts:75-83`), que chama
@@ -2316,9 +2331,9 @@ O consumidor mantém cópias locais do contrato, e não só tipos: `src/lib/type
 (espelho), `src/lib/config/portal-defaults.ts` (defaults), `src/lib/utils/validations.ts` (limites e
 `ASSET_FILE_RULES`) e `src/lib/mocks/portal-config.mock.ts` (mock de dev).
 
-Drift observável entre F1 e F2:
+Divergências observáveis entre F1 e F2:
 
-| #   | Drift                                                                                                                                                                                                                    | Evidência                                                                                                                                                       |
+| #   | Divergência                                                                                                                                                                                                              | Evidência                                                                                                                                                       |
 | --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1   | F2 aceita aliases legados `visibility`, `closesRequest` e `isTriageExit` na leitura e os remove antes de escrever; o backend não os devolve nem os aceita (schema `.strict()`, sem normalizador)                         | `F2 src/lib/types/portal-config.ts:151-166`; `F2 src/lib/config/portal-config.service.ts:459-484`; `F1 src/modules/portalConfig/portalConfig.schema.ts:145-164` |
 | 2   | F2 aceita `blob:` na sanitize de URL de asset (preview de dev); o backend rejeita qualquer esquema que não seja `/…` ou `http(s)`                                                                                        | `F2 src/lib/config/portal-config.service.ts:382-391`; `F1 src/modules/portalConfig/portalConfig.schema.ts:261-269`                                              |
@@ -2337,6 +2352,7 @@ Não há em F2 rotas alternativas para leitura: o consumidor usa exatamente as 8
 
 | Assunto                              | Confronto                                                                                                                                                                            | Ponteiro                                                                                     |
 | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------- |
+| Leitura pública                      | Divergente (legado vigente): `GET /portal-config` devolve status inativos e `prioritizationWeights`; o ADR-0018 separa a leitura pública da administrativa                           | ADR-0018                                                                                     |
 | Base path das 8 rotas                | Divergente (legado vigente): `/portal-config` e `/portal-config/*`, sem `/api/v1`                                                                                                    | convenção §1; `F1 src/router.ts:29`                                                          |
 | Envelope de erro                     | Compatível com o envelope legado de `{ status, statusCode, message }`                                                                                                                | convenção §2.1; `F1 src/shared/middleware/errorHandler.ts:11-31`                             |
 | Erro de validação das 7 seções       | Divergente (legado vigente): 400 com mensagem agregada, sem `code` e sem `fields`                                                                                                    | convenção §3 (C2) e tabela 0.1 #5; `F1 src/shared/validation/zodErrors.ts:89-91`             |
@@ -2344,12 +2360,12 @@ Não há em F2 rotas alternativas para leitura: o consumidor usa exatamente as 8
 | Autorização dos `PATCH`              | Divergente (legado vigente): perfil `Administrador` via `requireRole`, não capability key                                                                                            | convenção §6; ADR-0025; ADR-0006; `F1 src/modules/portalConfig/portalConfig.router.ts:22-23` |
 | `id` numérico de status no wire      | Divergente (legado vigente): `statuses[].id` inteiro 1..50 é a referência; a convenção pede `key` varchar e nenhum id numérico de status no wire                                     | tabela 0.1 #18 e §15.1; ADR-0021; `F1 src/shared/types/portalConfig.ts:133-144`              |
 | Chaves de JSON                       | Compatível: camelCase em inglês, valores de domínio em pt-BR                                                                                                                         | convenção §11; `F1 src/shared/types/portalConfig.ts:1-11`                                    |
-| Corpo JSON                           | Divergente (legado vigente): `express.json()` sem limite explícito (default do Express), sem `JSON_BODY_MAX_BYTES` de 1 MiB                                                          | convenção §9; `F1 src/app.ts:26`                                                             |
+| Corpo JSON                           | Divergente (legado vigente): `express.json()` sem limite explícito (default de 100 kb do Express), sem `JSON_BODY_MAX_BYTES` de 1 MiB                                                | convenção §9; `F1 src/app.ts:26`                                                             |
 | `PATCH /assets` — limites            | Compatível: 8 arquivos, favicon 1 MiB, logo/avatar 2 MiB, imagem de login 5 MiB, parte JSON de 2 MiB                                                                                 | convenção §9; `F1 src/shared/middleware/uploadAssets.ts:11-67`                               |
 | `PATCH /assets` — erros de multipart | Divergente (legado vigente): parte JSON acima de 2 MiB responde **400** `"Erro ao processar o upload."` em vez de 413; a ausência de `code` nos 413/415 é compatível (aditivo, §2.1) | convenção §9; `F1 src/shared/middleware/uploadAssets.ts:112-134`                             |
 | Códigos de sucesso                   | Compatível: `200` em leitura e em todas as atualizações                                                                                                                              | tabela 0.1 #20 e §15.4                                                                       |
-| Paginação                            | não aplicável: a config é singleton e as listas (`categories`, `statuses`) são atômicas, sem envelope paginado                                                                       | convenção §4.3; `F1 docs/portal-config-api-0_4.md` §6–§7                                     |
-| Datas no payload                     | Compatível por ausência: a config não expõe timestamps                                                                                                                               | convenção §10; `F1 src/modules/DTOs/portalConfig/PortalConfigResponse.dto.ts:1-12`           |
+| Paginação                            | Não se aplica: a config é singleton e as listas (`categories`, `statuses`) são atômicas, sem envelope paginado                                                                       | convenção §4.3; `F1 docs/portal-config-api-0_4.md` §6–§7                                     |
+| Datas no payload                     | Compatível: a config não expõe timestamps (ausência)                                                                                                                                 | convenção §10; `F1 src/modules/DTOs/portalConfig/PortalConfigResponse.dto.ts:1-12`           |
 | Request-id                           | Divergente (legado vigente): sem header `x-request-id`; o `requestId` do envelope é aditivo (§2.1)                                                                                   | convenção §12 e tabela 0.1 #15; `F1 src/shared/middleware/errorHandler.ts:11-31`             |
 
 ## 8. users
@@ -2386,7 +2402,7 @@ de criação/atualização administrativa.
 | #   | Método | Path                        | Autenticação/autorização                                    | Handler             | Sucesso                              | Erros                             | Evidência                                 |
 | --- | ------ | --------------------------- | ----------------------------------------------------------- | ------------------- | ------------------------------------ | --------------------------------- | ----------------------------------------- |
 | 13  | GET    | `/users/analysts`           | sessão (qualquer sessão autenticada, inclusive Solicitante) | `listAnalysts`      | 200 `AssignAnalyst[]`                | 401, 403, 500                     | `F1 src/modules/users/users.router.ts:23` |
-| 14  | GET    | `/users/me`                 | sessão                                                      | `getMyProfile`      | 200 `UserProfileResponseDTO`         | 401, 403, 404                     | `F1 src/modules/users/users.router.ts:26` |
+| 14  | GET    | `/users/me`                 | sessão                                                      | `getMyProfile`      | 200 `UserProfileResponseDTO`         | 401, 403, 404, 500                | `F1 src/modules/users/users.router.ts:26` |
 | 15  | PUT    | `/users/me`                 | sessão; multipart                                           | `updateMyProfile`   | 200 `UserProfileResponseDTO`         | 400, 401, 403, 404, 413, 415, 500 | `F1 src/modules/users/users.router.ts:29` |
 | 16  | GET    | `/users/metrics`            | Administrador                                               | `getUserMetrics`    | 200 `UserMetricsResponse`            | 401, 403, 500                     | `F1 src/modules/users/users.router.ts:32` |
 | 17  | GET    | `/users`                    | Administrador                                               | `listUsers`         | 200 `PaginatedResponse<UserSummary>` | 400, 401, 403, 500                | `F1 src/modules/users/users.router.ts:33` |
@@ -2543,6 +2559,7 @@ sem path param, sem query, sem body. Exige cookie de sessão; o id vem de `req.u
 | 401    | —    | `"Token não fornecido"` / `"Token inválido ou expirado"` | §8.2 deste documento                                                                                |
 | 403    | —    | `"Troca de senha obrigatória antes de continuar"`        | senha temporária pendente                                                                           |
 | 404    | —    | `"Usuário não encontrado"`                               | sessão válida sem linha correspondente em `users` (`F1 src/modules/users/users.service.ts:281-285`) |
+| 500    | —    | `"Erro interno do servidor"`                             | falha não prevista (`F1 src/shared/middleware/errorHandler.ts:39-43`)                               |
 
 #### Transporte
 
@@ -2641,24 +2658,24 @@ mesmo `UserProfileResponseDTO` da §8.4 (campos `id`, `fullName`, `email`, `role
 
 #### Erros
 
-| Status | code | Mensagem literal                                                                                    | Condição                                                                                                                                                                    |
-| ------ | ---- | --------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 400    | —    | `"Parte 'payload' ausente no corpo da requisição."`                                                 | parte ausente, vazia ou não textual (qualquer content-type)                                                                                                                 |
-| 400    | —    | `"A parte 'payload' contém um JSON inválido."`                                                      | `JSON.parse` falha                                                                                                                                                          |
-| 400    | —    | `"Envie 'removeAvatar' ou 'avatar', não ambos."`                                                    | remoção e upload na mesma requisição                                                                                                                                        |
-| 400    | —    | mensagem agregada do Zod (ex.: `Campos inválidos: professional — Unrecognized key: "professional"`) | schema estrito/limites (`F1 src/modules/users/users.controller.ts:162-165`)                                                                                                 |
-| 401    | —    | `"Token não fornecido"` / `"Token inválido ou expirado"`                                            | §8.2 deste documento                                                                                                                                                        |
-| 403    | —    | `"Troca de senha obrigatória antes de continuar"`                                                   | senha temporária pendente                                                                                                                                                   |
-| 403    | —    | `"Área, departamento e gestor só podem ser alterados por administrador. Use PUT /users/:id."`       | perfil não administrador envia campo administrativo                                                                                                                         |
-| 403    | —    | `"Você não pode editar o perfil de outro usuário"`                                                  | actor diferente do dono — guarda do service (`F1 src/modules/users/users.service.ts:324-327`); a rota sempre usa o próprio id, então a condição não é alcançável pela borda |
-| 404    | —    | `"Usuário não encontrado"`                                                                          | dono da sessão sem linha em `users` (`F1 src/modules/users/users.service.ts:336-339`)                                                                                       |
-| 413    | —    | `"A foto de perfil deve ter no máximo 2MB."`                                                        | `LIMIT_FILE_SIZE` (`F1 src/shared/middleware/uploadAvatar.ts:63-79`)                                                                                                        |
-| 415    | —    | `Extensão "<ext>" não permitida para avatar. Aceitas: .jpg, .jpeg, .png.`                           | extensão fora da allowlist (`:36-45`)                                                                                                                                       |
-| 415    | —    | `MIME "<mime>" não permitido para avatar. Aceitos: image/jpeg, image/png.`                          | MIME fora da allowlist (`:47-55`)                                                                                                                                           |
-| 400    | —    | `"Máximo de 1 arquivo por requisição."`                                                             | `LIMIT_FILE_COUNT` (`:64-67,76-79`)                                                                                                                                         |
-| 400    | —    | `"Parte de arquivo inesperada na requisição."`                                                      | `LIMIT_UNEXPECTED_FILE` (`:66,76-79`)                                                                                                                                       |
-| 400    | —    | `"Erro ao processar o upload."`                                                                     | demais `MulterError` sem tradução, inclusive `LIMIT_FIELD_SIZE` da parte `payload` (`:76-79`)                                                                               |
-| 500    | —    | `"Falha ao salvar o avatar"`                                                                        | `saveFiles` não devolve anexo (`F1 src/modules/users/users.service.ts:427-431`)                                                                                             |
+| Status | code | Mensagem literal                                                                                    | Condição                                                                                                                                                                       |
+| ------ | ---- | --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 400    | —    | `"Parte 'payload' ausente no corpo da requisição."`                                                 | parte ausente, vazia ou não textual (qualquer content-type)                                                                                                                    |
+| 400    | —    | `"A parte 'payload' contém um JSON inválido."`                                                      | `JSON.parse` falha                                                                                                                                                             |
+| 400    | —    | `"Envie 'removeAvatar' ou 'avatar', não ambos."`                                                    | remoção e upload na mesma requisição                                                                                                                                           |
+| 400    | —    | mensagem agregada do Zod (ex.: `Campos inválidos: professional — Unrecognized key: "professional"`) | schema estrito/limites (`F1 src/modules/users/users.controller.ts:162-165`)                                                                                                    |
+| 401    | —    | `"Token não fornecido"` / `"Token inválido ou expirado"`                                            | §8.2 deste documento                                                                                                                                                           |
+| 403    | —    | `"Troca de senha obrigatória antes de continuar"`                                                   | senha temporária pendente                                                                                                                                                      |
+| 403    | —    | `"Área, departamento e gestor só podem ser alterados por administrador. Use PUT /users/:id."`       | perfil não administrador envia campo administrativo                                                                                                                            |
+| 403    | —    | `"Você não pode editar o perfil de outro usuário"`                                                  | actor diferente do usuário — guarda do service (`F1 src/modules/users/users.service.ts:324-327`); a rota sempre usa o próprio id, então a condição não é alcançável pela borda |
+| 404    | —    | `"Usuário não encontrado"`                                                                          | usuário da sessão sem linha em `users` (`F1 src/modules/users/users.service.ts:336-339`)                                                                                       |
+| 413    | —    | `"A foto de perfil deve ter no máximo 2MB."`                                                        | `LIMIT_FILE_SIZE` (`F1 src/shared/middleware/uploadAvatar.ts:63-79`)                                                                                                           |
+| 415    | —    | `Extensão "<ext>" não permitida para avatar. Aceitas: .jpg, .jpeg, .png.`                           | extensão fora da allowlist (`:36-45`)                                                                                                                                          |
+| 415    | —    | `MIME "<mime>" não permitido para avatar. Aceitos: image/jpeg, image/png.`                          | MIME fora da allowlist (`:47-55`)                                                                                                                                              |
+| 400    | —    | `"Máximo de 1 arquivo por requisição."`                                                             | `LIMIT_FILE_COUNT` (`:64-67,76-79`)                                                                                                                                            |
+| 400    | —    | `"Parte de arquivo inesperada na requisição."`                                                      | `LIMIT_UNEXPECTED_FILE` (`:66,76-79`)                                                                                                                                          |
+| 400    | —    | `"Erro ao processar o upload."`                                                                     | demais `MulterError` sem tradução, inclusive `LIMIT_FIELD_SIZE` da parte `payload` (`:76-79`)                                                                                  |
+| 500    | —    | `"Falha ao salvar o avatar"`                                                                        | `saveFiles` não devolve anexo (`F1 src/modules/users/users.service.ts:427-431`)                                                                                                |
 
 #### Transporte
 
@@ -2807,6 +2824,7 @@ e ecoa a página pedida — não há clamp (`F1 src/modules/users/users.reposito
 | 400     | —    | `"Campos inválidos: pageSize — Máximo de 50 itens por página."` (ou equivalente para `page`, `profile`, `search`) | sintaxe da query inválida (`F1 src/modules/users/users.controller.ts:39-41`; `F1 src/modules/users/users.schema.ts:59-79`) |
 | 400     | —    | `"Perfil inválido."`                                                                                              | `profile` inexistente em `profiles` (`F1 src/modules/users/users.service.ts:69-74`)                                        |
 | 401/403 | —    | comuns da §8.2 deste documento                                                                                    | sessão/perfil                                                                                                              |
+| 500     | —    | `"Erro interno do servidor"`                                                                                      | falha não prevista (`F1 src/shared/middleware/errorHandler.ts:39-43`)                                                      |
 
 #### Transporte
 
@@ -2911,7 +2929,7 @@ existe nesta resposta — não há rota de leitura dela.
 
 `F1 src/modules/users/users.router.ts:30-34`; `F1 src/modules/users/users.controller.ts:48-59`;
 `F1 src/modules/users/users.schema.ts:10-57`; `F1 src/modules/users/users.service.ts:87-169`;
-`F1 src/shared/validation/fieldSchemas.ts:5-33`; `F1 src/modules/DTOs/users/UserResponse.dto.ts:28-33`.
+`F1 src/shared/validation/fieldSchemas.ts:5-32`; `F1 src/modules/DTOs/users/UserResponse.dto.ts:28-33`.
 
 **Divergente (legado vigente):** validação de body com `422` e `fields` como objeto indexado por campo —
 convenção §3 (C2) e tabela 0.1 #5 de `docs/04-API-Conventions.md` (alvo `400`, `fields` lista). O valor
@@ -3045,6 +3063,7 @@ bloco `professional` com defaults para analista sem extensão
 | 409     | —    | `"E-mail já cadastrado"`                                        | `23505` na transação (`:557-562`)                                                  |
 | 422     | —    | mensagem agregada do Zod + `fields`                             | schema (inclui `fields.payload` para body vazio)                                   |
 | 401/403 | —    | comuns da §8.2 deste documento                                  | sessão/perfil                                                                      |
+| 500     | —    | `"Erro interno do servidor"`                                    | falha não prevista (`F1 src/shared/middleware/errorHandler.ts:39-43`)              |
 
 #### Transporte
 
@@ -3094,13 +3113,14 @@ seguinte do alvo: `authMiddleware` relê `users.is_active` e responde `401 "Toke
 
 #### Erros
 
-| Status  | code | Mensagem literal                                                 | Condição                                                       |
-| ------- | ---- | ---------------------------------------------------------------- | -------------------------------------------------------------- |
-| 400     | —    | `"Você não pode modificar a própria conta"`                      | actor = alvo (`F1 src/modules/users/users.service.ts:179-181`) |
-| 400     | —    | `"Campos obrigatórios ausentes: isActive"` (ou mensagem de tipo) | body inválido                                                  |
-| 403     | —    | `"Não é possível gerenciar contas de Administradores"`           | alvo administrador (`:188`)                                    |
-| 404     | —    | `"Usuário não encontrado"`                                       | id inválido ou inexistente (`:46-52,183-186`)                  |
-| 401/403 | —    | comuns da §8.2 deste documento                                   | sessão/perfil                                                  |
+| Status  | code | Mensagem literal                                                 | Condição                                                              |
+| ------- | ---- | ---------------------------------------------------------------- | --------------------------------------------------------------------- |
+| 400     | —    | `"Você não pode modificar a própria conta"`                      | actor = alvo (`F1 src/modules/users/users.service.ts:179-181`)        |
+| 400     | —    | `"Campos obrigatórios ausentes: isActive"` (ou mensagem de tipo) | body inválido                                                         |
+| 403     | —    | `"Não é possível gerenciar contas de Administradores"`           | alvo administrador (`:188`)                                           |
+| 404     | —    | `"Usuário não encontrado"`                                       | id inválido ou inexistente (`:46-52,183-186`)                         |
+| 401/403 | —    | comuns da §8.2 deste documento                                   | sessão/perfil                                                         |
+| 500     | —    | `"Erro interno do servidor"`                                     | falha não prevista (`F1 src/shared/middleware/errorHandler.ts:39-43`) |
 
 #### Transporte
 
@@ -3158,7 +3178,7 @@ JSON em ambos os sentidos; a senha temporária trafega no corpo da resposta.
 `F1 src/modules/users/users.service.ts:210-247`; `F1 src/modules/users/users.repository.ts:467-483`;
 `F1 src/shared/utils/passwordHandler.ts:27-33`.
 
-### 8.13 Visão do consumidor (F2) e drift
+### 8.13 Visão do consumidor (F2) e divergências
 
 Chamadas em `F2 src/lib/api/user.api.ts`:
 
@@ -3175,7 +3195,7 @@ Chamadas em `F2 src/lib/api/user.api.ts`:
 | `updateUserStatus`  | `PATCH /users/:id/status`        | envia `{ isActive }` (`:147-162`)                                                                                         |
 | `resetUserPassword` | `POST /users/:id/reset-password` | sem body (`:164-173`)                                                                                                     |
 
-Drift anotado (sem decisão):
+Divergências anotadas (sem decisão):
 
 - **`category` na listagem.** O FE envia `category` quando presente (`F2 src/lib/api/user.api.ts:94-96`;
   tipo em `F2 src/lib/types/user.ts:51-57`), mas o backend só lê `profile`, `search`, `page` e `pageSize`
@@ -3469,7 +3489,7 @@ JSON, array cru (sem envelope de paginação).
 
 #### Request
 
-- Path param `protocol` (`F1 src/modules/requests/requests.controller.ts:210-212`; guarda de
+- Path param `protocol` (`F1 src/modules/requests/requests.controller.ts:210-211`; guarda de
   protocolo vazio em `F1 src/modules/requests/requests.controller.ts:73-81`).
 - Auth: `authMiddleware` + `requireRole("Analista", "Administrador")` — **Gestor não passa no
   router** (`F1 src/modules/requests/requests.router.ts:38-43`).
@@ -3916,14 +3936,14 @@ quando o destino é público**, `last_public_status_id`, `last_technical_message
 
 #### Erros
 
-| Status | `code` | Mensagem literal                                         | Condição                                                     | Evidência                                              |
-| ------ | ------ | -------------------------------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------ |
-| 400    | —      | `"Protocolo é obrigatório"`                              | protocolo vazio após `trim` (guarda defensiva)               | `F1 src/modules/requests/requests.controller.ts:73-81` |
-| 401    | —      | `"Token não fornecido"` / `"Token inválido ou expirado"` | `AUTHENTICATED` sem sessão/sessão inválida                   | `F1 src/shared/middleware/auth.ts:27-45,87-95`         |
-| 401    | —      | `"Sessão inválida"`                                      | usuário da sessão inexistente/inativo na resolução do dono   | `F1 src/modules/requests/requests.service.ts:71-79`    |
-| 403    | —      | `"Troca de senha obrigatória antes de continuar"`        | `must_change_password`                                       | `F1 src/shared/middleware/auth.ts:49-61`               |
-| 404    | —      | `"Protocolo não encontrado"`                             | protocolo inexistente **ou** de terceiro no modo autenticado | `F1 src/modules/requests/requests.service.ts:87-100`   |
-| 500    | —      | `"Erro interno do servidor"`                             | falha não prevista                                           | `F1 src/shared/middleware/errorHandler.ts:32-44`       |
+| Status | `code` | Mensagem literal                                         | Condição                                                      | Evidência                                              |
+| ------ | ------ | -------------------------------------------------------- | ------------------------------------------------------------- | ------------------------------------------------------ |
+| 400    | —      | `"Protocolo é obrigatório"`                              | protocolo vazio após `trim` (guarda defensiva)                | `F1 src/modules/requests/requests.controller.ts:73-81` |
+| 401    | —      | `"Token não fornecido"` / `"Token inválido ou expirado"` | `AUTHENTICATED` sem sessão/sessão inválida                    | `F1 src/shared/middleware/auth.ts:27-45,87-95`         |
+| 401    | —      | `"Sessão inválida"`                                      | usuário da sessão inexistente/inativo na resolução do usuário | `F1 src/modules/requests/requests.service.ts:71-79`    |
+| 403    | —      | `"Troca de senha obrigatória antes de continuar"`        | `must_change_password`                                        | `F1 src/shared/middleware/auth.ts:49-61`               |
+| 404    | —      | `"Protocolo não encontrado"`                             | protocolo inexistente **ou** de terceiro no modo autenticado  | `F1 src/modules/requests/requests.service.ts:87-100`   |
+| 500    | —      | `"Erro interno do servidor"`                             | falha não prevista                                            | `F1 src/shared/middleware/errorHandler.ts:32-44`       |
 
 **Desatualizado no legado:** `F1 docs/solicitations-api-requests-0_4.md` §3 exemplifica o erro de
 protocolo inexistente como `"Solicitação não encontrada"`; o código responde
@@ -4114,6 +4134,9 @@ apenas aquelas em que `requests.professional_id` é o seu `details_professional.
 (`F1 src/modules/requests/requests.service.ts:787-798`). Solicitação sem responsável não é
 editável por Analista.
 
+**Divergente (legado vigente):** o ADR-0017 define o Gestor como somente leitura; aqui ele edita
+qualquer solicitação — §6 e ADR-0017.
+
 #### Response 200
 
 `200` com o mesmo `RequestInternalDetailDTO` de §9.10, relido após a transação
@@ -4188,7 +4211,7 @@ JSON; a transação grava blocos, dados editáveis do solicitante e auditoria
 
 - Em modo `AUTHENTICATED`, `requester.fullName` e `requester.corporateEmail` do payload são
   **sobrescritos** pelo cadastro do usuário da sessão (`F1 src/modules/requests/requests.service.ts:111-116,125-139`); os campos continuam obrigatórios na
-  validação. O vínculo `requests.requester_user_id` é gravado; em `PUBLIC` fica `NULL` (`F1 src/modules/requests/requests.repository.ts:190-203`).
+  validação. O vínculo `requests.requester_user_id` é gravado; em `PUBLIC` fica `NULL` (`F1 src/modules/requests/requests.repository.ts:190-202`).
 - `demand.category` precisa existir em `categories` com `status = 'active'` (`F1 src/modules/requests/requests.repository.ts:55-61,306-310`). A solicitação nasce no status
   `"Solicitação enviada"` (`F1 src/modules/requests/requests.repository.ts:36,312`).
 - Protocolo: `generateProtocol(request_id)` produz `MAAT-XXXX-XXXX` por cifra de Feistel/HMAC sobre
@@ -4256,7 +4279,7 @@ domínio — todas as outras escritas respondem `200`.
 
 `F1 src/modules/requests/requests.router.ts:86-88`; `F1 src/modules/requests/requests.controller.ts:120-150`; `F1 src/shared/middleware/upload.ts:5-64`; `F1 src/modules/requests/requests.service.ts:105-139`; `F1 src/modules/requests/requests.repository.ts:173-335`; `F1 src/shared/protocol/generateProtocol.ts:46-58`.
 
-### 9.13 Visão do consumidor (F2) e drift
+### 9.13 Visão do consumidor (F2) e divergências
 
 O consumidor cobre 8 das 10 rotas; duas não têm chamada em F2.
 
@@ -4273,7 +4296,7 @@ O consumidor cobre 8 das 10 rotas; duas não têm chamada em F2.
 | `PATCH /requests/:protocol/internal`          | `updateInternalRequest` (`F2 src/lib/api/request.api.ts:137-156`)                             | comentário do F2 ainda chama o método de "proposto"                                                     |
 | `POST /requests`                              | `createRequest` (`F2 src/lib/api/request.api.ts:21-42`)                                       | `FormData` com `payload` + N `attachments`                                                              |
 
-Drift anotado (sem decisão):
+Divergências anotadas (sem decisão):
 
 - **`search` sem efeito:** F2 envia `search` em `GET /requests` (`F2 src/lib/api/request.api.ts:57`) e o tipo declara o campo (`F2 src/lib/types/request.ts:344-348`),
   mas o schema do backend não tem `search` e o `z.object` descarta a chave (§9.3).
@@ -4304,26 +4327,26 @@ Drift anotado (sem decisão):
 
 ### 9.14 Confronto com `docs/04-API-Conventions.md`
 
-| Convenção                                                   | Situação no legado                                                                                   | Confronto                                            |
-| ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
-| §1 base path `/api/v1`                                      | rotas na raiz (`F1 src/router.ts:24`)                                                                | Divergente (legado vigente)                          |
-| §2 envelope de erro                                         | `{ status, statusCode, message }` + `code` aditivo                                                   | Compatível                                           |
-| §2.3/§11 `code` em `snake_case`                             | `"INSUFFICIENT_ROLE_PERMISSIONS"` em maiúsculas (`F1 src/modules/requests/requests.service.ts:891`)  | Divergente (legado vigente)                          |
-| §3 validação `400` + `fields` array                         | `422` + `fields` objeto em `PATCH .../internal` (§9.11); `400` + mensagem agregada nas demais        | Divergente (legado vigente) — C2; spec de `requests` |
-| §4/§4.2 paginação `20`/`100` + clamp                        | `GET /requests` usa `10`/`10` e não faz clamp (`F1 src/modules/requests/requests.schema.ts:155-165`) | Divergente (legado vigente)                          |
-| §4.3 listagem não paginada                                  | `GET /requests/assignees` sem paginação e sem linha de exceção (§9.4)                                | Divergente (legado vigente)                          |
-| §8.1 concorrência com `targetStatusKey`/`expectedStatusKey` | `targetStatus` numérico e precondição lida no servidor (§9.8)                                        | Divergente (legado vigente)                          |
-| convenção §8.2 idempotência                                 | `POST` não idempotente; `PATCH` de status repetido devolve `422`, não `409`                          | Divergente (legado vigente)                          |
-| §9 content types e multipart                                | MIME e tamanho respondem `400`; parte JSON grande responde `400` genérico (§9.12)                    | Divergente (legado vigente)                          |
-| §10 datas                                                   | timestamps ISO-8601 UTC; `desiredDeadline`/`mappingDate`/`estimatedCompletion` em `yyyy-mm-dd`       | Compatível                                           |
-| §11 idioma                                                  | chaves camelCase, valores pt-BR                                                                      | Compatível (exceto `code`, acima)                    |
-| §12 `x-request-id`                                          | ausente                                                                                              | Divergente (legado vigente) — ver §3.10              |
-| §13 rate limit do tracking                                  | rota sem limite próprio; o gate do `verify` não é verificado no servidor (§9.7)                      | Divergente (legado vigente)                          |
-| §15.1 status por `key`, sem id numérico no wire             | `targetStatus` é `status_id` numérico (§9.8)                                                         | Divergente (legado vigente) — ADR-0021               |
-| §15.3 header do solicitante                                 | `X-Requester-Identity` com nome+e-mail e `401` genérico (§9.7)                                       | Divergente (legado vigente) — ADR-0023               |
-| §15.4 códigos de sucesso                                    | `200` em leitura/atualização, `201` só na criação (§9.12)                                            | Compatível                                           |
-| ADR-0008 máscara de protocolo                               | prefixo `MAAT` fixo no código (§9.12)                                                                | Divergente (legado vigente)                          |
-| ADR-0017 Gestor somente leitura                             | Gestor recebe `403` ao atribuir e ao trocar status (§9.5, §9.6, §9.8)                                | Compatível                                           |
+| Convenção                                                   | Situação no legado                                                                                                                    | Confronto                                            |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| §1 base path `/api/v1`                                      | rotas na raiz (`F1 src/router.ts:24`)                                                                                                 | Divergente (legado vigente)                          |
+| §2 envelope de erro                                         | `{ status, statusCode, message }` + `code` aditivo                                                                                    | Compatível                                           |
+| §2.3/§11 `code` em `snake_case`                             | `"INSUFFICIENT_ROLE_PERMISSIONS"` em maiúsculas (`F1 src/modules/requests/requests.service.ts:891`)                                   | Divergente (legado vigente)                          |
+| §3 validação `400` + `fields` array                         | `422` + `fields` objeto em `PATCH .../internal` (§9.11); `400` + mensagem agregada nas demais                                         | Divergente (legado vigente) — C2; spec de `requests` |
+| §4/§4.2 paginação `20`/`100` + clamp                        | `GET /requests` usa `10`/`10` e não faz clamp (`F1 src/modules/requests/requests.schema.ts:155-165`)                                  | Divergente (legado vigente)                          |
+| §4.3 listagem não paginada                                  | `GET /requests/assignees` sem paginação e sem linha de exceção (§9.4)                                                                 | Divergente (legado vigente)                          |
+| §8.1 concorrência com `targetStatusKey`/`expectedStatusKey` | `targetStatus` numérico e precondição lida no servidor (§9.8)                                                                         | Divergente (legado vigente)                          |
+| convenção §8.2 idempotência                                 | `POST` não idempotente; `PATCH` de status repetido devolve `422`, não `409`                                                           | Divergente (legado vigente)                          |
+| §9 content types e multipart                                | MIME e tamanho respondem `400`; parte JSON grande responde `400` genérico (§9.12)                                                     | Divergente (legado vigente)                          |
+| §10 datas                                                   | timestamps ISO-8601 UTC; `desiredDeadline`/`mappingDate`/`estimatedCompletion` em `yyyy-mm-dd`                                        | Compatível                                           |
+| §11 idioma                                                  | chaves camelCase, valores pt-BR                                                                                                       | Compatível (exceto `code`, acima)                    |
+| §12 `x-request-id`                                          | ausente                                                                                                                               | Divergente (legado vigente) — ver §3.10              |
+| §13 rate limit do tracking                                  | rota sem limite próprio; o gate do `verify` não é verificado no servidor (§9.7)                                                       | Divergente (legado vigente)                          |
+| §15.1 status por `key`, sem id numérico no wire             | `targetStatus` é `status_id` numérico (§9.8)                                                                                          | Divergente (legado vigente) — ADR-0021               |
+| §15.3 header do solicitante                                 | `X-Requester-Identity` com nome+e-mail e `401` genérico (§9.7)                                                                        | Divergente (legado vigente) — ADR-0023               |
+| §15.4 códigos de sucesso                                    | `200` em leitura/atualização, `201` só na criação (§9.12)                                                                             | Compatível                                           |
+| ADR-0008 máscara de protocolo                               | prefixo `MAAT` fixo no código (§9.12)                                                                                                 | Divergente (legado vigente)                          |
+| ADR-0017 Gestor somente leitura                             | Gestor recebe `403` ao atribuir e ao trocar status (§9.5, §9.6, §9.8), mas edita qualquer solicitação em `PATCH .../internal` (§9.11) | Parcialmente compatível                              |
 
 ## 10. triage
 
@@ -4372,7 +4395,9 @@ Não existe DTO de triagem em `F1 src/modules/DTOs/requests/*`: o contrato do re
 | Body    | não há                                                                                                                                 |
 | Headers | cookie de sessão (`session_id`)                                                                                                        |
 
-O `400` de path é produzido por `formatZodIssues` (`F1 src/modules/requests/triage/triage.controller.ts:33-35`), mas o padrão de rota `/:protocol/triage` não casa com protocolo vazio — na prática o `400` não é alcançável por HTTP.
+O `400` de path é produzido por `formatZodIssues`
+(`F1 src/modules/requests/triage/triage.controller.ts:33-35`); o padrão `/:protocol/triage` só não casa
+com o segmento vazio, mas protocolo só com espaços casa a rota, é trimado e dispara o `400`.
 
 #### Autorização
 
@@ -4408,16 +4433,16 @@ O `400` de path é produzido por `formatZodIssues` (`F1 src/modules/requests/tri
 
 #### Erros
 
-| Status | Mensagem literal                                                  | Condição                                                               | Evidência                                                   |
-| ------ | ----------------------------------------------------------------- | ---------------------------------------------------------------------- | ----------------------------------------------------------- |
-| 400    | `"Protocolo é obrigatório."`                                      | protocolo vazio (guarda defensiva; `/:protocol` vazio não casa a rota) | `F1 src/modules/requests/triage/triage.controller.ts:31-37` |
-| 401    | `"Token não fornecido"`                                           | sem cookie                                                             | `F1 src/shared/middleware/auth.ts:27-45`                    |
-| 401    | `"Token inválido ou expirado"`                                    | token inválido/expirado/usuário inativo                                | `F1 src/shared/middleware/auth.ts:87-95`                    |
-| 403    | `"Troca de senha obrigatória antes de continuar"`                 | `must_change_password`                                                 | `F1 src/shared/middleware/requireRole.ts:11-13`             |
-| 403    | `"Acesso restrito ao perfil Analista ou Gestor ou Administrador"` | perfil fora da lista                                                   | `F1 src/shared/middleware/requireRole.ts:21-22`             |
-| 404    | `"Protocolo não encontrado"`                                      | protocolo inexistente                                                  | `F1 src/modules/requests/triage/triage.service.ts:44-47`    |
-| 403    | `"Acesso negado a esta solicitação"`                              | Analista sem custódia                                                  | `F1 src/modules/requests/triage/triage.service.ts:53-55`    |
-| 500    | `"Erro interno do servidor"`                                      | falha não prevista                                                     | `F1 src/shared/middleware/errorHandler.ts:32-44`            |
+| Status | Mensagem literal                                                  | Condição                                                         | Evidência                                                   |
+| ------ | ----------------------------------------------------------------- | ---------------------------------------------------------------- | ----------------------------------------------------------- |
+| 400    | `"Campos inválidos: protocol — Protocolo é obrigatório."`         | protocolo em branco (só espaços; segmento vazio não casa a rota) | `F1 src/modules/requests/triage/triage.controller.ts:31-37` |
+| 401    | `"Token não fornecido"`                                           | sem cookie                                                       | `F1 src/shared/middleware/auth.ts:27-45`                    |
+| 401    | `"Token inválido ou expirado"`                                    | token inválido/expirado/usuário inativo                          | `F1 src/shared/middleware/auth.ts:87-95`                    |
+| 403    | `"Troca de senha obrigatória antes de continuar"`                 | `must_change_password`                                           | `F1 src/shared/middleware/requireRole.ts:11-13`             |
+| 403    | `"Acesso restrito ao perfil Analista ou Gestor ou Administrador"` | perfil fora da lista                                             | `F1 src/shared/middleware/requireRole.ts:21-22`             |
+| 404    | `"Protocolo não encontrado"`                                      | protocolo inexistente                                            | `F1 src/modules/requests/triage/triage.service.ts:44-47`    |
+| 403    | `"Acesso negado a esta solicitação"`                              | Analista sem custódia                                            | `F1 src/modules/requests/triage/triage.service.ts:53-55`    |
+| 500    | `"Erro interno do servidor"`                                      | falha não prevista                                               | `F1 src/shared/middleware/errorHandler.ts:32-44`            |
 
 O `403` da leitura é `AppError` sem `code` (`F1 src/modules/requests/triage/triage.service.ts:54`), ao contrário do `403` da escrita.
 
@@ -4473,7 +4498,7 @@ Body fora do schema → `422` com `message` agregada (`"Campos obrigatórios aus
 
 Falha → `422` `message: "Validação falhou"` e `fields.exitStatus: "Status de saída deve ser um status ativo com triageMode conclusion_only e isRestricted=false"` (`F1 src/modules/requests/triage/triage.service.ts:102-111`).
 
-**Desatualizado no legado:** `F1 docs/contract-triage_04.md` §1/§4 e `F1 docs/contract-triage_04.md` "Observações" dizem `triageMode IN ('conclusion_only','free')` e o comentário de `F1 src/modules/requests/triage/triage.schema.ts:53-56` repete isso; o código filtra **só** `conclusion_only`. A mensagem de erro do documento (`"Status de saída deve ser um status ativo elegível para triagem"`) também não é a do código.
+**Desatualizado no legado:** `F1 docs/contract-triage_04.md` §1/§4 e `F1 docs/contract-triage_04.md` "Observações" dizem `triageMode IN ('conclusion_only','free')` e o comentário de `F1 src/modules/requests/triage/triage.repository.ts:137-143` repete isso; o código filtra **só** `conclusion_only`. A mensagem de erro do documento (`"Status de saída deve ser um status ativo elegível para triagem"`) também não é a do código.
 
 #### `lastTechnicalMessage`
 
@@ -4540,9 +4565,11 @@ O evento `request.unassign` é emitido com base em `professional_id !== null` da
 | 404    | `"Protocolo não encontrado"`                                                                                          | protocolo inexistente                                                | `F1 src/modules/requests/triage/triage.service.ts:66-69`                                              |
 | 422    | `"Solicitação encerrada."`                                                                                            | status terminal                                                      | `F1 src/modules/requests/triage/triage.service.ts:74-76`                                              |
 | 403    | `"Ação restrita ao Administrador ou ao Analista responsável pela demanda."` + `code: "INSUFFICIENT_ROLE_PERMISSIONS"` | status restrito (não-Admin) ou sem custódia                          | `F1 src/modules/requests/triage/triage.service.ts:78-95`                                              |
-| 422    | `"Campos obrigatórios ausentes: …"` / `"Campos inválidos: …"` + `fields`                                              | body fora do schema                                                  | `F1 src/modules/requests/triage/triage.controller.ts:52-57`                                           |
+| 422    | `"Campos obrigatórios ausentes: …"` / `"Campos inválidos: …"` + `fields`                                              | body fora do schema                                                  | `F1 src/modules/requests/triage/triage.controller.ts:53-57`                                           |
 | 422    | `"Validação falhou"` + `fields`                                                                                       | `exitStatus` inelegível, categoria inválida, retorno público ausente | `F1 src/modules/requests/triage/triage.service.ts:102-131`                                            |
 | 409    | `"Solicitação foi atualizada por outra operação."`                                                                    | `status_id` mudou entre a leitura e o update                         | `F1 src/modules/requests/triage/triage.repository.ts:210-217`                                         |
+| 500    | `"Erro interno do servidor"`                                                                                          | falha não prevista                                                   | `F1 src/shared/middleware/errorHandler.ts:39-43`                                                      |
+| 400    | `"Campos inválidos: protocol — Protocolo é obrigatório."`                                                             | protocolo em branco (só espaços; segmento vazio não casa a rota)     | `F1 src/modules/requests/triage/triage.controller.ts:10,31-35`                                        |
 
 O `409` não é uma precondição enviada pelo cliente: o `expectedStatusId` é lido do próprio banco no início do POST (`F1 src/modules/requests/triage/triage.service.ts:168`). Não há `Idempotency-Key`; repetir o POST cria outra triagem.
 
@@ -4567,11 +4594,11 @@ JSON puro, sem multipart e sem paginação. Não há campo de data no request ne
 - §4 afirma que `isRestricted` bloqueia triagem "de qualquer perfil"; no POST de triagem o `Administrador` passa (§10.4). No mapeamento o bloqueio vale para todos os perfis (§11.4).
 - A tabela de erros do §2 diz que o `403` do GET segue "mesma regra `Admin|assignee`"; o código concede leitura ao `Gestor` (`F1 src/modules/requests/triage/triage.service.ts:49-55`).
 
-### 10.6 Visão do consumidor (F2) e drift
+### 10.6 Visão do consumidor (F2) e divergências
 
 `F2 src/lib/api/triage.api.ts:7-45` chama exatamente `POST`/`GET /requests/{protocol}/triage` (protocolo com `encodeURIComponent`), com `credentials: 'include'` herdado de `F2 src/lib/api/client.ts:55-62`, e devolve `TriageAssessment` / `TriageAssessment | null` — alinhado ao backend.
 
-Drift anotado (sem decisão):
+Divergências anotadas (sem decisão):
 
 | Ponto                             | F2                                                                                                                                                                                                                                                                        | Backend (F1)                                                                                                                    | Evidência                                                                                                                                                                                       |
 | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -4652,7 +4679,8 @@ Sessão de mapeamento (participantes, agenda e destino), montada sob `/queue` no
 | Body    | não há                                                                                                          |
 | Headers | cookie de sessão (`session_id`)                                                                                 |
 
-O `400` de protocolo não é alcançável pelo roteamento (`/requests/:protocol/mapping` não casa com segmento vazio).
+O `400` de protocolo cobre protocolo em branco: `/requests/%20/mapping` casa a rota e o `trim` esvazia;
+só o segmento vazio não casa.
 
 #### Autorização
 
@@ -4716,7 +4744,7 @@ Sem nenhuma linha, a resposta é o estado vazio — `id: null`, todos os campos 
 
 | Status | Mensagem literal                                                  | Condição                                                               | Evidência                                          |
 | ------ | ----------------------------------------------------------------- | ---------------------------------------------------------------------- | -------------------------------------------------- |
-| 400    | `"Protocolo é obrigatório"`                                       | protocolo vazio (guarda defensiva; `/:protocol` vazio não casa a rota) | `F1 src/modules/queue/mapping.controller.ts:13-21` |
+| 400    | `"Protocolo é obrigatório"`                                       | protocolo vazio (guarda defensiva; `/:protocol` vazio não casa a rota) | `F1 src/modules/queue/mapping.controller.ts:13-20` |
 | 401    | `"Token não fornecido"` / `"Token inválido ou expirado"`          | sessão                                                                 | `F1 src/shared/middleware/auth.ts:27-45,87-95`     |
 | 403    | `"Troca de senha obrigatória antes de continuar"`                 | `must_change_password`                                                 | `F1 src/shared/middleware/requireRole.ts:11-13`    |
 | 403    | `"Acesso restrito ao perfil Analista ou Gestor ou Administrador"` | perfil fora da lista                                                   | `F1 src/shared/middleware/requireRole.ts:21-22`    |
@@ -4731,7 +4759,7 @@ JSON `200`; sem paginação e sem multipart. Sem mapeamento, a resposta é o est
 #### Evidência
 
 `F1 src/modules/queue/queue.router.ts:28-33`;
-`F1 src/modules/queue/mapping.controller.ts:23-27`;
+`F1 src/modules/queue/mapping.controller.ts:36-40`;
 `F1 src/modules/queue/mapping.service.ts:166-180,290-306`.
 
 ### 11.4 PUT `/queue/requests/:protocol/mapping`
@@ -4855,12 +4883,13 @@ Mesmo shape do GET (`§11.3`), montado a partir dos valores em memória já pers
 | 422    | `"Participante inválido: usuário inexistente ou inativo."` / `"Participantes duplicados não são permitidos."`                 | participantes                                             | `F1 src/modules/queue/mapping.service.ts:249,259-265`     |
 | 422    | `"Informe o retorno ao solicitante para um status público."`                                                                  | destino público sem retorno (checagem final da transição) | `F1 src/modules/requests/statusTransition.ts:28-32`       |
 | 409    | `"Solicitação foi atualizada por outra operação"`                                                                             | status mudou entre a leitura e o update (sem ponto final) | `F1 src/modules/requests/statusTransition.ts:44-50`       |
+| 500    | `"Erro interno do servidor"`                                                                                                  | falha não prevista                                        | `F1 src/shared/middleware/errorHandler.ts:39-43`          |
 
 #### Transporte
 
 JSON puro, sem multipart e sem paginação. `scheduledFor` de entrada aceita offset (`-03:00` ou `Z`) e a resposta sempre devolve UTC `Z` com precisão de segundos (`F1 src/modules/queue/mapping.schemas.ts:71-77`; `F1 src/modules/queue/mapping.service.ts:57-63`). `ip` da requisição vai para a auditoria (`F1 src/modules/queue/mapping.controller.ts:60`).
 
-### 11.5 Visão do consumidor (F2) e drift
+### 11.5 Visão do consumidor (F2) e divergências
 
 `F2 src/lib/api/mapping.api.ts:9-45` chama `GET`/`PUT /queue/requests/{protocol}/mapping` com `encodeURIComponent` e `credentials: 'include'` (`F2 src/lib/api/client.ts:55-62`), e o tipo do payload espelha os campos do backend (`F2 src/lib/types/mapping.ts:53-69`).
 
@@ -4883,22 +4912,22 @@ JSON puro, sem multipart e sem paginação. `scheduledFor` de entrada aceita off
 
 ### 11.6 Confronto com `docs/04-API-Conventions.md`
 
-| Assunto               | Confronto                                                                                                                                                                                              | Ponteiro                                    |
-| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------- |
-| Base path             | Divergente (legado vigente): recurso sob `/queue`, sem `/api/v1`                                                                                                                                       | tabela 0.1 #1 / §1                          |
-| Sucesso               | Divergente (legado vigente): `PUT` que **cria** mapeamento responde `200`, não `201`                                                                                                                   | tabela 0.1 #20 / §15.4                      |
-| Método e idempotência | Divergente (legado vigente): `PUT` faz **merge** (semântica de `PATCH`) em vez de substituir o recurso; repetir o PUT depois da conclusão devolve `422`, então a operação não é idempotente na prática | tabela 0.1 #11 / convenção §8.2             |
-| Concorrência          | Divergente (legado vigente): mudança de status embutida no `PUT`, com `targetStatus` numérico e sem `targetStatusKey`/`expectedStatusKey`; o `409` não traz `currentStatusKey`/`currentStatusId`       | tabela 0.1 #10 / §8.1                       |
-| Referência a status   | Divergente (legado vigente): `targetStatus` é `statuses.status_id` numérico; a `key` não vai ao wire                                                                                                   | tabela 0.1 #18 / ADR-0003, ADR-0021 / §15.1 |
-| Ids no wire           | Divergente (legado vigente): `participants[].id` é `users.user_id` numérico serializado como string                                                                                                    | tabela 0.1 #18 / §15.1                      |
-| Validação             | Divergente (legado vigente): `422` + `fields` objeto; `400` apenas para corpo não-objeto e para "nenhum campo"                                                                                         | tabela 0.1 #5 / §3; spec de `requests`      |
-| `code` de erro        | Divergente (legado vigente): `INSUFFICIENT_ROLE_PERMISSIONS` em `UPPER_SNAKE` em vez de snake_case do catálogo; a ausência de `code` nos demais erros é compatível (aditivo, §2.1)                     | tabela 0.1 #4 / §2.3                        |
-| Autorização           | Divergente (legado vigente): perfis + custódia no service, em vez de capability keys com escopo `own`/`all`                                                                                            | tabela 0.1 #8 / ADR-0025 / §6               |
-| Datas                 | Compatível: `scheduledFor` trafega em ISO-8601 UTC com `Z` (entrada aceita offset e é normalizada)                                                                                                     | tabela 0.1 #13 / §10                        |
-| Content types         | Compatível: só JSON                                                                                                                                                                                    | tabela 0.1 #12 / §9                         |
-| Paginação             | Não se aplica: recurso único, sem listagem                                                                                                                                                             | §4                                          |
-| Request-id            | Divergente (legado vigente): sem header `x-request-id`; o `requestId` do envelope é aditivo (§2.1)                                                                                                     | tabela 0.1 #15 / §12                        |
-| Rate limit            | Não se aplica: rota autenticada                                                                                                                                                                        | §13                                         |
+| Assunto               | Confronto                                                                                                                                                                                                                                   | Ponteiro                                    |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- |
+| Base path             | Divergente (legado vigente): recurso sob `/queue`, sem `/api/v1`                                                                                                                                                                            | tabela 0.1 #1 / §1                          |
+| Sucesso               | Divergente (legado vigente): `PUT` que **cria** mapeamento responde `200`, não `201`                                                                                                                                                        | tabela 0.1 #20 / §15.4                      |
+| Método e idempotência | Divergente (legado vigente): `PUT` faz **merge** (semântica de `PATCH`) em vez de substituir o recurso; repetir o PUT com o `id` de um mapeamento concluído devolve `422`; sem `id`, cria um novo mapeamento — a operação não é idempotente | tabela 0.1 #11 / convenção §8.2             |
+| Concorrência          | Divergente (legado vigente): mudança de status embutida no `PUT`, com `targetStatus` numérico e sem `targetStatusKey`/`expectedStatusKey`; o `409` não traz `currentStatusKey`/`currentStatusId`                                            | tabela 0.1 #10 / §8.1                       |
+| Referência a status   | Divergente (legado vigente): `targetStatus` é `statuses.status_id` numérico; a `key` não vai ao wire                                                                                                                                        | tabela 0.1 #18 / ADR-0003, ADR-0021 / §15.1 |
+| Ids no wire           | Divergente (legado vigente): `participants[].id` é `users.user_id` numérico serializado como string                                                                                                                                         | tabela 0.1 #18 / §15.1                      |
+| Validação             | Divergente (legado vigente): `422` + `fields` objeto; `400` apenas para corpo não-objeto e para "nenhum campo"                                                                                                                              | tabela 0.1 #5 / §3; spec de `requests`      |
+| `code` de erro        | Divergente (legado vigente): `INSUFFICIENT_ROLE_PERMISSIONS` em `UPPER_SNAKE` em vez de snake_case do catálogo; a ausência de `code` nos demais erros é compatível (aditivo, §2.1)                                                          | tabela 0.1 #4 / §2.3                        |
+| Autorização           | Divergente (legado vigente): perfis + custódia no service, em vez de capability keys com escopo `own`/`all`                                                                                                                                 | tabela 0.1 #8 / ADR-0025 / §6               |
+| Datas                 | Compatível: `scheduledFor` trafega em ISO-8601 UTC com `Z` (entrada aceita offset e é normalizada)                                                                                                                                          | tabela 0.1 #13 / §10                        |
+| Content types         | Compatível: só JSON                                                                                                                                                                                                                         | tabela 0.1 #12 / §9                         |
+| Paginação             | Não se aplica: recurso único, sem listagem                                                                                                                                                                                                  | §4                                          |
+| Request-id            | Divergente (legado vigente): sem header `x-request-id`; o `requestId` do envelope é aditivo (§2.1)                                                                                                                                          | tabela 0.1 #15 / §12                        |
+| Rate limit            | Não se aplica: rota autenticada                                                                                                                                                                                                             | §13                                         |
 
 ## 12. prioritization
 
@@ -5055,14 +5084,14 @@ Ordem efetiva de avaliação: path (`400`) → corpo (`400`) → existência do 
 - As notas precisam cobrir exatamente os critérios ativos: ausentes → `400 "Notas obrigatórias ausentes: <ids>"`; chaves desconhecidas → `400 "Critérios inválidos: <ids>"` (`F1 src/modules/prioritization/prioritization.service.ts:131-144`). As listas de erro mostram no máximo 10 ids e resumem o resto como `"… (+N mais)"` (`F1 src/modules/prioritization/prioritization.service.ts:147-150`).
 - O score é a média ponderada das notas pelos pesos, multiplicada por 10, arredondada a uma casa: `Number(((somaPonderada / somaPesos) * 10).toFixed(1))` (`F1 src/modules/prioritization/prioritization.service.ts:153-165`). Com notas de 1 a 5, o resultado fica no intervalo 10,0 a 50,0.
 - Soma de pesos menor ou igual a zero → `500 "Soma dos pesos dos critérios deve ser maior que zero"` (`F1 src/modules/prioritization/prioritization.service.ts:160-162`).
-- A classificação é lida da tabela `priorities` pela faixa que contém o score arredondado a uma casa (`F1 src/modules/prioritization/prioritization.repository.ts:37-44`). O seed define `Baixa` em 10,0–20,0, `Média` em 20,1–30,0, `Alta` em 30,1–40,0 e `Crítica` em 40,1–50,0 (`F1 seeds/requester_request/003_priorities.js:5-38`).
+- A faixa é lida da tabela `priorities` pela faixa que contém o score arredondado a uma casa (`F1 src/modules/prioritization/prioritization.repository.ts:37-44`). O seed define `Baixa` em 10,0–20,0, `Média` em 20,1–30,0, `Alta` em 30,1–40,0 e `Crítica` em 40,1–50,0 (`F1 seeds/requester_request/003_priorities.js:5-38`).
 - Nenhuma faixa encontrada → `500 "Nenhuma faixa de prioridade encontrada para o score <score>"` (`F1 src/modules/prioritization/prioritization.service.ts:168-174`).
 
 #### Persistência e reavaliação
 
 - Estado atual: upsert em `prioritization_evaluations` pela PK `protocol`, com `notes` em JSONB, `score` decimal(5,1), `classification` no enum nativo `request_priority`, `calculated_by` e `calculated_at` (`F1 src/modules/prioritization/prioritization.repository.ts:61-93`; `F1 migrations/20260912010000_create_prioritization_evaluations.js:15-41`).
 - A avaliação anterior é lida com `FOR SHARE` na mesma transação, para o snapshot de auditoria (`F1 src/modules/prioritization/prioritization.repository.ts:46-59`).
-- Auditoria: `entityType: "prioritization"`, `entityId: <protocol>`, `actionType: "prioritization.evaluate"`, snapshot anterior e novo (notas, score, classificação) em JSON canônico, `changeOrigin: "manual"`; `justification` vai apenas para o campo `note` da auditoria e **não** é persistida na avaliação nem devolvida na resposta (`F1 src/modules/prioritization/prioritization.service.ts:69-102`; `F1 src/modules/DTOs/prioritization/PrioritizationRequests.dto.ts:9-14`).
+- Auditoria: `entityType: "prioritization"`, `entityId: <protocol>`, `actionType: "prioritization.evaluate"`, snapshot anterior e novo (notas, score, faixa) em JSON canônico, `changeOrigin: "manual"`; `justification` vai apenas para o campo `note` da auditoria e **não** é persistida na avaliação nem devolvida na resposta (`F1 src/modules/prioritization/prioritization.service.ts:69-102`; `F1 src/modules/DTOs/prioritization/PrioritizationRequests.dto.ts:9-14`).
 - Reavaliar é o mesmo `PUT`: sobrescreve a linha vigente e acumula um evento em `audit_history`; não há tabela de histórico de notas (`F1 migrations/20260912010000_create_prioritization_evaluations.js:8-10`).
 
 #### Response 200
@@ -5108,14 +5137,14 @@ Evidência: `F1 src/modules/prioritization/prioritization.controller.ts:30-48`; 
 - A avaliação grava somente `prioritization_evaluations` (`F1 src/modules/prioritization/prioritization.repository.ts:82-86`).
 - `requests.priority_id` é preenchido com `null` na criação (`F1 src/modules/requests/requests.repository.ts:201`) e **não** é atualizado por `PUT /prioritization/:protocol/score`.
 - A Prioridade devolvida em `GET /requests` e na fila vem do join com `priorities` por `requests.priority_id` (`F1 src/modules/requests/requests.repository.ts:365,395`; `F1 src/modules/queue/queue.repository.ts:68`; `F1 src/modules/reports/reports.repository.ts:225`).
-- O detalhe interno expõe as duas leituras lado a lado: `priority` (join de `requests.priority_id`) e `prioritization { score, maxScore: 50, label }` (de `prioritization_evaluations`) (`F1 src/modules/requests/requests.service.ts:305-312`; `F1 src/modules/requests/requests.repository.ts:579-580,626-639`).
+- O detalhe interno expõe as duas leituras lado a lado: `priority` (join de `requests.priority_id`) e `prioritization { score, maxScore: 50, label }` (de `prioritization_evaluations`) (`F1 src/modules/requests/requests.service.ts:305-312`; `F1 src/modules/requests/requests.repository.ts:579-580,626-638`).
 
 **Divergente (legado vigente):** a Prioridade tem duas casas no legado (`requests.priority_id` e `prioritization_evaluations.classification`) e a avaliação não mantém a primeira. O ADR-0016 fixa a faixa em uma única casa, lida por join no domínio `prioritization`. Ver ADR-0016.
 
-### 12.5 Visão do consumidor (F2) e drift
+### 12.5 Visão do consumidor (F2) e divergências
 
 - O consumidor usa exatamente os paths do legado, sob `PUBLIC_API_URL`: `GET /prioritization/criteria` e `PUT /prioritization/:protocol/score` com `protocol` em `encodeURIComponent` (`F2 src/lib/api/prioritization.api.ts:9,13-21,26-42`). As chamadas usam `credentials: "include"` e `Content-Type: application/json` por padrão (`F2 src/lib/api/client.ts:47-69`).
-- O corpo enviado é apenas `notes` + `justification`; o comentário do consumidor registra que o score e a classificação são calculados no backend e que o frontend não envia score final como fonte de verdade (`F2 src/lib/api/prioritization.api.ts:23-25,36-41`).
+- O corpo enviado é apenas `notes` + `justification`; o comentário do consumidor registra que o score e a faixa são calculados no backend e que o frontend não envia score final como fonte de verdade (`F2 src/lib/api/prioritization.api.ts:23-25,36-41`).
 - Os tipos de wire espelham o legado: `CriterionResponse`, `ListCriteriaResponse`, `EvaluatePrioritizationRequest` e `EvaluatePrioritizationResponse` (`F2 src/lib/types/prioritization.ts:28-52`).
 - **Dois tipos de resultado no consumidor.** O tipo de wire tem `protocol`, `score`, `classification`, `calculatedAt` e `calculatedBy` (`F2 src/lib/types/prioritization.ts:46-52`); o tipo de UI `PrioritizationResult` tem `score`, `maxScore` e `level` (`F2 src/lib/types/prioritization.ts:19-23`). A conversão é feita no service: `score` do wire, `maxScore = criteria.length * MAX_NOTE` calculado no cliente, `level = classification` (`F2 src/lib/services/prioritization.service.ts:103-107`).
 - **`maxScore` é derivação do consumidor.** Nenhuma das duas rotas devolve `maxScore`; o detalhe interno devolve `maxScore: 50` fixo (`F1 src/modules/requests/requests.service.ts:310`), e o consumidor usa `solicitation.prioritization.maxScore ?? 50` (`F2 src/routes/(admin)/fila/[protocolo]/components/SolicitationSpecs.svelte:237`). Com 10 critérios e nota máxima 5, a fórmula do cliente também resulta em 50 (`F2 src/lib/services/prioritization.service.ts:105`).
@@ -5179,7 +5208,7 @@ O código não referencia `F1 docs/internal-observations.md`; o documento apenas
 | #   | Método | Path                                                           | Autenticação/autorização                                                                      | Handler              | Sucesso | Erros                                    |
 | --- | ------ | -------------------------------------------------------------- | --------------------------------------------------------------------------------------------- | -------------------- | ------- | ---------------------------------------- |
 | 39  | POST   | `/requests/:protocol/pending-items`                            | cookie; `Analista`, `Gestor` ou `Administrador`; no service, `Administrador` ou o Responsável | `createPendingItems` | `201`   | `400`, `401`, `403`, `404`, `409`, `500` |
-| 40  | GET    | `/requests/:protocol/pending-items`                            | dual: cookie ou `X-Requester-Identity`                                                        | `listPendingItems`   | `200`   | `401`, `403`, `500`                      |
+| 40  | GET    | `/requests/:protocol/pending-items`                            | dual: cookie ou `X-Requester-Identity`                                                        | `listPendingItems`   | `200`   | `401`, `403`, `404`, `500`               |
 | 41  | PATCH  | `/requests/:protocol/pending-items/review`                     | cookie; `Analista`, `Gestor` ou `Administrador`; no service, `Administrador` ou o Responsável | `reviewPendingItems` | `200`   | `400`, `401`, `403`, `404`, `409`, `500` |
 | 42  | PATCH  | `/requests/:protocol/pending-items/:pendingItemId`             | dual: cookie ou `X-Requester-Identity`                                                        | `respondPendingItem` | `200`   | `400`, `401`, `403`, `404`, `409`, `500` |
 | 43  | POST   | `/requests/:protocol/pending-items/:pendingItemId/attachments` | dual: cookie ou `X-Requester-Identity`; multipart                                             | `attachPendingItem`  | `201`   | `400`, `401`, `403`, `404`, `500`        |
@@ -5598,7 +5627,7 @@ O `protocol` ecoado é o do path, já com `trim` (`F1 src/modules/pendingItems/p
 
 **Desatualizado no legado:** `F1 docs/contract-pendencias_03.md` §7 apresenta `protocol` como parte obrigatória do corpo do verify; o controller preenche o campo a partir do path quando ele está ausente (`F1 src/modules/pendingItems/pendingItems.controller.ts:105-108`), então o corpo sem `protocol` passa pela validação e é comparado pelo valor do path.
 
-### 13.9 Visão do consumidor (F2) e drift
+### 13.9 Visão do consumidor (F2) e divergências
 
 - O consumidor usa exatamente os paths do legado, sem `/api/v1`: `/requests/:protocol/pending-items` (`F2 src/lib/api/pending-item.api.ts:18-21`), `.../:pendingItemId` (`F2 src/lib/api/pending-item.api.ts:90-98`), `.../:pendingItemId/attachments` (`F2 src/lib/api/pending-item.api.ts:130-138`), `.../review` (`F2 src/lib/api/pending-item.api.ts:154-161`) e `/requests/:protocol/public/verify` (`F2 src/lib/api/requester-tracking.api.ts:30-33`).
 - O transporte é o do legado: `credentials: "include"` por padrão e `X-Requester-Identity` montado como JSON `{name,email}` quando há identidade pública (`F2 src/lib/api/client.ts:47-69`; `F2 src/lib/api/client.ts:36-43`).
@@ -5894,7 +5923,7 @@ JSON, sem headers próprios: a rota não define `Cache-Control` nem `ETag`. Data
 serializadas em ISO-8601 UTC por `toIso` (`F1 src/modules/queue/queue.service.ts:30-33`); as
 métricas não expõem data.
 
-### 14.5 Visão do consumidor (F2) e drift
+### 14.5 Visão do consumidor (F2) e divergências
 
 O frontend não tem `queue.api.ts`: as duas chamadas vivem em `request.api.ts`.
 
@@ -5903,7 +5932,7 @@ O frontend não tem `queue.api.ts`: as duas chamadas vivem em `request.api.ts`.
 | `listQueueRequests` | `/queue`         | `page`, `pageSize`, `search`, `status`, `priority`, `assigneeId` — só quando definidos | `F2 src/lib/api/request.api.ts:68-95`  |
 | `getQueueMetrics`   | `/queue/metrics` | nenhuma                                                                                | `F2 src/lib/api/request.api.ts:97-105` |
 
-Drift anotado (sem decisão):
+Divergências anotadas (sem decisão):
 
 - **`unassigned` não existe no consumidor.** `QueueFilterQuery` do F2 declara só `search`, `status`,
   `priority`, `assigneeId` (`F2 src/lib/types/queue.ts:20-25`); a query nunca envia `unassigned`
@@ -5948,7 +5977,9 @@ Drift anotado (sem decisão):
   (`F1 src/modules/queue/queue.service.ts:17-22`), não de capability/escopo `own`/`all` — ADR-0025 e
   convenção §6.
 - **Compatível:** envelope `{ data, page, pageSize, total, totalPages }` com `totalPages = 0` quando
-  vazio (§4.1); `page` 1-based; `assignees` é campo aditivo no envelope (§2.1 admite aditivos).
+  vazio (§4.1); `page` 1-based.
+- **Registrado (sem convenção correspondente):** `assignees` é campo aditivo no envelope de sucesso; a
+  §4.1 não o prevê.
 - **Compatível:** datas de timestamp em ISO-8601 UTC (§10).
 - **Divergente (legado vigente):** erro de validação em `400` com mensagem agregada e sem `fields`
   — a §3 e a tabela 0.1 #5 congelam `400` + `validation_error` + `fields: [{ path, message }]`.
@@ -6111,6 +6142,7 @@ Regras de composição:
 | 400    | param desconhecido                      | 400 pelo `.strict()`                                                                                      | `F1 src/modules/reports/reports.schema.ts:16`        |
 | 401    | sem sessão / sessão inválida            | `"Token não fornecido"` / `"Token inválido ou expirado"`                                                  | `F1 src/shared/middleware/auth.ts:27-45`             |
 | 403    | perfil não autorizado ou senha pendente | `"Acesso restrito ao perfil Gestor ou Administrador"` / `"Troca de senha obrigatória antes de continuar"` | `F1 src/shared/middleware/requireRole.ts:11-22`      |
+| 500    | falha não prevista                      | `"Erro interno do servidor"`                                                                              | `F1 src/shared/middleware/errorHandler.ts:39-43`     |
 
 #### Transporte
 
@@ -6231,7 +6263,7 @@ Regras de composição:
 O `.strict()` não distingue "param desconhecido" de "filtro inválido": ambos saem com 400 e mensagem
 do formatter; não há como o cliente saber qual chave foi rejeitada além do texto.
 
-### 15.5 Visão do consumidor (F2) e drift
+### 15.5 Visão do consumidor (F2) e divergências
 
 Dashboard (`F2 src/lib/api/dashboard.api.ts:7-28`):
 
@@ -6254,7 +6286,7 @@ CSV (`F2 src/lib/api/report.api.ts:27-39`):
   `filename="([^"]+)"`, com fallback `"solicitacoes.csv"`
   (`F2 src/lib/api/report.api.ts:7,21-25`).
 - o download depende de o header estar exposto por CORS
-  (`F1 src/app.ts:11-18`; `F1 src/configs.ts:19-21`).
+  (`F1 src/app.ts:11-17`; `F1 src/configs.ts:19-21`).
 - `exportQueueCsv` do F2 traduz `403` para `"Seu perfil não possui permissão para exportar a fila."`
   e os demais erros para `"Não foi possível exportar a fila centralizada."`
   (`F2 src/lib/services/report.service.ts:6-27`) — a mensagem literal do backend não é exibida.
@@ -6281,6 +6313,9 @@ CSV (`F2 src/lib/api/report.api.ts:27-39`):
 - Sem conflito registrado: `text/csv` não é tratado pela §9 (que cobre JSON e multipart).
 - Sem conflito registrado: `Cache-Control: no-store` e `X-Content-Type-Options: nosniff` no CSV não
   são previstos nem proibidos pelas convenções.
+- **Divergente (legado vigente):** gate por perfil (`requireRole("Gestor", "Administrador")`), sem
+  capability nem escopo `own`/`all` — §6 e ADR-0025
+  (`F1 src/modules/reports/reports.router.ts:8-18`).
 
 ## 16. audit
 
@@ -6527,7 +6562,7 @@ exatamente os da §16.4.
 O contrato registra o mesmo recorte de permissão e de erros
 (`F1 docs/audit-history-contract.md:341-354`).
 
-### 16.6 Visão do consumidor (F2) e drift
+### 16.6 Visão do consumidor (F2) e divergências
 
 - O F2 consome apenas `/audit-history` e `/audit-history/:id`
   (`F2 src/lib/api/audit-history.api.ts:10-53`). **Não há cliente para `/audit-logs/:protocol`** em
@@ -6584,6 +6619,11 @@ O contrato registra o mesmo recorte de permissão e de erros
   (`F1 migrations/202609100009_create_audit_history.js:14`), e omite `ip_address` e
   `last_technical_message`, criados depois
   (`F1 migrations/requester_request/20260926000000_complete_status_transition_v4.js:256-260`).
+- **Divergente (legado vigente):** `400` com mensagem agregada e sem `fields` — §3 e tabela 0.1 #5
+  (`F1 src/modules/auditHistory/auditHistory.controller.ts:15`).
+- **Divergente (legado vigente):** gate por perfil (`requireRole("Administrador", "Gestor")` e
+  `requireRole("Analista", "Gestor", "Administrador")`), sem capability nem escopo `own`/`all` — §6 e
+  ADR-0025 (`F1 src/modules/auditHistory/auditHistory.router.ts:19-24,40-45`).
 
 ## 17. internal-notes
 
@@ -6898,7 +6938,7 @@ Sem corpo (`F1 src/modules/internalNotes/internalNotes.controller.ts:75`).
 | 404       | protocolo sem solicitação                          | `"Solicitação não encontrada"`                                                                                                           | `F1 src/modules/internalNotes/internalNotes.service.ts:351`                               |
 | 500       | falha não prevista                                 | `"Erro interno do servidor"`                                                                                                             | `F1 src/shared/middleware/errorHandler.ts:32-44`                                          |
 
-### 17.6 Visão do consumidor (F2) e drift
+### 17.6 Visão do consumidor (F2) e divergências
 
 - Cliente: `/requests/{protocol}/internal-notes` com `encodeURIComponent` no protocolo; GET com
   `limit`/`cursor` só quando definidos, POST e PUT com body JSON
@@ -6952,7 +6992,7 @@ Sem corpo (`F1 src/modules/internalNotes/internalNotes.controller.ts:75`).
   (`F1 docs/internal-notes-contract.md:44-60,72-76`) e ausência de `triages`/`mappings`. O código
   vigente pagina por keyset, devolve `nextCursor`, adiciona os tipos `note`/`event` e os dois
   históricos de topo (`F1 src/modules/DTOs/internalNotes/InternalNotes.dto.ts:52-58`;
-  `F1 docs/internal-observations.md:1-14`). O documento v1 continua citando `requests.internal_notes`
+  `F1 docs/internal-observations.md:1-13`). O documento v1 continua citando `requests.internal_notes`
   como legado fora do contrato (`F1 docs/internal-notes-contract.md:9`), o que o código atual mantém.
 - **Desatualizado no legado:** `F1 docs/internal-observations.md:87` grafia a mensagem de senha
   pendente como `"Troca de senha obrigatórica antes de continuar"`; a mensagem emitida é
@@ -6960,6 +7000,8 @@ Sem corpo (`F1 src/modules/internalNotes/internalNotes.controller.ts:75`).
 - **Desatualizado no legado:** `F1 docs/internal-observations.md:597-601` exemplifica o 403 com
   `"Acesso restrito aos perfis internos"` (mensagem do controller, inalcançável); o 403 efetivo de
   perfil vem do `requireRole` (`F1 src/shared/middleware/requireRole.ts:21-22`).
+- **Divergente (legado vigente):** `400` com mensagem agregada e sem `fields` — §3 e tabela 0.1 #5
+  (`F1 src/modules/internalNotes/internalNotes.controller.ts:13-19,41,56,70`).
 
 ## 18. Divergências anotadas (índice)
 
@@ -6967,22 +7009,27 @@ Este índice não decide nada: ele apenas agrupa, por assunto, onde o legado div
 congeladas. As decisões correspondentes estão nas specs de domínio e nos ADRs em `docs/adr/`. A
 fonte de cada assunto é o confronto da própria seção; esta lista só serve de atalho.
 
-| Assunto                   | Onde aparece                                                                     | Ponteiro                            |
-| ------------------------- | -------------------------------------------------------------------------------- | ----------------------------------- |
-| Base path                 | §3.1; todas as seções                                                            | convenção §1                        |
-| Envelope de erro          | §3.3; todas as seções                                                            | ADR-0005; convenções §2 e §12       |
-| Validação                 | §3.4; §5.8; §6.7; §7.12; §8.14; §9.14; §10.7; §11.6; §12.6; §13.10; §14.6; §15.6 | convenção §3 (C2); tabela 0.1 #5    |
-| Paginação                 | §3.6; §14.4; §16.5                                                               | convenção §4; tabela 0.1 #6         |
-| Ids                       | §5.3; §7; §10.3; §12.3; §14.4; §16.3; §17                                        | ADR-0003; ADR-0021; convenção §15.1 |
-| Status no wire            | §9; §10; §11; §14; §15; §16                                                      | ADR-0021; convenção §15.1           |
-| Perfis e autorização      | §3.2; §7; §8; §9; §10.7; §11.6; §12.6; §13.10; §14; §15; §16; §17.7              | ADR-0006; ADR-0017; ADR-0025        |
-| Identidade do solicitante | §3.9; §9.7; §13.8                                                                | ADR-0023; convenção §15.3           |
-| Multipart e MIME          | §3.7; §7.7; §8.5; §9.12; §13.7                                                   | convenção §9; tabela 0.1 #22        |
-| Anexos                    | §9.13; §13.9                                                                     | sem convenção correspondente        |
-| Prazo e atraso            | §9; §14.3; §15                                                                   | ADR-0024                            |
-| Prioridade                | §9; §12; §14                                                                     | ADR-0016                            |
-| Mapeamento                | §11                                                                              | ADR-0001                            |
-| Auditoria                 | §16                                                                              | ADR-0020; convenção §15.2           |
-| Notas internas            | §17                                                                              | ADR-0003; ADR-0021; ADR-0025        |
-| Formulário                | §6                                                                               | ADR-0012; ADR-0019; ADR-0022        |
-| Portal-config             | §7                                                                               | ADR-0015; ADR-0018; ADR-0021        |
+| Assunto                     | Onde aparece                                                                                         | Ponteiro                            |
+| --------------------------- | ---------------------------------------------------------------------------------------------------- | ----------------------------------- |
+| Base path                   | §3.1; todas as seções                                                                                | convenção §1                        |
+| Validação                   | §3.3; §3.4; §5.8; §6.7; §7.12; §8.14; §9.14; §10.7; §11.6; §12.6; §13.10; §14.6; §15.6; §16.7; §17.7 | convenção §3 (C2); tabela 0.1 #5    |
+| Paginação                   | §3.6; §8.14; §9.14; §12.6; §14.6; §15.6; §16.5                                                       | convenção §4; tabela 0.1 #6         |
+| Ids                         | §5.3; §7; §8.14; §10.3; §11.6; §14.4; §15.6; §17                                                     | ADR-0003; ADR-0021; convenção §15.1 |
+| Status no wire              | §7; §9; §10; §11; §14; §15; §17                                                                      | ADR-0021; convenção §15.1           |
+| Perfis e autorização        | §5.8; §7; §8; §9; §10.7; §11.6; §12.6; §13.10; §14; §15.6; §16.7; §17.7                              | ADR-0006; ADR-0017; ADR-0025        |
+| Identidade do solicitante   | §3.9; §9.7; §13.8                                                                                    | ADR-0023; convenção §15.3           |
+| Multipart e MIME            | §3.7; §7.7; §9.12; §13.7                                                                             | convenção §9; tabela 0.1 #22        |
+| Anexos                      | §9.13; §13.9                                                                                         | sem convenção correspondente        |
+| Request-id                  | §3.10; §7.12; §9.14; §10.7; §11.6; §12.6; §13.10                                                     | convenção §12                       |
+| 404 fora do envelope        | §3.10                                                                                                | §2.1                                |
+| CORS                        | §3.10                                                                                                | convenção §14                       |
+| Rate limit                  | §3.11; §13.10                                                                                        | convenção §13                       |
+| Concorrência e idempotência | §9.14; §10.7; §11.6                                                                                  | convenções §8.1 e §8.2              |
+| Datas                       | §6.7                                                                                                 | convenção §10                       |
+| Códigos de sucesso          | §3.5; §11.6                                                                                          | tabela 0.1 #20; §15.4               |
+| Prazo e atraso              | §14.3; §15.3                                                                                         | ADR-0024                            |
+| Prioridade                  | §12                                                                                                  | ADR-0016                            |
+| Auditoria                   | §16                                                                                                  | ADR-0020; convenção §15.2           |
+| Notas internas              | §17                                                                                                  | ADR-0003; ADR-0021; ADR-0025        |
+| Formulário                  | §6                                                                                                   | ADR-0012; ADR-0019; ADR-0022        |
+| Portal-config               | §7                                                                                                   | ADR-0018; ADR-0021                  |
