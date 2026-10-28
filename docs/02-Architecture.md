@@ -1247,7 +1247,7 @@ O `context` carrega **o que** foi tentado; a borda completa com **quem** e **ond
 
 ### 12.4 Mapeamento HTTP
 
-Erro de domínio não conhece status HTTP. O mapeamento acontece **uma vez**, na borda:
+Erro de domínio não conhece status HTTP. O mapeamento acontece **uma vez**, na borda. O mapa abaixo é alvo: entra com o primeiro `DomainError`; hoje o `AppError` carrega o próprio status:
 
 ```ts
 // src/core/http/error-mapper.ts

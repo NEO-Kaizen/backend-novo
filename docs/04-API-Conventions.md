@@ -108,7 +108,7 @@ divergência exige emenda aqui e emenda ao ADR correspondente.
 
 - Códigos estáveis em `snake_case`, registrados em `core/errors/error-codes.ts` (expostos) e `core/errors/internal-codes.ts` (internos, nunca expostos).
 - Regra de `expose`: `expose: true` envia a mensagem quando o `code` pertence ao catálogo exposto e não é `internal_error`; qualquer outro caso envia `internal_error` com mensagem genérica. Stack, SQL, nome de tabela, path e versão interna **nunca** saem do servidor.
-- Códigos de domínio entram em `STATUS_BY_CODE` (`core/http/error-mapper.ts`) para mapear para status HTTP.
+- Códigos de domínio entram em `STATUS_BY_CODE` (`core/http/error-mapper.ts`) quando o primeiro `DomainError` existir; hoje o `AppError` carrega o próprio status.
 - `413`, `415` e `429` são extensões desta convenção. **Catalogado:** os três códigos estão em `core/errors/error-codes.ts` e em `02-Architecture.md` §12.2; `payload_too_large` e `invalid_content_type` já têm produtor parcial na borda (corpo acima do limite e charset não suportado); `rate_limited` só entra com o rate limiting (C12).
 
 ## 3. Forma do erro de validação (C2)
