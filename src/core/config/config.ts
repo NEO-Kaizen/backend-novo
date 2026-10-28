@@ -30,7 +30,7 @@ export interface UploadConfig {
 
 /** Exposição do spec e da UI de documentação (`04-HTTP-Contract.md` §13). */
 export interface DocsConfig {
-  readonly enabled: boolean;
+  readonly isEnabled: boolean;
 }
 
 /** Configuração lida e validada uma única vez no boot. */

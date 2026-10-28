@@ -36,7 +36,7 @@ export function createContainer(config: Config): Container {
     // O mesmo adapter implementa as duas portas de persistência.
     transactions: database,
     // O contrato é composto aqui; `platform` recebe o documento pronto.
-    apiContractRouter: config.docs.enabled
+    apiContractRouter: config.docs.isEnabled
       ? createApiContractRouter(createOpenApiDocument())
       : null,
   };

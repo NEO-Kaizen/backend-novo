@@ -1533,7 +1533,7 @@ export interface Config {
   /** Espelha o bloco `DATABASE_*` do schema de ambiente. */
   readonly database: DatabaseConfig;
   readonly cors: { readonly origins: readonly string[] };
-  readonly docs: { readonly enabled: boolean };
+  readonly docs: { readonly isEnabled: boolean };
   readonly jwtSecret: string;
   readonly jwtExpiresIn: string;
   readonly cookieName: string;
@@ -1768,7 +1768,7 @@ docs/openapi/
 
 ### 23.3 Montagem
 
-O `container` compõe o documento; `src/api-contract/openapi.ts` é o ponto de agregação dos `*.openapi.ts` (hoje `paths` está vazio, porque nenhum domínio publicou operações) e entrega o router do contrato ao `app.ts`, que o registra em `/api/v1`. A UI (Scalar via `@scalar/express-api-reference` + `@scalar/api-reference`) consome `/api/v1/openapi.json` e carrega o bundle UMD servido localmente pelo backend em `/api/v1/docs/assets/standalone.js`; o esquema de segurança é `sessionCookie` (`apiKey`, `in: cookie`, `name: session_id`) e operações públicas declaram `security: []`. O router só é montado quando `config.docs.enabled` é verdadeiro: fora de produção o default é ligado, em produção é desligado e `DOCS_ENABLED=true` faz o opt-in (`false` desliga em qualquer ambiente).
+O `container` compõe o documento; `src/api-contract/openapi.ts` é o ponto de agregação dos `*.openapi.ts` (hoje `paths` está vazio, porque nenhum domínio publicou operações) e entrega o router do contrato ao `app.ts`, que o registra em `/api/v1`. A UI (Scalar via `@scalar/express-api-reference` + `@scalar/api-reference`) consome `/api/v1/openapi.json` e carrega o bundle UMD servido localmente pelo backend em `/api/v1/docs/assets/standalone.js`; o esquema de segurança é `sessionCookie` (`apiKey`, `in: cookie`, `name: session_id`) e operações públicas declaram `security: []`. O router só é montado quando `config.docs.isEnabled` é verdadeiro: fora de produção o default é ligado, em produção é desligado e `DOCS_ENABLED=true` faz o opt-in (`false` desliga em qualquer ambiente).
 
 Ver [ADR-0026](./adr/0026-openapi-generated-from-zod.md).
 

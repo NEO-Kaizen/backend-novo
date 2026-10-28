@@ -4,6 +4,7 @@ import express, { Router } from "express";
 import type { Express } from "express";
 import { createApp } from "../app.ts";
 import { createContainer } from "../container.ts";
+import type { Container } from "../container.ts";
 import {
   API_BASE_PATH,
   DOCS_UI_PUBLIC_PATH,
@@ -105,42 +106,58 @@ async function checkDocsScenario(scenario: DocsScenario): Promise<void> {
     const spec = await request(`${server.baseUrl}${OPENAPI_SPEC_PUBLIC_PATH}`);
     const ui = await request(`${server.baseUrl}${DOCS_UI_PUBLIC_PATH}`);
 
-    if (!scenario.isExposed) {
-      assertStatus(scenario, "spec", spec.status, 404);
-      assertStatus(scenario, "UI", ui.status, 404);
-      assertCode(scenario, "spec", await spec.json(), "not_found");
-      assertCode(scenario, "UI", await ui.json(), "not_found");
-      return;
-    }
-
-    assertStatus(scenario, "spec", spec.status, 200);
-    assertStatus(scenario, "UI", ui.status, 200);
-
-    const version = fieldOf(await spec.json(), "openapi");
-    if (version !== OPENAPI_VERSION) {
-      throw new Error(
-        `${scenario.name}: o spec respondeu OpenAPI ${String(version ?? "desconhecido")}, esperava ${OPENAPI_VERSION}.`,
-      );
-    }
-
-    const html = await ui.text();
-    if (!html.includes(SCALAR_BUNDLE_PUBLIC_PATH)) {
-      throw new Error(
-        `${scenario.name}: a UI não referencia o bundle local ${SCALAR_BUNDLE_PUBLIC_PATH}.`,
-      );
-    }
-    if (/jsdelivr/i.test(html)) {
-      throw new Error(`${scenario.name}: a UI ainda carrega o Scalar de CDN.`);
-    }
-
-    const asset = await request(`${server.baseUrl}${SCALAR_BUNDLE_PUBLIC_PATH}`, "HEAD");
-    assertStatus(scenario, "bundle local", asset.status, 200);
-
-    if (!/javascript/.test(asset.headers.get("content-type") ?? "")) {
-      throw new Error(`${scenario.name}: o bundle local não respondeu como JavaScript.`);
+    if (scenario.isExposed) {
+      await assertDocsExposed(scenario, server.baseUrl, spec, ui);
+    } else {
+      await assertDocsHidden(scenario, spec, ui);
     }
   } finally {
     await server.close();
+  }
+}
+
+async function assertDocsHidden(
+  scenario: DocsScenario,
+  spec: Response,
+  ui: Response,
+): Promise<void> {
+  assertStatus(scenario, "spec", spec.status, 404);
+  assertStatus(scenario, "UI", ui.status, 404);
+  assertCode(scenario, "spec", await spec.json(), "not_found");
+  assertCode(scenario, "UI", await ui.json(), "not_found");
+}
+
+async function assertDocsExposed(
+  scenario: DocsScenario,
+  baseUrl: string,
+  spec: Response,
+  ui: Response,
+): Promise<void> {
+  assertStatus(scenario, "spec", spec.status, 200);
+  assertStatus(scenario, "UI", ui.status, 200);
+
+  const version = fieldOf(await spec.json(), "openapi");
+  if (version !== OPENAPI_VERSION) {
+    throw new Error(
+      `${scenario.name}: o spec respondeu OpenAPI ${String(version ?? "desconhecido")}, esperava ${OPENAPI_VERSION}.`,
+    );
+  }
+
+  const html = await ui.text();
+  if (!html.includes(SCALAR_BUNDLE_PUBLIC_PATH)) {
+    throw new Error(
+      `${scenario.name}: a UI não referencia o bundle local ${SCALAR_BUNDLE_PUBLIC_PATH}.`,
+    );
+  }
+  if (/jsdelivr/i.test(html)) {
+    throw new Error(`${scenario.name}: a UI ainda carrega o Scalar de CDN.`);
+  }
+
+  const asset = await request(`${baseUrl}${SCALAR_BUNDLE_PUBLIC_PATH}`, "HEAD");
+  assertStatus(scenario, "bundle local", asset.status, 200);
+
+  if (!/javascript/.test(asset.headers.get("content-type") ?? "")) {
+    throw new Error(`${scenario.name}: o bundle local não respondeu como JavaScript.`);
   }
 }
 
@@ -190,18 +207,20 @@ async function startServer(environment: NodeJS.ProcessEnv): Promise<RunningServe
 
     return {
       baseUrl: `http://127.0.0.1:${address.port}`,
-      async close(): Promise<void> {
-        server.closeAllConnections();
-        await closeServer(server);
-        await container.database.destroy();
-      },
+      close: () => shutdown(server, container),
     };
   } catch (error) {
-    server.closeAllConnections();
-    await closeServer(server).catch(() => undefined);
-    await container.database.destroy();
+    await shutdown(server, container).catch((cleanupError: unknown) => {
+      report(`contract:check: falha ao limpar o servidor: ${messageOf(cleanupError)}`);
+    });
     throw error;
   }
+}
+
+async function shutdown(server: Server, container: Container): Promise<void> {
+  server.closeAllConnections();
+  await closeServer(server);
+  await container.database.destroy();
 }
 
 function closeServer(server: Server): Promise<void> {
