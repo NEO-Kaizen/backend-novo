@@ -306,7 +306,7 @@ describe("POST /api/v1/users", () => {
 - [ ] Sem N+1, query sem limite ou payload sem paginação.
 - [ ] Comentários explicam o porquê; sem código morto.
 - [ ] Schema alterado? `docs/03-Data-Model.md` e os derivados `docs/db/02-reference.md`, `docs/db/03-erd.md` e `docs/db/schema.dbml` foram atualizados no mesmo PR.
-- [ ] Rota alterada? `*.openapi.ts` e `openapi/openapi.json` atualizados (via `docs:generate`, quando o script existir); `docs:check` verde quando disponível.
+- [ ] Rota alterada? `*.openapi.ts` e `openapi/openapi.json` atualizados via `npm run docs:generate`; `npm run docs:check` verde.
 - [ ] Exemplos no spec sem PII.
 - [ ] Exceções a este documento registradas no PR.
 

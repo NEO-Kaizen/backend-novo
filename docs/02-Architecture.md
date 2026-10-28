@@ -1476,7 +1476,7 @@ export function createApp(container: Container): Express {
 
 ## 16. Configuração
 
-A configuração é lida e validada **no boot**. Aplicação com configuração inválida não sobe. Variáveis planas; `toConfig` monta os objetos aninhados (`database`, `cors`, `uploads`).
+A configuração é lida e validada **no boot**. Aplicação com configuração inválida não sobe. Variáveis planas; `toConfig` monta os objetos aninhados (`database`, `cors`, `docs`, `uploads`).
 
 ```ts
 // src/platform/config/environment-schema.ts
@@ -1506,6 +1506,10 @@ export const EnvironmentSchema = z.strictObject({
   UPLOAD_MAX_FILE_BYTES: positiveInteger().default(10 * MEBIBYTE),
   UPLOAD_MAX_FILES: positiveInteger().default(5),
   JSON_BODY_MAX_BYTES: positiveInteger().default(MEBIBYTE),
+  DOCS_ENABLED: z
+    .enum(["true", "false"])
+    .transform((value) => value === "true")
+    .optional(),
 });
 ```
 
@@ -1529,6 +1533,7 @@ export interface Config {
   /** Espelha o bloco `DATABASE_*` do schema de ambiente. */
   readonly database: DatabaseConfig;
   readonly cors: { readonly origins: readonly string[] };
+  readonly docs: { readonly enabled: boolean };
   readonly jwtSecret: string;
   readonly jwtExpiresIn: string;
   readonly cookieName: string;
@@ -1543,18 +1548,19 @@ export interface Config {
 
 > **Seed-only.** `ADMIN_ROOT_EMAIL` e `ADMIN_ROOT_PASSWORD` são lidas pelo comando de seed, não pelo `EnvironmentSchema`; o boot da aplicação não as exige. A regra e o comportamento do seed estão em [`03-Data-Model.md` § 25.3](./03-Data-Model.md#253-admin-root).
 
-| Regra                                                                | Motivo                                                                                                                         |
-| -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| Segredo ausente ou curto demais derruba o boot em produção           | Falhar cedo é melhor que falhar no primeiro request                                                                            |
-| `.env.example` documenta as variáveis                                | Segredo nunca vai para o repositório                                                                                           |
-| Nenhum `process.env` fora de `platform/config`                       | Uma fonte de configuração                                                                                                      |
-| `Config` (interface) e `EnvironmentSchema` (Zod) têm nomes distintos | O schema valida; a interface é o contrato interno                                                                              |
-| Variáveis planas, `Config` aninhado                                  | `strictObject` sobre `process.env` rejeitaria PATH, HOME e afins; `loadConfig` seleciona as chaves conhecidas antes de validar |
-| `DATABASE_ENGINE` lista o alvo de portabilidade                      | Só `postgres` tem dialeto hoje; engine sem dialeto falha no boot com mensagem clara (§ 10.2)                                   |
-| `NODE_ENV` sem default                                               | Produção não cai em modo development por variável ausente                                                                      |
-| `DATABASE_PASSWORD` pode ser vazio                                   | Autenticação por trust local; a variável precisa existir                                                                       |
-| Pool e conexão têm timeout (`*_TIMEOUT_MS`)                          | Sem espera indefinida em aquisição, conexão ou query                                                                           |
-| `COOKIE_NAME` e `JWT_EXPIRES_IN` no schema                           | Requeridos pelo C6 (`04-API-Conventions.md` § 5)                                                                               |
+| Regra                                                                | Motivo                                                                                                                            |
+| -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| Segredo ausente ou curto demais derruba o boot em produção           | Falhar cedo é melhor que falhar no primeiro request                                                                               |
+| `.env.example` documenta as variáveis                                | Segredo nunca vai para o repositório                                                                                              |
+| Nenhum `process.env` fora de `platform/config`                       | Uma fonte de configuração                                                                                                         |
+| `Config` (interface) e `EnvironmentSchema` (Zod) têm nomes distintos | O schema valida; a interface é o contrato interno                                                                                 |
+| Variáveis planas, `Config` aninhado                                  | `strictObject` sobre `process.env` rejeitaria PATH, HOME e afins; `loadConfig` seleciona as chaves conhecidas antes de validar    |
+| `DATABASE_ENGINE` lista o alvo de portabilidade                      | Só `postgres` tem dialeto hoje; engine sem dialeto falha no boot com mensagem clara (§ 10.2)                                      |
+| `NODE_ENV` sem default                                               | Produção não cai em modo development por variável ausente                                                                         |
+| `DATABASE_PASSWORD` pode ser vazio                                   | Autenticação por trust local; a variável precisa existir                                                                          |
+| Pool e conexão têm timeout (`*_TIMEOUT_MS`)                          | Sem espera indefinida em aquisição, conexão ou query                                                                              |
+| `COOKIE_NAME` e `JWT_EXPIRES_IN` no schema                           | Requeridos pelo C6 (`04-API-Conventions.md` § 5)                                                                                  |
+| `DOCS_ENABLED` é opt-in de produção                                  | Docs e spec ficam ligadas por padrão fora de produção; produção exige `DOCS_ENABLED=true`, e `false` desliga em qualquer ambiente |
 
 ---
 
@@ -1592,7 +1598,7 @@ O nível mínimo vem do ambiente: `development` e `production` registram a parti
 
 ## 18. Costuras de Testabilidade
 
-A arquitetura já expõe as costuras que a suíte de testes vai usar quando ela existir. Hoje **não há camada de testes** — a decisão é adiada, não as costuras.
+A arquitetura expõe as costuras que a suíte usa. Os testes de contrato rodam com o runner nativo do Node (`node:test`, via `npm test`); a decisão do runner definitivo para a suíte completa segue em aberto e é issue própria — o que está decidido são as costuras.
 
 | Costura       | Interface              | Por quê                                                                       |
 | ------------- | ---------------------- | ----------------------------------------------------------------------------- |
@@ -1702,7 +1708,6 @@ As pendências de **schema** estão no [`03-Data-Model.md` § 21](./03-Data-Mode
 | Envelope de erro `{ error: { code, message, requestId } }` | Frontend precisa ajustar `readErrorMessage`                                                                                                                                                                                                           | Release coordenada com o frontend    |
 | Contratos publicados: ids numéricos e 4 perfis             | O frontend atual descarta id que não seja número em categorias e status                                                                                                                                                                               | Release coordenada; ver § 22.1       |
 | Suíte de testes automatizados                              | Rede de segurança ausente para a reescrita                                                                                                                                                                                                            | Ferramentas de teste decididas       |
-| Gerador OpenAPI e spike de compatibilidade                 | Sem gerador, o artefato é mantido manualmente e não há gate de drift                                                                                                                                                                                  | Adoção do gerador                    |
 | Credencial de runtime e de migração                        | O append-only por privilégio exige duas credenciais no Postgres/MySQL; hoje o schema de ambiente tem uma                                                                                                                                              | Implementação do deploy              |
 | Contrato da API de auditoria                               | A rota é montada; o formato de resposta não está acordado. O `Page<AuditEntry>` de [§ 9.3](#93-auditoria-de-alteração-por-eventos) é o contrato do service; a tradução para o formato da rota é do controller ([§ 6](#6-responsabilidades-de-camada)) | Formalização do domínio de auditoria |
 | RBAC configurável                                          | Desenho no Apêndice C; o Apêndice B continua sendo o contrato                                                                                                                                                                                         | Frontend consumir `permissions`      |
@@ -1727,9 +1732,9 @@ A release é um **cutover coordenado**, não um adapter numérico: devolver id n
 
 ## 23. Contrato HTTP (OpenAPI)
 
-O contrato HTTP será derivado dos schemas Zod e dos metadados de rota. A política normativa completa está em `docs/04-HTTP-Contract.md`; as convenções transversais (base path, envelope, paginação, sessão, autorização, etc.) estão em `docs/04-API-Conventions.md`.
+O contrato HTTP é derivado dos schemas Zod e dos metadados de rota. A política normativa completa está em `docs/04-HTTP-Contract.md`; as convenções transversais (base path, envelope, paginação, sessão, autorização, etc.) estão em `docs/04-API-Conventions.md`.
 
-### 23.1 Estrutura alvo
+### 23.1 Estrutura
 
 ```text
 src/
@@ -1757,7 +1762,7 @@ docs/openapi/
 
 ### 23.3 Montagem
 
-Quando o kernel existir, o `container` vai compor o documento a partir dos `*.openapi.ts` e vai entregar o router de docs ao `app.ts`, que o registrará em `/api/v1`. A UI (Scalar self-hosted) consumirá `/api/v1/openapi.json`; o esquema de segurança é `sessionCookie` (`apiKey`, `in: cookie`, `name: session_id`) e operações públicas declaram `security: []`.
+O `container` compõe o documento a partir dos `*.openapi.ts` e entrega o router de docs ao `app.ts`, que o registra em `/api/v1`. A UI (Scalar via `@scalar/express-api-reference`) consome `/api/v1/openapi.json`; o esquema de segurança é `sessionCookie` (`apiKey`, `in: cookie`, `name: session_id`) e operações públicas declaram `security: []`. O router só é montado quando `config.docs.enabled` é verdadeiro: fora de produção o default é ligado, em produção é desligado e `DOCS_ENABLED=true` faz o opt-in (`false` desliga em qualquer ambiente).
 
 Ver [ADR-0026](./adr/0026-openapi-generated-from-zod.md).
 
