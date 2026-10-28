@@ -21,8 +21,33 @@ describe("cobertura de rotas do contrato", () => {
 
     assert.throws(
       () => assertRouteCoverage(app, { paths: { "/probe": { get: {} } } }),
-      /Operação GET \/probe não tem rota alcançável em \/api\/v1\/probe/,
+      new RegExp(`Operação GET /probe não tem rota alcançável em ${API_BASE_PATH}/probe`),
     );
+  });
+
+  it("falha quando os nomes dos parâmetros divergem", () => {
+    const app = express();
+    const router = express.Router();
+    router.get("/probe/:id", (_req, res) => {
+      res.sendStatus(200);
+    });
+    app.use(API_BASE_PATH, router);
+
+    assert.throws(
+      () => assertRouteCoverage(app, { paths: { "/probe/{other}": { get: {} } } }),
+      /parâmetros/,
+    );
+  });
+
+  it("expande router.all para exigir operação em cada método", () => {
+    const app = express();
+    const router = express.Router();
+    router.all("/probe", (_req, res) => {
+      res.sendStatus(204);
+    });
+    app.use(API_BASE_PATH, router);
+
+    assert.throws(() => assertRouteCoverage(app, { paths: {} }), /GET \/probe/);
   });
 
   it("ignora a sonda /health", () => {

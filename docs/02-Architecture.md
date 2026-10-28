@@ -1762,7 +1762,7 @@ docs/openapi/
 
 ### 23.3 Montagem
 
-O `container` compõe o documento a partir dos `*.openapi.ts` e entrega o router de docs ao `app.ts`, que o registra em `/api/v1`. A UI (Scalar via `@scalar/express-api-reference`) consome `/api/v1/openapi.json`; o esquema de segurança é `sessionCookie` (`apiKey`, `in: cookie`, `name: session_id`) e operações públicas declaram `security: []`. O router só é montado quando `config.docs.enabled` é verdadeiro: fora de produção o default é ligado, em produção é desligado e `DOCS_ENABLED=true` faz o opt-in (`false` desliga em qualquer ambiente).
+O `container` compõe o documento; `src/docs/openapi.ts` é o ponto de agregação dos `*.openapi.ts` (hoje `paths` está vazio, porque nenhum domínio publicou operações) e entrega o router de docs ao `app.ts`, que o registra em `/api/v1`. A UI (Scalar via `@scalar/express-api-reference`) consome `/api/v1/openapi.json`; o esquema de segurança é `sessionCookie` (`apiKey`, `in: cookie`, `name: session_id`) e operações públicas declaram `security: []`. O router só é montado quando `config.docs.enabled` é verdadeiro: fora de produção o default é ligado, em produção é desligado e `DOCS_ENABLED=true` faz o opt-in (`false` desliga em qualquer ambiente).
 
 Ver [ADR-0026](./adr/0026-openapi-generated-from-zod.md).
 

@@ -7,6 +7,7 @@ import { createOpenApiDocument } from "../../src/docs/openapi.ts";
 interface SchemaLike {
   type?: string;
   format?: string;
+  const?: unknown;
   enum?: readonly string[];
   default?: unknown;
   minimum?: number;
@@ -42,6 +43,8 @@ interface DocumentLike {
   };
 }
 
+// O documento gerado tem a tipagem do zod-openapi; o teste o inspeciona por uma
+// visão estrutural mínima para não acoplar os asserts à tipagem da biblioteca.
 const document = createOpenApiDocument() as unknown as DocumentLike;
 
 const REQUIRED_SCHEMAS = [
@@ -126,7 +129,44 @@ describe("componentes do OpenAPI", () => {
   it("documenta o envelope base sem os aditivos como campos obrigatórios", () => {
     const envelope = document.components?.schemas?.ErrorEnvelope;
 
-    assert.deepEqual(envelope?.required, ["status", "statusCode", "message"]);
+    assert.deepEqual([...(envelope?.required ?? [])].sort(), ["message", "status", "statusCode"]);
     assert.deepEqual(envelope?.properties?.status, { type: "string", const: "error" });
+  });
+
+  it("modela as variantes de erro com status e campos do contrato", () => {
+    const validation = document.components?.schemas?.ValidationError;
+    const legacy = document.components?.schemas?.LegacyValidationError;
+    const conflict = document.components?.schemas?.ConflictError;
+
+    assert.equal(validation?.properties?.statusCode?.const, 400);
+    assert.equal(validation?.properties?.code?.const, "validation_error");
+    assert.equal(validation?.properties?.fields?.type, "array");
+
+    assert.equal(legacy?.properties?.statusCode?.const, 422);
+    assert.equal(legacy?.properties?.fields?.type, "object");
+
+    assert.equal(conflict?.properties?.statusCode?.const, 409);
+    assert.equal(conflict?.properties?.code?.const, "conflict");
+    assert.deepEqual([...(conflict?.required ?? [])].sort(), [
+      "code",
+      "currentStatusKey",
+      "message",
+      "status",
+      "statusCode",
+    ]);
+  });
+
+  it("modela o envelope de paginação com os campos obrigatórios", () => {
+    const paginated = document.components?.schemas?.PaginatedResponse;
+
+    assert.deepEqual([...(paginated?.required ?? [])].sort(), [
+      "data",
+      "page",
+      "pageSize",
+      "total",
+      "totalPages",
+    ]);
+    assert.equal(paginated?.properties?.data?.type, "array");
+    assert.equal(paginated?.properties?.pageSize?.maximum, 100);
   });
 });
