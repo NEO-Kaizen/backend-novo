@@ -12,13 +12,14 @@ O contrato versionado vive em `openapi/openapi.json` (raiz do repositório) e é
 npm run docs:generate   # regenera openapi/openapi.json
 npm run docs:lint       # spectral lint openapi/openapi.json
 npm run docs:check      # regenera e falha se o artefato estiver desatualizado
+npm run contract:check  # cobertura rota↔operação e matriz DOCS_ENABLED
 ```
 
 ## Regra de artefato commitado
 
 - Toda mudança de rota ou schema regenera o artefato no mesmo PR via `npm run docs:generate`.
 - `npm run docs:check` deve passar; diff inesperado no artefato é erro.
-- O gate de CI que roda esses comandos é um PR separado e ainda não existe.
+- O job `quality` do CI roda `docs:check`, `docs:lint` e `contract:check`.
 - Breaking change exige label `breaking-change` e plano de `/api/v2` (gate `oasdiff breaking` quando o workflow existir).
 
 ## Lint
@@ -29,5 +30,5 @@ npm run docs:check      # regenera e falha se o artefato estiver desatualizado
 
 - Documentação e UI habilitadas por padrão fora de produção; `DOCS_ENABLED=false` desliga em qualquer ambiente.
 - Em produção, desabilitadas por padrão; habilitação apenas com `DOCS_ENABLED=true`.
-- UI (Scalar via `@scalar/express-api-reference` + `@scalar/api-reference`) em `/api/v1/docs`; o HTML e o bundle UMD são servidos pelo backend, com o asset local em `/api/v1/docs/assets/standalone.js` e sem CDN em runtime.
+- UI (Scalar via `@scalar/express-api-reference` + `@scalar/api-reference`) em `/api/v1/docs`; o HTML e o bundle UMD em `/api/v1/docs/assets/standalone.js` são servidos pelo backend.
 - Spec em `/api/v1/openapi.json`.

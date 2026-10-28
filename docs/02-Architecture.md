@@ -1598,7 +1598,7 @@ O nível mínimo vem do ambiente: `development` e `production` registram a parti
 
 ## 18. Costuras de Testabilidade
 
-A arquitetura expõe as costuras que a suíte usa. Os testes de contrato rodam com o runner nativo do Node (`node:test`, via `npm test`); a decisão do runner definitivo para a suíte completa segue em aberto e é issue própria — o que está decidido são as costuras.
+A arquitetura expõe as costuras que a suíte usa. A guarda do contrato roda por `npm run contract:check`, sem framework: ela compara rotas ↔ operações e a matriz `DOCS_ENABLED`. `npm test` segue stub, e a decisão do runner definitivo para a suíte completa segue em aberto e é issue própria — o que está decidido são as costuras.
 
 | Costura       | Interface              | Por quê                                                                       |
 | ------------- | ---------------------- | ----------------------------------------------------------------------------- |
@@ -1741,7 +1741,9 @@ src/
 ├── api-contract/
 │   ├── openapi.ts          # compõe createDocument a partir dos *.openapi.ts
 │   ├── components.ts       # ErrorEnvelope, variantes de erro, PaginatedResponse, securitySchemes
-│   └── generate-openapi.ts  # escreve openapi/openapi.json
+│   ├── generate-openapi.ts  # escreve openapi/openapi.json
+│   ├── route-coverage.ts   # guarda bidirecional rota↔operação
+│   └── check-contract.ts   # CLI de contract:check (cobertura + DOCS_ENABLED + --probe)
 ├── domains/
 │   └── <domínio>/
 │       ├── <domínio>.schema.ts   # schemas Zod (request/response)
@@ -1762,7 +1764,7 @@ docs/openapi/
 
 ### 23.3 Montagem
 
-O `container` compõe o documento; `src/api-contract/openapi.ts` é o ponto de agregação dos `*.openapi.ts` (hoje `paths` está vazio, porque nenhum domínio publicou operações) e entrega o router do contrato ao `app.ts`, que o registra em `/api/v1`. A UI (Scalar via `@scalar/express-api-reference` + `@scalar/api-reference`) consome `/api/v1/openapi.json` e carrega o bundle UMD servido localmente pelo backend em `/api/v1/docs/assets/standalone.js`, sem CDN em runtime; o esquema de segurança é `sessionCookie` (`apiKey`, `in: cookie`, `name: session_id`) e operações públicas declaram `security: []`. O router só é montado quando `config.docs.enabled` é verdadeiro: fora de produção o default é ligado, em produção é desligado e `DOCS_ENABLED=true` faz o opt-in (`false` desliga em qualquer ambiente).
+O `container` compõe o documento; `src/api-contract/openapi.ts` é o ponto de agregação dos `*.openapi.ts` (hoje `paths` está vazio, porque nenhum domínio publicou operações) e entrega o router do contrato ao `app.ts`, que o registra em `/api/v1`. A UI (Scalar via `@scalar/express-api-reference` + `@scalar/api-reference`) consome `/api/v1/openapi.json` e carrega o bundle UMD servido localmente pelo backend em `/api/v1/docs/assets/standalone.js`; o esquema de segurança é `sessionCookie` (`apiKey`, `in: cookie`, `name: session_id`) e operações públicas declaram `security: []`. O router só é montado quando `config.docs.enabled` é verdadeiro: fora de produção o default é ligado, em produção é desligado e `DOCS_ENABLED=true` faz o opt-in (`false` desliga em qualquer ambiente).
 
 Ver [ADR-0026](./adr/0026-openapi-generated-from-zod.md).
 

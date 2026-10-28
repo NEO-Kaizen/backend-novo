@@ -1,9 +1,8 @@
-import assert from "node:assert/strict";
 import type { Express } from "express";
-import { API_BASE_PATH } from "../../src/core/http/api-base-path.ts";
+import { API_BASE_PATH } from "../core/http/api-base-path.ts";
 
 /**
- * Cobertura bidirecional entre rotas Express e `openapi.paths`. O teste falha
+ * Cobertura bidirecional entre rotas Express e `openapi.paths`. A guarda falha
  * quando uma rota de negócio não tem operação e quando uma operação não tem
  * rota alcançável no método declarado.
  */
@@ -65,7 +64,7 @@ export interface RouteCoverageDocument {
   readonly paths?: Readonly<Record<string, Readonly<Partial<Record<HttpMethod, unknown>>>>>;
 }
 
-/** Executa o teste de cobertura; qualquer divergência lança com rota/operação no texto. */
+/** Executa a guarda de cobertura; qualquer divergência lança com rota/operação no texto. */
 export function assertRouteCoverage(app: Express, document: RouteCoverageDocument): void {
   const routes = collectRoutes(rootStack(app));
   const operations = collectOperations(document);
@@ -75,7 +74,7 @@ export function assertRouteCoverage(app: Express, document: RouteCoverageDocumen
     const route = routes.find((candidate) => matchesRoute(candidate, fullPath, operation.method));
 
     if (route === undefined) {
-      assert.fail(
+      fail(
         `Operação ${formatMethod(operation.method)} ${operation.path} não tem rota alcançável em ${fullPath}.`,
       );
     }
@@ -84,7 +83,7 @@ export function assertRouteCoverage(app: Express, document: RouteCoverageDocumen
     const operationParameters = parameterNames(operation.path, OPENAPI_PARAMETER);
 
     if (routeParameters.join(",") !== operationParameters.join(",")) {
-      assert.fail(
+      fail(
         `Operação ${formatMethod(operation.method)} ${operation.path} declara parâmetros (${operationParameters.join(", ") || "nenhum"}), mas a rota ${route.path} declara (${routeParameters.join(", ") || "nenhum"}).`,
       );
     }
@@ -100,7 +99,7 @@ export function assertRouteCoverage(app: Express, document: RouteCoverageDocumen
         continue;
       }
 
-      assert.fail(
+      fail(
         `Rota ${formatMethod(method)} ${route.path} não tem operação correspondente em openapi.paths.`,
       );
     }
@@ -110,7 +109,11 @@ export function assertRouteCoverage(app: Express, document: RouteCoverageDocumen
 function rootStack(app: Express): readonly RouteLayerLike[] {
   const router = (app as unknown as { router?: { stack?: readonly RouteLayerLike[] } }).router;
   const stack = router?.stack;
-  assert.ok(stack !== undefined, "app Express sem router.stack");
+
+  if (stack === undefined) {
+    fail("app Express sem router.stack");
+  }
+
   return stack;
 }
 
@@ -227,4 +230,8 @@ function parameterNames(pattern: string, matcher: RegExp): string[] {
 
 function formatMethod(method: HttpMethod): string {
   return method.toUpperCase();
+}
+
+function fail(message: string): never {
+  throw new Error(message);
 }
