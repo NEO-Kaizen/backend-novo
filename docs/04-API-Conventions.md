@@ -243,6 +243,7 @@ Os valores 20/100 da auditoria são os globais; a exceção é o parâmetro `lim
 
 - O **Total de arquivos** é a soma dos máximos por arquivo e não é validado como um limite único: o multer limita a contagem e o tamanho de cada arquivo; em assets, o `fileSize` global é 5 MiB e o limite por chave (`validateAssetSizes`) roda depois do multer. O 413 vem do arquivo que exceder o seu limite, não da soma.
 - A parte JSON (`payload`/`assets`) tem limite próprio de 2 MiB e não entra no total de arquivos; com todos os máximos, a requisição pode chegar a 52 MiB em requests (2 + 50) e 22 MiB em assets (2 + 20).
+- Além dos limites da tabela, o parser aplica tetos de defesa contra DoS: no máximo 10 campos e 20 partes por requisição; exceder → **400** `validation_error`.
 - JSON body: 1 MiB por default (`JSON_BODY_MAX_BYTES`, aplicado em `express.json`); quando a rota tiver parte JSON no multipart (`payload` ou `assets`), o limite da parte é 2 MiB.
 - **Harmonização registrada:** o legado de requests/pendências devolvia 400 para tamanho e o de requests para MIME; a convenção nova usa **413** para tamanho e **415** para MIME. O FE lê `message`, então a mudança de status não quebra a renderização.
 - Rotas multipart: requests (anexos), pendências (anexos), avatar do usuário e assets do portal.

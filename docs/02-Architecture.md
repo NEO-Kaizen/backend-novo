@@ -1574,6 +1574,7 @@ export interface Logger {
 | PII não entra em log                                                                                 | Dado pessoal não é log                 |
 | A causa de um erro é logada **uma vez**, na borda                                                    | Camada interna não faz log-and-rethrow |
 | Método, rota, status e duração em todo log de requisição                                             | Métrica de saúde                       |
+| Requisição abortada registra `aborted: true`                                                         | Rastro de desconexão                   |
 
 O nível mínimo vem do ambiente: `development` e `production` registram a partir de `info`; `test` não registra. Não há `LOG_LEVEL` no schema — o ambiente já decide o ruído aceitável.
 
