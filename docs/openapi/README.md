@@ -29,5 +29,5 @@ npm run docs:check      # regenera e falha se o artefato estiver desatualizado
 
 - Documentação e UI habilitadas por padrão fora de produção; `DOCS_ENABLED=false` desliga em qualquer ambiente.
 - Em produção, desabilitadas por padrão; habilitação apenas com `DOCS_ENABLED=true`.
-- UI (Scalar via `@scalar/express-api-reference`) em `/api/v1/docs`; o HTML é servido pelo backend, mas o bundle Scalar vem do CDN jsDelivr por padrão. Assets totalmente locais exigem o pacote `@scalar/api-reference` completo ou o fallback `swagger-ui-express`.
+- UI (Scalar via `@scalar/express-api-reference` + `@scalar/api-reference`) em `/api/v1/docs`; o HTML e o bundle UMD são servidos pelo backend, com o asset local em `/api/v1/docs/assets/standalone.js` e sem CDN em runtime.
 - Spec em `/api/v1/openapi.json`.
