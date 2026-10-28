@@ -18,18 +18,23 @@ export function toAppError(error: unknown): AppError {
 export interface ExposedError {
   readonly code: ErrorCode;
   readonly message: string;
+  readonly status: number;
 }
 
 /**
  * Projeta o erro para o cliente. `expose` e o catálogo decidem: código interno
- * com `expose: true` continua caindo em `internal_error`.
+ * com `expose: true` continua caindo em `internal_error`, com status 500.
  */
 export function toExposedError(error: AppError): ExposedError {
   if (!error.expose || error.code === INTERNAL_ERROR_CODE || !isErrorCode(error.code)) {
-    return { code: INTERNAL_ERROR_CODE, message: GENERIC_ERROR_MESSAGE };
+    return {
+      code: INTERNAL_ERROR_CODE,
+      message: GENERIC_ERROR_MESSAGE,
+      status: SERVER_ERROR_STATUS,
+    };
   }
 
-  return { code: error.code, message: error.message };
+  return { code: error.code, message: error.message, status: error.status };
 }
 
 function isErrorCode(code: AppErrorCode): code is ErrorCode {
