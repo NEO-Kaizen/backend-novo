@@ -48,7 +48,7 @@ export function createRequestLoggerMiddleware(logger: Logger): RequestHandler {
       logOnce("completed");
     });
     res.once("close", () => {
-      // `close` também segue `finish`; só é aborto se a resposta não foi finalizada.
+      // `close` também segue `finish`; só é aborto se `writableFinished` for false.
       // `writableEnded` fica true no `end()`, mesmo que o socket morra antes do flush.
       if (!res.writableFinished) {
         logOnce("aborted");
