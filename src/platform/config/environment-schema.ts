@@ -79,6 +79,12 @@ export const EnvironmentSchema = z.strictObject({
   UPLOAD_MAX_FILE_BYTES: positiveInteger().default(10 * MEBIBYTE),
   UPLOAD_MAX_FILES: positiveInteger().default(5),
   JSON_BODY_MAX_BYTES: positiveInteger().default(MEBIBYTE),
+
+  // Documentação HTTP: opt-in em produção; fora dela o default é habilitado.
+  DOCS_ENABLED: z
+    .enum(["true", "false"], { error: "use true ou false" })
+    .transform((value) => value === "true")
+    .optional(),
 });
 
 export type EnvironmentVariables = z.infer<typeof EnvironmentSchema>;
@@ -108,6 +114,7 @@ export function toConfig(environment: EnvironmentVariables): Config {
       maxFiles: environment.UPLOAD_MAX_FILES,
       jsonBodyMaxBytes: environment.JSON_BODY_MAX_BYTES,
     },
+    docs: { enabled: environment.DOCS_ENABLED ?? environment.NODE_ENV !== "production" },
   };
 }
 

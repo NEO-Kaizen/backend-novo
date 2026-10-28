@@ -9,28 +9,34 @@
     "start": "node --env-file-if-exists=.env src/server.ts",
     "build": "tsc",
     "start:prod": "node --env-file-if-exists=.env dist/server.js",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.test.json",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "check": "npm run typecheck && npm run lint && npm run format:check",
-    "test": "echo \"No tests configured yet — see test/README.md\""
+    "test": "node --test \"test/**/*.test.ts\"",
+    "docs:generate": "node src/docs/generate-openapi.ts && prettier --write openapi/openapi.json",
+    "docs:lint": "spectral lint openapi/openapi.json",
+    "docs:check": "npm run docs:generate && git diff --exit-code -- openapi/"
   },
   "engines": {
     "node": ">=24"
   },
   "dependencies": {
+    "@scalar/express-api-reference": "^0.10.33",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
     "express": "^5.2.1",
     "knex": "^3.3.0",
     "multer": "^2.5.0",
     "pg": "^8.23.0",
-    "zod": "^4.5.4"
+    "zod": "^4.5.4",
+    "zod-openapi": "~6.0.2"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@stoplight/spectral-cli": "^6.17.0",
     "@types/cookie-parser": "^1.4.10",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
