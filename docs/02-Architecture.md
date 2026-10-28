@@ -98,7 +98,7 @@ src/
 │   └── pagination/            # PageQuery, Page
 │
 ├── platform/                  # adaptadores concretos — conhecem core
-│   ├── database/              # KnexDatabase, PostgresDialect, SqliteDialect, MySqlDialect
+│   ├── database/              # KnexDatabase, PostgresDialect (Sqlite/MySql: alvo)
 │   ├── http/                  # <conceito>.middleware.ts: request-id, auth, access-mode, erro
 │   ├── events/                # publicador de eventos em memória
 │   ├── logging/               # adapter do logger
@@ -929,12 +929,12 @@ export interface TransactionManager {
 }
 ```
 
-`KnexDatabase` (`src/platform/database/knex-database.ts`) implementa as duas portas. Trocar a engine significa trocar o `client` do Knex e o `Dialect` — nenhum repositório muda.
+`KnexDatabase` (`src/platform/database/knex-database.ts`) implementa as duas portas. Trocar a engine significa trocar o `client` do Knex e o `Dialect` — nenhum repositório muda. Hoje só `postgres` tem dialeto; `sqlite` e `mysql` falham no boot.
 
 ```ts
 const database = createDatabase(config);
 // config.database.engine === "postgres" → KnexDatabase com PostgresDialect
-// config.database.engine === "sqlite"   → KnexDatabase com SqliteDialect
+// config.database.engine === "sqlite"   → erro no boot: dialeto não implementado
 ```
 
 ```ts
@@ -965,6 +965,8 @@ export interface Dialect {
   auditAppendOnlyGuard(): readonly string[];
 }
 ```
+
+Adiado: `hexColorCheck()` e `auditAppendOnlyGuard()` entram com as migrations, quando houver consumidor e suíte nas três engines.
 
 Implementações: `PostgresDialect`. `SqliteDialect` e `MySqlDialect` são o alvo de portabilidade e ainda não têm implementação. O `supportsUpsertMerge()` declara se a engine aceita merge no alvo do conflito: quem precisa de upsert consulta a capacidade e degrada para `insert` + `update` quando ela é falsa — a divergência fica declarada no `Dialect`, não espalhada em `if` de repositório.
 
