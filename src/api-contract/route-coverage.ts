@@ -1,5 +1,10 @@
 import type { Express } from "express";
-import { API_BASE_PATH, SCALAR_BUNDLE_PUBLIC_PATH } from "../core/http/api-base-path.ts";
+import {
+  API_BASE_PATH,
+  DOCS_UI_PUBLIC_PATH,
+  OPENAPI_SPEC_PUBLIC_PATH,
+  SCALAR_BUNDLE_PUBLIC_PATH,
+} from "../core/http/api-base-path.ts";
 
 /**
  * Cobertura bidirecional entre rotas Express e `openapi.paths`. A guarda falha
@@ -14,8 +19,8 @@ type HttpMethod = (typeof HTTP_METHODS)[number];
 /** Rotas de infraestrutura: não são contrato de domínio (`04-HTTP-Contract.md` §4). */
 const EXCLUDED_PATHS: readonly string[] = [
   "/health",
-  `${API_BASE_PATH}/openapi.json`,
-  `${API_BASE_PATH}/docs`,
+  OPENAPI_SPEC_PUBLIC_PATH,
+  DOCS_UI_PUBLIC_PATH,
   SCALAR_BUNDLE_PUBLIC_PATH,
 ];
 
@@ -62,6 +67,13 @@ export function assertRouteCoverage(app: Express, document: RouteCoverageDocumen
 
   for (const operation of operations) {
     const fullPath = `${API_BASE_PATH}${operation.path}`;
+
+    if (isInfrastructurePath(fullPath)) {
+      fail(
+        `Operação ${formatMethod(operation.method)} ${operation.path} aponta para rota de infraestrutura, que não tem operação.`,
+      );
+    }
+
     const route = routes.find((candidate) => matchesRoute(candidate, fullPath, operation.method));
 
     if (route === undefined) {
@@ -178,6 +190,10 @@ function parametersMatch(route: CollectedRoute, operation: DocumentOperation): b
     parameterNames(operation.path, OPENAPI_PARAMETER).join(",") ===
     parameterNames(route.path, ROUTE_PARAMETER).join(",")
   );
+}
+
+function isInfrastructurePath(fullPath: string): boolean {
+  return EXCLUDED_PATHS.includes(fullPath);
 }
 
 /**
