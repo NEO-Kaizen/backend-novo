@@ -12,6 +12,10 @@ São usados os labels canônicos padrão: `needs-triage`, `needs-info`, `ready-f
 
 Layout single-context: `GLOSSARY.md` na raiz e `docs/adr/`. Consulte `docs/agents/domain.md`.
 
+### Coding standards
+
+Antes de escrever ou alterar código em `src/` ou `test/`, leia `CODING_STANDARDS.md`. Para rota ou OpenAPI, leia também `docs/04-HTTP-Contract.md`; para schema, `docs/03-Data-Model.md`.
+
 ### Data model
 
 O modelo de dados é a especificação do schema em `docs/03-Data-Model.md`. A ordem de leitura obrigatória para agentes está em `docs/agents/domain.md`.
