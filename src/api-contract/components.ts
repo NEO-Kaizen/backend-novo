@@ -12,7 +12,7 @@ import { EXPOSED_ERROR_CODES } from "../core/errors/error-codes.ts";
 // hardcoded aqui porque os domínios que os emitem ainda não foram implementados.
 // Cada um migra para `core/errors/error-codes.ts` junto com seu domínio, quando
 // então esta lista passa a ser montada só do catálogo exposto.
-export const ErrorCode = z
+export const ErrorCodeSchema = z
   .enum([...EXPOSED_ERROR_CODES, "not_the_assignee", "invalid_status_transition"])
   .meta({
     id: "ErrorCode",
@@ -47,7 +47,7 @@ export const ErrorEnvelope = z
     status: z.literal("error"),
     statusCode: z.int(),
     message: z.string(),
-    code: ErrorCode.optional(),
+    code: ErrorCodeSchema.optional(),
     requestId: z.uuid().optional().describe("Correlation id HTTP (aditivo)."),
   })
   .meta({
@@ -221,7 +221,7 @@ export const components = {
     LegacyValidationError,
     ConflictError,
     PaginatedResponse,
-    ErrorCode,
+    ErrorCodeSchema,
     FieldError,
   },
   parameters: {

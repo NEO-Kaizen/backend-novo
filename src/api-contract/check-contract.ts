@@ -12,15 +12,15 @@ import {
   SCALAR_BUNDLE_PUBLIC_PATH,
 } from "../core/http/api-base-path.ts";
 import { loadConfig } from "../platform/config/load-config.ts";
-import { createOpenApiDocument, OPENAPI_VERSION } from "./openapi.ts";
+import { createOpenApiDocument, OPENAPI_SPEC_VERSION } from "./openapi.ts";
 import { assertRouteCoverage } from "./route-coverage.ts";
 
 /**
  * Guarda do contrato HTTP, executada por `npm run contract:check`.
  *
  * Não é suíte de testes: compara listas (rotas ↔ operações) e a matriz de
- * `DOCS_ENABLED`, sem framework. O `--probe` prova que a guarda falha quando
- * deveria, para que um check verde não signifique apenas "não olhou".
+ * `DOCS_ENABLED`, sem framework. O `--probe` prova que a guarda de cobertura
+ * falha quando deveria, para que um check verde não signifique apenas "não olhou".
  */
 
 /** Ambiente mínimo válido; a conexão com o banco só abre na primeira consulta. */
@@ -72,7 +72,9 @@ const DOCS_SCENARIOS: readonly DocsScenario[] = [
 async function main(argv: readonly string[]): Promise<void> {
   if (argv.includes("--probe")) {
     runProbe();
-    report("contract:check --probe: a guarda falha nas divergências e passa no contrato válido.");
+    report(
+      "contract:check --probe: a guarda rota↔operação falha nas divergências e passa no contrato válido.",
+    );
     return;
   }
 
@@ -103,8 +105,10 @@ async function checkDocsScenario(scenario: DocsScenario): Promise<void> {
   const server = await startServer(scenario.environment);
 
   try {
-    const spec = await request(`${server.baseUrl}${OPENAPI_SPEC_PUBLIC_PATH}`);
-    const ui = await request(`${server.baseUrl}${DOCS_UI_PUBLIC_PATH}`);
+    const [spec, ui] = await Promise.all([
+      sendRequest(`${server.baseUrl}${OPENAPI_SPEC_PUBLIC_PATH}`),
+      sendRequest(`${server.baseUrl}${DOCS_UI_PUBLIC_PATH}`),
+    ]);
 
     if (scenario.isExposed) {
       await assertDocsExposed(scenario, server.baseUrl, spec, ui);
@@ -136,10 +140,10 @@ async function assertDocsExposed(
   assertStatus(scenario, "spec", spec.status, 200);
   assertStatus(scenario, "UI", ui.status, 200);
 
-  const version = fieldOf(await spec.json(), "openapi");
-  if (version !== OPENAPI_VERSION) {
+  const version = readField(await spec.json(), "openapi");
+  if (version !== OPENAPI_SPEC_VERSION) {
     throw new Error(
-      `${scenario.name}: o spec respondeu OpenAPI ${String(version ?? "desconhecido")}, esperava ${OPENAPI_VERSION}.`,
+      `${scenario.name}: o spec respondeu OpenAPI ${String(version ?? "desconhecido")}, esperava ${OPENAPI_SPEC_VERSION}.`,
     );
   }
 
@@ -153,7 +157,7 @@ async function assertDocsExposed(
     throw new Error(`${scenario.name}: a UI ainda carrega o Scalar de CDN.`);
   }
 
-  const asset = await request(`${baseUrl}${SCALAR_BUNDLE_PUBLIC_PATH}`, "HEAD");
+  const asset = await sendRequest(`${baseUrl}${SCALAR_BUNDLE_PUBLIC_PATH}`, "HEAD");
   assertStatus(scenario, "bundle local", asset.status, 200);
 
   if (!/javascript/.test(asset.headers.get("content-type") ?? "")) {
@@ -173,7 +177,7 @@ function assertStatus(
 }
 
 function assertCode(scenario: DocsScenario, label: string, body: unknown, expected: string): void {
-  const code = fieldOf(body, "code");
+  const code = readField(body, "code");
 
   if (code !== expected) {
     throw new Error(
@@ -183,13 +187,13 @@ function assertCode(scenario: DocsScenario, label: string, body: unknown, expect
 }
 
 /** Lê um campo de um corpo JSON sem confiar no shape; `unknown` até o teste. */
-function fieldOf(body: unknown, field: string): unknown {
+function readField(body: unknown, field: string): unknown {
   return typeof body === "object" && body !== null && field in body
     ? (body as Record<string, unknown>)[field]
     : undefined;
 }
 
-function request(url: string, method = "GET"): Promise<Response> {
+function sendRequest(url: string, method = "GET"): Promise<Response> {
   return fetch(url, { method, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
 }
 
@@ -211,7 +215,7 @@ async function startServer(environment: NodeJS.ProcessEnv): Promise<RunningServe
     };
   } catch (error) {
     await shutdown(server, container).catch((cleanupError: unknown) => {
-      report(`contract:check: falha ao limpar o servidor: ${messageOf(cleanupError)}`);
+      report(`contract:check: falha ao limpar o servidor: ${readMessage(cleanupError)}`);
     });
     throw error;
   }
@@ -327,7 +331,7 @@ function probeFailure(name: string, run: () => void, expected: RegExp): void {
   try {
     run();
   } catch (error) {
-    const message = messageOf(error);
+    const message = readMessage(error);
 
     if (!expected.test(message)) {
       throw new Error(`sonda "${name}": falhou com mensagem inesperada: ${message}`, {
@@ -345,13 +349,13 @@ function probeSuccess(name: string, run: () => void): void {
   try {
     run();
   } catch (error) {
-    throw new Error(`sonda "${name}": a guarda falhou indevidamente: ${messageOf(error)}`, {
+    throw new Error(`sonda "${name}": a guarda falhou indevidamente: ${readMessage(error)}`, {
       cause: error,
     });
   }
 }
 
-function messageOf(error: unknown): string {
+function readMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 

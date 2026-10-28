@@ -9,10 +9,10 @@ import { components } from "./components.ts";
 export const CONTRACT_VERSION = "0.0.0";
 
 /**
- * Versão do contrato. Fonte única para o gerador e para a guarda, que recusa um
- * spec servido em versão diferente da decidida no ADR-0026.
+ * Versão da especificação OpenAPI. Fonte única para o gerador e para a guarda,
+ * que recusa um spec servido em versão diferente da decidida no ADR-0026.
  */
-export const OPENAPI_VERSION = "3.1.0";
+export const OPENAPI_SPEC_VERSION = "3.1.0";
 
 /**
  * Compõe o documento OpenAPI. `paths` é o ponto de composição das operações
@@ -21,7 +21,7 @@ export const OPENAPI_VERSION = "3.1.0";
  */
 export function createOpenApiDocument(): ReturnType<typeof createDocument> {
   return createDocument({
-    openapi: OPENAPI_VERSION,
+    openapi: OPENAPI_SPEC_VERSION,
     info: {
       title: "MAAT Backend API",
       version: CONTRACT_VERSION,
