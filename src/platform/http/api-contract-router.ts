@@ -1,10 +1,12 @@
 import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
-import path from "node:path";
+import { dirname, join } from "node:path";
 import { apiReference } from "@scalar/express-api-reference";
 import { Router } from "express";
 import {
-  API_BASE_PATH,
+  DOCS_UI_ROUTE,
+  OPENAPI_SPEC_PUBLIC_PATH,
+  OPENAPI_SPEC_ROUTE,
   SCALAR_BUNDLE_PUBLIC_PATH,
   SCALAR_BUNDLE_ROUTE,
 } from "../../core/http/api-base-path.ts";
@@ -23,7 +25,7 @@ export function createApiContractRouter(document: ApiContractMetadata): Router {
   const router = Router();
   const bundlePath = resolveScalarBundle();
 
-  router.get("/openapi.json", (_req, res) => {
+  router.get(OPENAPI_SPEC_ROUTE, (_req, res) => {
     res.status(200).json(document);
   });
 
@@ -33,9 +35,9 @@ export function createApiContractRouter(document: ApiContractMetadata): Router {
   });
 
   router.use(
-    "/docs",
+    DOCS_UI_ROUTE,
     apiReference({
-      url: `${API_BASE_PATH}/openapi.json`,
+      url: OPENAPI_SPEC_PUBLIC_PATH,
       pageTitle: document.info.title,
       cdn: SCALAR_BUNDLE_PUBLIC_PATH,
     }),
@@ -53,7 +55,7 @@ export function createApiContractRouter(document: ApiContractMetadata): Router {
  */
 function resolveScalarBundle(): string {
   const entry = createRequire(import.meta.url).resolve("@scalar/api-reference");
-  const bundlePath = path.join(path.dirname(entry), "browser/standalone.js");
+  const bundlePath = join(dirname(entry), "browser/standalone.js");
 
   if (!existsSync(bundlePath)) {
     throw new Error(

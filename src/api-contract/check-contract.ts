@@ -4,7 +4,12 @@ import express, { Router } from "express";
 import type { Express } from "express";
 import { createApp } from "../app.ts";
 import { createContainer } from "../container.ts";
-import { API_BASE_PATH, SCALAR_BUNDLE_PUBLIC_PATH } from "../core/http/api-base-path.ts";
+import {
+  API_BASE_PATH,
+  DOCS_UI_PUBLIC_PATH,
+  OPENAPI_SPEC_PUBLIC_PATH,
+  SCALAR_BUNDLE_PUBLIC_PATH,
+} from "../core/http/api-base-path.ts";
 import { loadConfig } from "../platform/config/load-config.ts";
 import { createOpenApiDocument, OPENAPI_VERSION } from "./openapi.ts";
 import { assertRouteCoverage } from "./route-coverage.ts";
@@ -97,8 +102,8 @@ async function checkDocsScenario(scenario: DocsScenario): Promise<void> {
   const server = await startServer(scenario.environment);
 
   try {
-    const spec = await request(`${server.baseUrl}${API_BASE_PATH}/openapi.json`);
-    const ui = await request(`${server.baseUrl}${API_BASE_PATH}/docs`);
+    const spec = await request(`${server.baseUrl}${OPENAPI_SPEC_PUBLIC_PATH}`);
+    const ui = await request(`${server.baseUrl}${DOCS_UI_PUBLIC_PATH}`);
 
     if (!scenario.isExposed) {
       assertStatus(scenario, "spec", spec.status, 404);
@@ -175,22 +180,28 @@ async function startServer(environment: NodeJS.ProcessEnv): Promise<RunningServe
   const container = createContainer(loadConfig({ ...BASE_ENVIRONMENT, ...environment }));
   const server = createApp(container).listen(0);
 
-  await once(server, "listening");
+  try {
+    await once(server, "listening");
 
-  const address = server.address();
-  if (address === null || typeof address === "string") {
+    const address = server.address();
+    if (address === null || typeof address === "string") {
+      throw new Error("esperava um endereço TCP efêmero do servidor");
+    }
+
+    return {
+      baseUrl: `http://127.0.0.1:${address.port}`,
+      async close(): Promise<void> {
+        server.closeAllConnections();
+        await closeServer(server);
+        await container.database.destroy();
+      },
+    };
+  } catch (error) {
+    server.closeAllConnections();
+    await closeServer(server).catch(() => undefined);
     await container.database.destroy();
-    throw new Error("esperava um endereço TCP efêmero do servidor");
+    throw error;
   }
-
-  return {
-    baseUrl: `http://127.0.0.1:${address.port}`,
-    async close(): Promise<void> {
-      server.closeAllConnections();
-      await closeServer(server);
-      await container.database.destroy();
-    },
-  };
 }
 
 function closeServer(server: Server): Promise<void> {
@@ -221,6 +232,20 @@ function runProbe(): void {
       assertRouteCoverage(express(), { paths: { "/probe": { get: {} } } });
     },
     /Operação GET \/probe não tem rota alcançável/,
+  );
+
+  probeFailure(
+    "operação em rota de infraestrutura",
+    () => {
+      const app = probeApp((router) => {
+        router.get("/openapi.json", (_req, res) => {
+          res.sendStatus(200);
+        });
+      });
+
+      assertRouteCoverage(app, { paths: { "/openapi.json": { get: {} } } });
+    },
+    /infraestrutura/,
   );
 
   probeFailure(

@@ -28,6 +28,11 @@ export interface UploadConfig {
   readonly jsonBodyMaxBytes: number;
 }
 
+/** Exposição do spec e da UI de documentação (`04-HTTP-Contract.md` §13). */
+export interface DocsConfig {
+  readonly enabled: boolean;
+}
+
 /** Configuração lida e validada uma única vez no boot. */
 export interface Config {
   readonly environment: Environment;
@@ -39,5 +44,5 @@ export interface Config {
   readonly cookieName: string;
   readonly protocolSecret: string;
   readonly uploads: UploadConfig;
-  readonly docs: { readonly enabled: boolean };
+  readonly docs: DocsConfig;
 }
