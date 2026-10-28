@@ -147,8 +147,7 @@ corpo acima disso → `413` no envelope `{ status, statusCode, message }`, com a
 **Divergente (legado vigente):** a convenção §9 fixa `JSON_BODY_MAX_BYTES` de 1 MiB; o legado usa o
 default de 100 kb do `express.json`.
 
-O
-`/uploads` é `express.static` público sobre `Config.UPLOAD_DIR`, com `fallthrough: false`
+O `/uploads` é `express.static` público sobre `Config.UPLOAD_DIR`, com `fallthrough: false`
 (`F1 src/app.ts:24`) — serve os assets do portal, não é rota de domínio e não aparece no inventário
 da §4.
 
@@ -1398,8 +1397,8 @@ Montagem: o router é montado em `/portal-config` (`F1 src/router.ts:29`). O `GE
 
 Transporte comum das rotas JSON:
 
-- `application/json`, sem `Content-Type` alternativo aceito; corpo lido pelo default de 100 kb do Express
-  (`F1 src/app.ts:26`), sem limite explícito próprio.
+- `application/json`, sem `Content-Type` alternativo aceito; corpo lido pelo default do Express —
+  ver §3.1 (`F1 src/app.ts:26`).
 - Datas não aparecem no payload: o contrato não expõe `created_at`/`updated_at`/`updated_by`.
 - Nenhuma rota define `Location`, `ETag`, `x-request-id` nem `Cache-Control`.
 - Toda escrita roda em transação com `lockSettings` (e `lockTheme` na Aparência) e grava auditoria
@@ -1585,9 +1584,6 @@ mesma mensagem genérica para 5xx. Não há 401/403 nesta rota.
 #### Transporte
 
 JSON; resposta completa `200` (sem `201`/`204`); nenhum header de cache.
-
-A leitura é pública e devolve status inativos e `prioritizationWeights`; o ADR-0018 separa a leitura
-pública da administrativa — divergência anotada em §7.12.
 
 #### Evidência
 
@@ -2365,7 +2361,7 @@ Não há em F2 rotas alternativas para leitura: o consumidor usa exatamente as 8
 | Autorização dos `PATCH`              | Divergente (legado vigente): perfil `Administrador` via `requireRole`, não capability key                                                                                            | convenção §6; ADR-0025; ADR-0006; `F1 src/modules/portalConfig/portalConfig.router.ts:22-23` |
 | `id` numérico de status no wire      | Divergente (legado vigente): `statuses[].id` inteiro 1..50 é a referência; a convenção pede `key` varchar e nenhum id numérico de status no wire                                     | tabela 0.1 #18 e §15.1; ADR-0021; `F1 src/shared/types/portalConfig.ts:133-144`              |
 | Chaves de JSON                       | Compatível: camelCase em inglês, valores de domínio em pt-BR                                                                                                                         | convenção §11; `F1 src/shared/types/portalConfig.ts:1-11`                                    |
-| Corpo JSON                           | Divergente (legado vigente): `express.json()` sem limite explícito (default de 100 kb do Express), sem `JSON_BODY_MAX_BYTES` de 1 MiB                                                | convenção §9; `F1 src/app.ts:26`                                                             |
+| Corpo JSON                           | Divergente (legado vigente): `express.json()` sem `JSON_BODY_MAX_BYTES` de 1 MiB — ver §3.1                                                                                          | convenção §9; §3.1                                                                           |
 | `PATCH /assets` — limites            | Compatível: 8 arquivos, favicon 1 MiB, logo/avatar 2 MiB, imagem de login 5 MiB, parte JSON de 2 MiB                                                                                 | convenção §9; `F1 src/shared/middleware/uploadAssets.ts:11-67`                               |
 | `PATCH /assets` — erros de multipart | Divergente (legado vigente): parte JSON acima de 2 MiB responde **400** `"Erro ao processar o upload."` em vez de 413; a ausência de `code` nos 413/415 é compatível (aditivo, §2.1) | convenção §9; `F1 src/shared/middleware/uploadAssets.ts:112-134`                             |
 | Códigos de sucesso                   | Compatível: `200` em leitura e em todas as atualizações                                                                                                                              | tabela 0.1 #20 e §15.4                                                                       |
@@ -4440,7 +4436,7 @@ com o segmento vazio, mas protocolo só com espaços casa a rota, é trimado e d
 
 | Status | Mensagem literal                                                  | Condição                                                         | Evidência                                                   |
 | ------ | ----------------------------------------------------------------- | ---------------------------------------------------------------- | ----------------------------------------------------------- |
-| 400    | `"Campos inválidos: protocol — Protocolo é obrigatório."`         | protocolo em branco (só espaços; segmento vazio não casa a rota) | `F1 src/modules/requests/triage/triage.controller.ts:31-37` |
+| 400    | `"Campos inválidos: protocol — Protocolo é obrigatório."`         | protocolo em branco (só espaços; segmento vazio não casa a rota) | `F1 src/modules/requests/triage/triage.controller.ts:31-38` |
 | 401    | `"Token não fornecido"`                                           | sem cookie                                                       | `F1 src/shared/middleware/auth.ts:27-45`                    |
 | 401    | `"Token inválido ou expirado"`                                    | token inválido/expirado/usuário inativo                          | `F1 src/shared/middleware/auth.ts:87-95`                    |
 | 403    | `"Troca de senha obrigatória antes de continuar"`                 | `must_change_password`                                           | `F1 src/shared/middleware/requireRole.ts:11-13`             |
@@ -4574,7 +4570,7 @@ O evento `request.unassign` é emitido com base em `professional_id !== null` da
 | 422    | `"Validação falhou"` + `fields`                                                                                       | `exitStatus` inelegível, categoria inválida, retorno público ausente | `F1 src/modules/requests/triage/triage.service.ts:102-131`                                            |
 | 409    | `"Solicitação foi atualizada por outra operação."`                                                                    | `status_id` mudou entre a leitura e o update                         | `F1 src/modules/requests/triage/triage.repository.ts:210-217`                                         |
 | 500    | `"Erro interno do servidor"`                                                                                          | falha não prevista                                                   | `F1 src/shared/middleware/errorHandler.ts:32-44`                                                      |
-| 400    | `"Campos inválidos: protocol — Protocolo é obrigatório."`                                                             | protocolo em branco (só espaços; segmento vazio não casa a rota)     | `F1 src/modules/requests/triage/triage.controller.ts:31-37`                                           |
+| 400    | `"Campos inválidos: protocol — Protocolo é obrigatório."`                                                             | protocolo em branco (só espaços; segmento vazio não casa a rota)     | `F1 src/modules/requests/triage/triage.controller.ts:31-38`                                           |
 
 O `409` não é uma precondição enviada pelo cliente: o `expectedStatusId` é lido do próprio banco no início do POST (`F1 src/modules/requests/triage/triage.service.ts:168`). Não há `Idempotency-Key`; repetir o POST cria outra triagem.
 
@@ -5379,7 +5375,7 @@ Regras efetivas:
 
 | Status | `code` | Mensagem literal                                        | Condição                                                                                                                                                |
 | ------ | ------ | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 400    | —      | `"Protocolo é obrigatório"`                             | protocolo em branco (só espaços)                                                                                                                        | `F1 src/modules/pendingItems/pendingItems.controller.ts:21-26` |
+| 400    | —      | `"Protocolo é obrigatório"`                             | protocolo em branco (só espaços) (`F1 src/modules/pendingItems/pendingItems.controller.ts:21-26`)                                                       |
 | 401    | —      | `"Valide seus dados para acompanhar esta solicitação."` | sem cookie e sem header; header malformado; nome/e-mail divergentes; protocolo inexistente                                                              |
 | 401    | —      | `"Token inválido ou expirado"`                          | cookie presente, mas inválido/expirado                                                                                                                  |
 | 401    | —      | `"Sua sessão foi revogada. Faça login novamente."`      | token anterior à troca/reset de senha (`F1 src/shared/middleware/auth.ts:63-72`)                                                                        |
@@ -5655,24 +5651,24 @@ O `protocol` ecoado é o do path, já com `trim` (`F1 src/modules/pendingItems/p
 
 ### 13.10 Confronto com `docs/04-API-Conventions.md`
 
-| Assunto                   | Situação no legado                                                                                                          | Confronto                                                                                                                                                                    |
-| ------------------------- | --------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Base path                 | `/requests/:protocol/pending-items` e `/requests/:protocol/public/verify`, sem prefixo                                      | Divergente (legado vigente): `/api/v1` — §1                                                                                                                                  |
-| Envelope de erro          | `{ status, statusCode, message }`                                                                                           | Compatível com o envelope legado da §2.1                                                                                                                                     |
-| `code` no erro            | Ausente em todos os erros                                                                                                   | Compatível: `code` é aditivo no envelope legado — §2.1; tabela 0.1 #2                                                                                                        |
-| Validação                 | `400` com mensagem agregada, sem `code` e sem `fields`; não há `422` neste domínio                                          | Divergente (legado vigente): §3 congela `400` + `validation_error` + `fields` como lista                                                                                     |
-| Paginação                 | `GET .../pending-items` sem paginação e sem envelope de página                                                              | Compatível por exceção registrada — tabela 0.1 #6 e §4.3 (linha “Pendências”, `—`/`—`/`—`)                                                                                   |
-| `LIMIT` interno           | Consulta sem `LIMIT` interno (`F1 src/modules/pendingItems/pendingItems.repository.ts:69-78`)                               | Divergente (legado vigente): a §4.2 fixa que nenhum repositório consulta sem `limit`, e a §4.3 exige que a spec declare o `LIMIT` interno da listagem não paginada           |
-| Multipart                 | 1 arquivo, 10 MiB, allowlist de MIME; MIME inválido → `400`; tamanho → `400`                                                | Limites compatíveis; status Divergente (legado vigente): §9 congela `415` para MIME e `413` para tamanho                                                                     |
-| Rate limit                | 10 tentativas/10 min por IP+protocolo, em memória, `429` com mensagem textual                                               | Divergente (legado vigente): §13 congela `429` com `rate_limited`, `Retry-After` e storage compartilhado                                                                     |
-| Identidade do solicitante | `X-Requester-Identity` com nome+e-mail; divergência → `401` genérico; protocolo inexistente → `401`                         | Divergente (legado vigente): convenção §15.3 e ADR-0023 apontam `X-Requester-Email` como chave de busca e `404` para protocolo não encontrado                                |
-| Autorização               | Perfis `Analista`/`Gestor`/`Administrador` no router; custódia por `professional_id` em criar/revisar                       | Divergente (legado vigente): §6 e ADR-0025 usam as capabilities `pending_item:read`, `pending_item:write` e `pending_item:review`, com escopo `own`/`all`                    |
-| Sucesso                   | `201` em criação e anexo; `200` em leitura, resposta, revisão e verify                                                      | Compatível — §15.4                                                                                                                                                           |
-| Datas                     | timestamps ISO-8601 UTC; `deadline` como `yyyy-mm-dd`                                                                       | Compatível — §10                                                                                                                                                             |
-| Idioma                    | Chaves `camelCase`; valores de enum (`field_edit`, `observation`, `requested`, `responded`, `validated`) em inglês          | Compatível — §11; os valores de enum são identificadores internos, não texto de UI                                                                                           |
-| Idempotência              | `review` ignora reenvio de `id+decision`; `respond` não é idempotente (segunda chamada → `409`); `POST` não deduplica       | Compatível com a tabela da convenção §8.2; a idempotência do `review` é regra do contrato legado (`F1 docs/contract-pendencias_03.md` §7; `D-P23` do contrato de pendências) |
-| Request-id                | Ausente                                                                                                                     | Divergente (legado vigente): sem header `x-request-id`; o `requestId` do envelope é aditivo (§2.1) — §12; anotado na §3                                                      |
-| `deadline` no wire        | A chave é sempre emitida, com `null` quando não há prazo (`F1 src/modules/pendingItems/pendingItems.repository.ts:764-766`) | Desatualizado no legado: o contrato marca `deadline` como opcional (`F1 docs/contract-pendencias_03.md` §7)                                                                  |
+| Assunto                   | Situação no legado                                                                                                               | Confronto                                                                                                                                                                    |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Base path                 | `/requests/:protocol/pending-items` e `/requests/:protocol/public/verify`, sem prefixo                                           | Divergente (legado vigente): `/api/v1` — §1                                                                                                                                  |
+| Envelope de erro          | `{ status, statusCode, message }`                                                                                                | Compatível com o envelope legado da §2.1                                                                                                                                     |
+| `code` no erro            | Ausente em todos os erros                                                                                                        | Compatível: `code` é aditivo no envelope legado — §2.1; tabela 0.1 #2                                                                                                        |
+| Validação                 | `400` com mensagem agregada no body e `"Protocolo é obrigatório"` no path, sem `code` e sem `fields`; não há `422` neste domínio | Divergente (legado vigente): §3 congela `400` + `validation_error` + `fields` como lista                                                                                     |
+| Paginação                 | `GET .../pending-items` sem paginação e sem envelope de página                                                                   | Compatível por exceção registrada — tabela 0.1 #6 e §4.3 (linha “Pendências”, `—`/`—`/`—`)                                                                                   |
+| `LIMIT` interno           | Consulta sem `LIMIT` interno (`F1 src/modules/pendingItems/pendingItems.repository.ts:69-78`)                                    | Divergente (legado vigente): a §4.2 fixa que nenhum repositório consulta sem `limit`, e a §4.3 exige que a spec declare o `LIMIT` interno da listagem não paginada           |
+| Multipart                 | 1 arquivo, 10 MiB, allowlist de MIME; MIME inválido → `400`; tamanho → `400`                                                     | Limites compatíveis; status Divergente (legado vigente): §9 congela `415` para MIME e `413` para tamanho                                                                     |
+| Rate limit                | 10 tentativas/10 min por IP+protocolo, em memória, `429` com mensagem textual                                                    | Divergente (legado vigente): §13 congela `429` com `rate_limited`, `Retry-After` e storage compartilhado                                                                     |
+| Identidade do solicitante | `X-Requester-Identity` com nome+e-mail; divergência → `401` genérico; protocolo inexistente → `401`                              | Divergente (legado vigente): convenção §15.3 e ADR-0023 apontam `X-Requester-Email` como chave de busca e `404` para protocolo não encontrado                                |
+| Autorização               | Perfis `Analista`/`Gestor`/`Administrador` no router; custódia por `professional_id` em criar/revisar                            | Divergente (legado vigente): §6 e ADR-0025 usam as capabilities `pending_item:read`, `pending_item:write` e `pending_item:review`, com escopo `own`/`all`                    |
+| Sucesso                   | `201` em criação e anexo; `200` em leitura, resposta, revisão e verify                                                           | Compatível — §15.4                                                                                                                                                           |
+| Datas                     | timestamps ISO-8601 UTC; `deadline` como `yyyy-mm-dd`                                                                            | Compatível — §10                                                                                                                                                             |
+| Idioma                    | Chaves `camelCase`; valores de enum (`field_edit`, `observation`, `requested`, `responded`, `validated`) em inglês               | Compatível — §11; os valores de enum são identificadores internos, não texto de UI                                                                                           |
+| Idempotência              | `review` ignora reenvio de `id+decision`; `respond` não é idempotente (segunda chamada → `409`); `POST` não deduplica            | Compatível com a tabela da convenção §8.2; a idempotência do `review` é regra do contrato legado (`F1 docs/contract-pendencias_03.md` §7; `D-P23` do contrato de pendências) |
+| Request-id                | Ausente                                                                                                                          | Divergente (legado vigente): sem header `x-request-id`; o `requestId` do envelope é aditivo (§2.1) — §12; anotado na §3                                                      |
+| `deadline` no wire        | A chave é sempre emitida, com `null` quando não há prazo (`F1 src/modules/pendingItems/pendingItems.repository.ts:764-766`)      | Desatualizado no legado: o contrato marca `deadline` como opcional (`F1 docs/contract-pendencias_03.md` §7)                                                                  |
 
 ## 14. queue
 
@@ -5986,7 +5982,7 @@ Divergências anotadas (sem decisão):
 - **Compatível:** envelope `{ data, page, pageSize, total, totalPages }` com `totalPages = 0` quando
   vazio (§4.1); `page` 1-based.
 - **Registrado (sem convenção correspondente):** `assignees` é campo aditivo no envelope de sucesso;
-  a §4.1 não prevê campos extras.
+  a §4.1 não o prevê.
 - **Compatível:** datas de timestamp em ISO-8601 UTC (§10).
 - **Divergente (legado vigente):** erro de validação em `400` com mensagem agregada e sem `fields`
   — a §3 e a tabela 0.1 #5 congelam `400` + `validation_error` + `fields: [{ path, message }]`.
@@ -7025,7 +7021,8 @@ fonte de cada assunto é o confronto da própria seção; esta lista só serve d
 | Status no wire              | §7; §9; §10; §11; §14; §15; §17                                                                      | ADR-0021; convenção §15.1           |
 | Perfis e autorização        | §5.8; §7; §8; §9; §10.7; §11.6; §12.6; §13.10; §14; §15.6; §16.7; §17.7                              | ADR-0006; ADR-0017; ADR-0025        |
 | Identidade do solicitante   | §3.9; §9.7; §13.8                                                                                    | ADR-0023; convenção §15.3           |
-| Multipart e MIME            | §3.7; §7.7; §9.12; §13.7                                                                             | convenção §9; tabela 0.1 #22        |
+| Multipart e MIME            | §3.7; §7.7; §9.12; §13.7; §13.10                                                                     | convenção §9; tabela 0.1 #22        |
+| Corpo JSON                  | §3.1; §7.12                                                                                          | convenção §9                        |
 | Anexos                      | §9.13; §13.9                                                                                         | sem convenção correspondente        |
 | Request-id                  | §3.10; §7.12; §9.14; §10.7; §11.6; §12.6; §13.10                                                     | convenção §12                       |
 | 404 fora do envelope        | §3.10                                                                                                | §2.1                                |
