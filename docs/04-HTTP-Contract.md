@@ -36,7 +36,7 @@ Regra de dependências (`docs/02-Architecture.md` §19): `domains` não importa 
 - `summary` e `description` em português.
 - Toda operação tem schema de request (quando aplicável) e schema de response explícito.
 - Toda rota Express 5 de negócio tem operação documentada e vice-versa (cobertura bidirecional).
-- Exceção à cobertura: rotas de infraestrutura (`/health`, `/api/v1/openapi.json`, `/api/v1/docs`) não têm operação e ficam fora do teste de cobertura.
+- Exceção à cobertura: rotas de infraestrutura (`/health`, `/api/v1/openapi.json`, `/api/v1/docs` e `/api/v1/docs/assets/standalone.js`) não têm operação e ficam fora do teste de cobertura.
 - Exemplos obrigatórios em schemas e responses; **sem PII** (sem e-mail, nome, telefone ou dado real de pessoa).
 
 ## 5. Segurança

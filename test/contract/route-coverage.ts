@@ -26,6 +26,7 @@ const EXCLUDED_PATHS: readonly string[] = [
   "/health",
   `${API_BASE_PATH}/openapi.json`,
   `${API_BASE_PATH}/docs`,
+  `${API_BASE_PATH}/docs/assets/standalone.js`,
 ];
 
 const ROUTE_PARAMETER = /:([A-Za-z0-9_]+)/g;

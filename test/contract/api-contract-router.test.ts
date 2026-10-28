@@ -36,6 +36,28 @@ describe("exposição da documentação HTTP", () => {
     }
   });
 
+  it("serve a UI com o bundle local do Scalar, sem CDN", async () => {
+    const server = await startTestServer({ NODE_ENV: "production", DOCS_ENABLED: "true" });
+
+    try {
+      const ui = await fetch(`${server.baseUrl}${API_BASE_PATH}/docs`);
+      const html = await ui.text();
+
+      assert.equal(ui.status, 200);
+      assert.match(html, /\/api\/v1\/docs\/assets\/standalone\.js/);
+      assert.doesNotMatch(html, /jsdelivr/i);
+
+      const asset = await fetch(`${server.baseUrl}${API_BASE_PATH}/docs/assets/standalone.js`, {
+        method: "HEAD",
+      });
+
+      assert.equal(asset.status, 200);
+      assert.match(asset.headers.get("content-type") ?? "", /javascript/);
+    } finally {
+      await server.close();
+    }
+  });
+
   it("serve o spec e a UI por padrão no ambiente de teste", async () => {
     const server = await startTestServer();
 
