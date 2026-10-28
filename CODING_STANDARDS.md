@@ -250,6 +250,7 @@ const errorHandler: ErrorRequestHandler = (err, req, res, next) => {
 - Redija `authorization`, `cookie`, `set-cookie`, `password`, `token` e `secret`.
 - Não logue PII.
 - Logue a causa do erro uma vez, na borda; não faça log-and-rethrow.
+- Exceção: 4xx não loga a causa. A `message` do parser pode ecoar trecho do body; o 4xx registra `correlationId`, `code` e `status`. 5xx mantém a causa.
 - Campos, não concatenação: `logger.info({ userId }, "user loaded")`.
 
 ## 10. Testes

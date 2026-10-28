@@ -1576,6 +1576,8 @@ export interface Logger {
 | Método, rota, status e duração em todo log de requisição                                             | Métrica de saúde                       |
 | Requisição abortada registra `aborted: true`                                                         | Rastro de desconexão                   |
 
+4xx não loga a causa: a `message` do parser pode ecoar trecho do body; o log do 4xx fica em `correlationId`, `code` e `status`. 5xx mantém a causa para diagnóstico.
+
 O nível mínimo vem do ambiente: `development` e `production` registram a partir de `info`; `test` não registra. Não há `LOG_LEVEL` no schema — o ambiente já decide o ruído aceitável.
 
 **O log é rastro de tentativa, não de fato.** Uma transação que faz _rollback_ pode deixar um log dizendo que o status mudou, sem auditoria correspondente. Por isso o log de sucesso sai **depois** do commit, e para saber o que de fato aconteceu se olha a **auditoria** — ver [§ 9.4](#94-auditoria-e-log-o-que-cada-um-garante).
