@@ -142,7 +142,12 @@ O legado **não** tem prefixo `/api/v1`: o `router` é montado na raiz da aplica
 
 O JSON é lido com o limite default de 100 kb do Express (`F1 src/app.ts:26`), sem limite explícito;
 corpo acima disso → `413` no envelope `{ status, statusCode, message }`, com a mensagem em inglês do
-`body-parser` (`request entity too large`) e sem `code: payload_too_large`. O
+`body-parser` (`request entity too large`) e sem `code: payload_too_large`.
+
+**Divergente (legado vigente):** a convenção §9 fixa `JSON_BODY_MAX_BYTES` de 1 MiB; o legado usa o
+default de 100 kb do `express.json`.
+
+O
 `/uploads` é `express.static` público sobre `Config.UPLOAD_DIR`, com `fallthrough: false`
 (`F1 src/app.ts:24`) — serve os assets do portal, não é rota de domínio e não aparece no inventário
 da §4.
@@ -894,7 +899,7 @@ Divergências anotadas (sem decisão):
 | `/auth/me` — `role`                 | Divergente (legado vigente): quatro perfis (`Solicitante`, `Analista`, `Gestor`, `Administrador`), sem `Admin Root`; `role` vem do banco a cada request               | §6; ADR-0006; ADR-0025                 |
 | Rate limit de login                 | Registrado (decisão aberta): sem limite e sem 429 na rota                                                                                                             | §13; tabela 0.2 #24                    |
 | Idempotência                        | Compatível: login não idempotente; logout repetível com 200                                                                                                           | convenção §8.2                         |
-| Datas e horas                       | Compatível: nenhum campo de data nas respostas; `password_changed_at` só existe dentro do JWT (não aplicável)                                                         | §10                                    |
+| Datas e horas                       | Não se aplica: nenhum campo de data nas respostas; `password_changed_at` só existe dentro do JWT                                                                      | §10                                    |
 | Idioma                              | Compatível: chaves camelCase, mensagens e valores em pt-BR                                                                                                            | §11                                    |
 | 403 de senha pendente               | Compatível em status (403); a mensagem `"Troca de senha obrigatória antes de continuar"` não traz `code`                                                              | §2.3; §5                               |
 | Revogação por `password_changed_at` | Compatível com a validação por requisição descrita na convenção                                                                                                       | §5                                     |
@@ -1581,8 +1586,8 @@ mesma mensagem genérica para 5xx. Não há 401/403 nesta rota.
 
 JSON; resposta completa `200` (sem `201`/`204`); nenhum header de cache.
 
-**Divergente (legado vigente):** `GET /portal-config` é público e devolve status inativos e
-`prioritizationWeights`; o ADR-0018 separa a leitura pública da administrativa.
+A leitura é pública e devolve status inativos e `prioritizationWeights`; o ADR-0018 separa a leitura
+pública da administrativa — divergência anotada em §7.12.
 
 #### Evidência
 
@@ -2429,7 +2434,7 @@ Erros comuns a todas as rotas do domínio (além dos erros específicos de cada 
 | 401    | —    | `"Sua sessão foi revogada. Faça login novamente."` | `password_changed_at` do token difere do banco                                         | `F1 src/shared/middleware/auth.ts:63-72`                                                         |
 | 403    | —    | `"Troca de senha obrigatória antes de continuar"`  | sessão com `must_change_password = true` (exceto `/auth/change-password` e `/auth/me`) | `F1 src/shared/middleware/auth.ts:49-61`                                                         |
 | 403    | —    | `"Acesso restrito ao perfil Administrador"`        | perfil diferente de `Administrador` nas rotas administrativas                          | `F1 src/shared/middleware/requireRole.ts:16-22`                                                  |
-| 500    | —    | `"Erro interno do servidor"`                       | falha não prevista (mensagem genérica do `errorHandler`)                               | `F1 src/shared/middleware/errorHandler.ts:39-43`                                                 |
+| 500    | —    | `"Erro interno do servidor"`                       | falha não prevista (mensagem genérica do `errorHandler`)                               | `F1 src/shared/middleware/errorHandler.ts:32-44`                                                 |
 
 **Divergente (legado vigente):** paths sem o prefixo `/api/v1` — convenção §1 de
 `docs/04-API-Conventions.md`.
@@ -2559,7 +2564,7 @@ sem path param, sem query, sem body. Exige cookie de sessão; o id vem de `req.u
 | 401    | —    | `"Token não fornecido"` / `"Token inválido ou expirado"` | §8.2 deste documento                                                                                |
 | 403    | —    | `"Troca de senha obrigatória antes de continuar"`        | senha temporária pendente                                                                           |
 | 404    | —    | `"Usuário não encontrado"`                               | sessão válida sem linha correspondente em `users` (`F1 src/modules/users/users.service.ts:281-285`) |
-| 500    | —    | `"Erro interno do servidor"`                             | falha não prevista (`F1 src/shared/middleware/errorHandler.ts:39-43`)                               |
+| 500    | —    | `"Erro interno do servidor"`                             | falha não prevista (`F1 src/shared/middleware/errorHandler.ts:32-44`)                               |
 
 #### Transporte
 
@@ -2824,7 +2829,7 @@ e ecoa a página pedida — não há clamp (`F1 src/modules/users/users.reposito
 | 400     | —    | `"Campos inválidos: pageSize — Máximo de 50 itens por página."` (ou equivalente para `page`, `profile`, `search`) | sintaxe da query inválida (`F1 src/modules/users/users.controller.ts:39-41`; `F1 src/modules/users/users.schema.ts:59-79`) |
 | 400     | —    | `"Perfil inválido."`                                                                                              | `profile` inexistente em `profiles` (`F1 src/modules/users/users.service.ts:69-74`)                                        |
 | 401/403 | —    | comuns da §8.2 deste documento                                                                                    | sessão/perfil                                                                                                              |
-| 500     | —    | `"Erro interno do servidor"`                                                                                      | falha não prevista (`F1 src/shared/middleware/errorHandler.ts:39-43`)                                                      |
+| 500     | —    | `"Erro interno do servidor"`                                                                                      | falha não prevista (`F1 src/shared/middleware/errorHandler.ts:32-44`)                                                      |
 
 #### Transporte
 
@@ -3063,7 +3068,7 @@ bloco `professional` com defaults para analista sem extensão
 | 409     | —    | `"E-mail já cadastrado"`                                        | `23505` na transação (`:557-562`)                                                  |
 | 422     | —    | mensagem agregada do Zod + `fields`                             | schema (inclui `fields.payload` para body vazio)                                   |
 | 401/403 | —    | comuns da §8.2 deste documento                                  | sessão/perfil                                                                      |
-| 500     | —    | `"Erro interno do servidor"`                                    | falha não prevista (`F1 src/shared/middleware/errorHandler.ts:39-43`)              |
+| 500     | —    | `"Erro interno do servidor"`                                    | falha não prevista (`F1 src/shared/middleware/errorHandler.ts:32-44`)              |
 
 #### Transporte
 
@@ -3120,7 +3125,7 @@ seguinte do alvo: `authMiddleware` relê `users.is_active` e responde `401 "Toke
 | 403     | —    | `"Não é possível gerenciar contas de Administradores"`           | alvo administrador (`:188`)                                           |
 | 404     | —    | `"Usuário não encontrado"`                                       | id inválido ou inexistente (`:46-52,183-186`)                         |
 | 401/403 | —    | comuns da §8.2 deste documento                                   | sessão/perfil                                                         |
-| 500     | —    | `"Erro interno do servidor"`                                     | falha não prevista (`F1 src/shared/middleware/errorHandler.ts:39-43`) |
+| 500     | —    | `"Erro interno do servidor"`                                     | falha não prevista (`F1 src/shared/middleware/errorHandler.ts:32-44`) |
 
 #### Transporte
 
@@ -4568,8 +4573,8 @@ O evento `request.unassign` é emitido com base em `professional_id !== null` da
 | 422    | `"Campos obrigatórios ausentes: …"` / `"Campos inválidos: …"` + `fields`                                              | body fora do schema                                                  | `F1 src/modules/requests/triage/triage.controller.ts:53-57`                                           |
 | 422    | `"Validação falhou"` + `fields`                                                                                       | `exitStatus` inelegível, categoria inválida, retorno público ausente | `F1 src/modules/requests/triage/triage.service.ts:102-131`                                            |
 | 409    | `"Solicitação foi atualizada por outra operação."`                                                                    | `status_id` mudou entre a leitura e o update                         | `F1 src/modules/requests/triage/triage.repository.ts:210-217`                                         |
-| 500    | `"Erro interno do servidor"`                                                                                          | falha não prevista                                                   | `F1 src/shared/middleware/errorHandler.ts:39-43`                                                      |
-| 400    | `"Campos inválidos: protocol — Protocolo é obrigatório."`                                                             | protocolo em branco (só espaços; segmento vazio não casa a rota)     | `F1 src/modules/requests/triage/triage.controller.ts:10,31-35`                                        |
+| 500    | `"Erro interno do servidor"`                                                                                          | falha não prevista                                                   | `F1 src/shared/middleware/errorHandler.ts:32-44`                                                      |
+| 400    | `"Campos inválidos: protocol — Protocolo é obrigatório."`                                                             | protocolo em branco (só espaços; segmento vazio não casa a rota)     | `F1 src/modules/requests/triage/triage.controller.ts:31-37`                                           |
 
 O `409` não é uma precondição enviada pelo cliente: o `expectedStatusId` é lido do próprio banco no início do POST (`F1 src/modules/requests/triage/triage.service.ts:168`). Não há `Idempotency-Key`; repetir o POST cria outra triagem.
 
@@ -4883,7 +4888,7 @@ Mesmo shape do GET (`§11.3`), montado a partir dos valores em memória já pers
 | 422    | `"Participante inválido: usuário inexistente ou inativo."` / `"Participantes duplicados não são permitidos."`                 | participantes                                             | `F1 src/modules/queue/mapping.service.ts:249,259-265`     |
 | 422    | `"Informe o retorno ao solicitante para um status público."`                                                                  | destino público sem retorno (checagem final da transição) | `F1 src/modules/requests/statusTransition.ts:28-32`       |
 | 409    | `"Solicitação foi atualizada por outra operação"`                                                                             | status mudou entre a leitura e o update (sem ponto final) | `F1 src/modules/requests/statusTransition.ts:44-50`       |
-| 500    | `"Erro interno do servidor"`                                                                                                  | falha não prevista                                        | `F1 src/shared/middleware/errorHandler.ts:39-43`          |
+| 500    | `"Erro interno do servidor"`                                                                                                  | falha não prevista                                        | `F1 src/shared/middleware/errorHandler.ts:32-44`          |
 
 #### Transporte
 
@@ -5025,7 +5030,7 @@ Regras efetivas:
 | 403    | —      | `"Acesso restrito ao perfil Analista ou Gestor ou Administrador"` | outro perfil, inclusive `Solicitante`       |
 | 500    | —      | `"Erro interno do servidor"`                                      | falha não prevista (envelope genérico)      |
 
-Evidência: `F1 src/modules/prioritization/prioritization.router.ts:11-15`; `F1 src/modules/prioritization/prioritization.controller.ts:24-28`; `F1 src/shared/middleware/errorHandler.ts:39-43`.
+Evidência: `F1 src/modules/prioritization/prioritization.router.ts:11-15`; `F1 src/modules/prioritization/prioritization.controller.ts:24-28`; `F1 src/shared/middleware/errorHandler.ts:32-44`.
 
 ### 12.4 PUT `/prioritization/:protocol/score`
 
@@ -5208,7 +5213,7 @@ O código não referencia `F1 docs/internal-observations.md`; o documento apenas
 | #   | Método | Path                                                           | Autenticação/autorização                                                                      | Handler              | Sucesso | Erros                                    |
 | --- | ------ | -------------------------------------------------------------- | --------------------------------------------------------------------------------------------- | -------------------- | ------- | ---------------------------------------- |
 | 39  | POST   | `/requests/:protocol/pending-items`                            | cookie; `Analista`, `Gestor` ou `Administrador`; no service, `Administrador` ou o Responsável | `createPendingItems` | `201`   | `400`, `401`, `403`, `404`, `409`, `500` |
-| 40  | GET    | `/requests/:protocol/pending-items`                            | dual: cookie ou `X-Requester-Identity`                                                        | `listPendingItems`   | `200`   | `401`, `403`, `404`, `500`               |
+| 40  | GET    | `/requests/:protocol/pending-items`                            | dual: cookie ou `X-Requester-Identity`                                                        | `listPendingItems`   | `200`   | `400`, `401`, `403`, `500`               |
 | 41  | PATCH  | `/requests/:protocol/pending-items/review`                     | cookie; `Analista`, `Gestor` ou `Administrador`; no service, `Administrador` ou o Responsável | `reviewPendingItems` | `200`   | `400`, `401`, `403`, `404`, `409`, `500` |
 | 42  | PATCH  | `/requests/:protocol/pending-items/:pendingItemId`             | dual: cookie ou `X-Requester-Identity`                                                        | `respondPendingItem` | `200`   | `400`, `401`, `403`, `404`, `409`, `500` |
 | 43  | POST   | `/requests/:protocol/pending-items/:pendingItemId/attachments` | dual: cookie ou `X-Requester-Identity`; multipart                                             | `attachPendingItem`  | `201`   | `400`, `401`, `403`, `404`, `500`        |
@@ -5325,7 +5330,7 @@ A resposta não devolve `solicitationStatus`; a transição de status é observa
 | 400    | —      | `"Campos inválidos: observation — Máximo de 2.000 caracteres."`                                                  | observação acima de 2000 (checagem do service, posterior ao schema e não alcançada por HTTP) |
 | 400    | —      | `"Campos inválidos: comment — Campo obrigatório."` / `"Campos inválidos: comment — Máximo de 2.000 caracteres."` | checagens do service, posteriores ao schema e não alcançadas por HTTP                        |
 | 401    | —      | `"Token não fornecido"` / `"Token inválido ou expirado"`                                                         | sessão ausente/inválida                                                                      |
-| 401    | —      | `"Sua sessão foi revogada. Faça login novamente."`                                                               | token anterior à troca de senha (`F1 src/shared/middleware/auth.ts:63-72`)                   |
+| 401    | —      | `"Sua sessão foi revogada. Faça login novamente."`                                                               | token anterior à troca/reset de senha (`F1 src/shared/middleware/auth.ts:63-72`)             |
 | 403    | —      | `"Troca de senha obrigatória antes de continuar"`                                                                | `must_change_password` (`F1 src/shared/middleware/auth.ts:49-61`)                            |
 | 403    | —      | `"Acesso restrito ao perfil Analista ou Gestor ou Administrador"`                                                | perfil fora do router                                                                        |
 | 403    | —      | `"Acesso restrito ao responsável pela solicitação"`                                                              | perfil interno que não é `Administrador` nem o Responsável                                   |
@@ -5374,8 +5379,10 @@ Regras efetivas:
 
 | Status | `code` | Mensagem literal                                        | Condição                                                                                                                                                |
 | ------ | ------ | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 400    | —      | `"Protocolo é obrigatório"`                             | protocolo em branco (só espaços)                                                                                                                        | `F1 src/modules/pendingItems/pendingItems.controller.ts:21-26` |
 | 401    | —      | `"Valide seus dados para acompanhar esta solicitação."` | sem cookie e sem header; header malformado; nome/e-mail divergentes; protocolo inexistente                                                              |
 | 401    | —      | `"Token inválido ou expirado"`                          | cookie presente, mas inválido/expirado                                                                                                                  |
+| 401    | —      | `"Sua sessão foi revogada. Faça login novamente."`      | token anterior à troca/reset de senha (`F1 src/shared/middleware/auth.ts:63-72`)                                                                        |
 | 403    | —      | `"Troca de senha obrigatória antes de continuar"`       | cookie com `must_change_password`                                                                                                                       |
 | 404    | —      | `"Solicitação não encontrada"`                          | presente no código, mas inalcançável: a checagem de acesso responde `401` antes (`F1 src/modules/pendingItems/pendingItems.service.ts:210-212,239-241`) |
 | 500    | —      | `"Erro interno do servidor"`                            | falha não prevista                                                                                                                                      |
@@ -5448,21 +5455,21 @@ As chaves que aceitam string vazia são `requester.department`, `requester.addit
 
 #### Erros
 
-| Status | `code` | Mensagem literal                                                  | Condição                                                                   |
-| ------ | ------ | ----------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| 400    | —      | `"Campos inválidos: items.<n>.comment — comment vazio"`           | `comment` de `reopen` vazio após `trim`                                    |
-| 400    | —      | `"Campos obrigatórios ausentes: comment"`                         | checagem do service, posterior ao schema e não alcançada por HTTP          |
-| 400    | —      | mensagens da tabela de `correctedValue`                           | valor inválido para o campo validado                                       |
-| 401    | —      | `"Token não fornecido"` / `"Token inválido ou expirado"`          | sessão ausente/inválida                                                    |
-| 401    | —      | `"Sua sessão foi revogada. Faça login novamente."`                | token anterior à troca de senha (`F1 src/shared/middleware/auth.ts:63-72`) |
-| 403    | —      | `"Troca de senha obrigatória antes de continuar"`                 | `must_change_password` (`F1 src/shared/middleware/auth.ts:49-61`)          |
-| 403    | —      | `"Acesso restrito ao perfil Analista ou Gestor ou Administrador"` | perfil fora do router                                                      |
-| 403    | —      | `"Acesso restrito ao responsável pela solicitação"`               | não é `Administrador` nem o Responsável                                    |
-| 404    | —      | `"Solicitação não encontrada"`                                    | protocolo inexistente                                                      |
-| 404    | —      | `"Lote não encontrado"`                                           | `batchId` inexistente ou de outra solicitação                              |
-| 404    | —      | `"Item <id> não pertence ao lote"`                                | id fora do lote                                                            |
-| 409    | —      | `"Item <id> não está com status responded"`                       | decisão sobre item em estado incompatível                                  |
-| 500    | —      | `"Erro interno do servidor"`                                      | falha não prevista                                                         |
+| Status | `code` | Mensagem literal                                                  | Condição                                                                         |
+| ------ | ------ | ----------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| 400    | —      | `"Campos inválidos: items.<n>.comment — comment vazio"`           | `comment` de `reopen` vazio após `trim`                                          |
+| 400    | —      | `"Campos obrigatórios ausentes: comment"`                         | checagem do service, posterior ao schema e não alcançada por HTTP                |
+| 400    | —      | mensagens da tabela de `correctedValue`                           | valor inválido para o campo validado                                             |
+| 401    | —      | `"Token não fornecido"` / `"Token inválido ou expirado"`          | sessão ausente/inválida                                                          |
+| 401    | —      | `"Sua sessão foi revogada. Faça login novamente."`                | token anterior à troca/reset de senha (`F1 src/shared/middleware/auth.ts:63-72`) |
+| 403    | —      | `"Troca de senha obrigatória antes de continuar"`                 | `must_change_password` (`F1 src/shared/middleware/auth.ts:49-61`)                |
+| 403    | —      | `"Acesso restrito ao perfil Analista ou Gestor ou Administrador"` | perfil fora do router                                                            |
+| 403    | —      | `"Acesso restrito ao responsável pela solicitação"`               | não é `Administrador` nem o Responsável                                          |
+| 404    | —      | `"Solicitação não encontrada"`                                    | protocolo inexistente                                                            |
+| 404    | —      | `"Lote não encontrado"`                                           | `batchId` inexistente ou de outra solicitação                                    |
+| 404    | —      | `"Item <id> não pertence ao lote"`                                | id fora do lote                                                                  |
+| 409    | —      | `"Item <id> não está com status responded"`                       | decisão sobre item em estado incompatível                                        |
+| 500    | —      | `"Erro interno do servidor"`                                      | falha não prevista                                                               |
 
 ### 13.6 PATCH `/requests/:protocol/pending-items/:pendingItemId`
 
@@ -5648,24 +5655,24 @@ O `protocol` ecoado é o do path, já com `trim` (`F1 src/modules/pendingItems/p
 
 ### 13.10 Confronto com `docs/04-API-Conventions.md`
 
-| Assunto                   | Situação no legado                                                                                                          | Confronto                                                                                                                                                                           |
-| ------------------------- | --------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Base path                 | `/requests/:protocol/pending-items` e `/requests/:protocol/public/verify`, sem prefixo                                      | Divergente (legado vigente): `/api/v1` — §1                                                                                                                                         |
-| Envelope de erro          | `{ status, statusCode, message }`                                                                                           | Compatível com o envelope legado da §2.1                                                                                                                                            |
-| `code` no erro            | Ausente em todos os erros                                                                                                   | Compatível: `code` é aditivo no envelope legado — §2.1; tabela 0.1 #2                                                                                                               |
-| Validação                 | `400` com mensagem agregada, sem `code` e sem `fields`; não há `422` neste domínio                                          | Divergente (legado vigente): §3 congela `400` + `validation_error` + `fields` como lista                                                                                            |
-| Paginação                 | `GET .../pending-items` sem paginação e sem envelope de página                                                              | Compatível por exceção registrada — tabela 0.1 #6 e §4.3 (linha “Pendências”, `—`/`—`/`—`)                                                                                          |
-| `LIMIT` interno           | Consulta sem `LIMIT` interno (`F1 src/modules/pendingItems/pendingItems.repository.ts:69-78`)                               | Divergente (legado vigente): a §4.2 fixa que nenhum repositório consulta sem `limit`, e a §4.3 exige que a spec declare o `LIMIT` interno da listagem não paginada                  |
-| Multipart                 | 1 arquivo, 10 MiB, allowlist de MIME; MIME inválido → `400`; tamanho → `400`                                                | Limites compatíveis; status Divergente (legado vigente): §9 congela `415` para MIME e `413` para tamanho                                                                            |
-| Rate limit                | 10 tentativas/10 min por IP+protocolo, em memória, `429` com mensagem textual                                               | Divergente (legado vigente): §13 congela `429` com `rate_limited`, `Retry-After` e storage compartilhado                                                                            |
-| Identidade do solicitante | `X-Requester-Identity` com nome+e-mail; divergência → `401` genérico; protocolo inexistente → `401`                         | Divergente (legado vigente): convenção §15.3 e ADR-0023 apontam `X-Requester-Email` como chave de busca e `404` para protocolo não encontrado                                       |
-| Autorização               | Perfis `Analista`/`Gestor`/`Administrador` no router; custódia por `professional_id` em criar/revisar                       | Divergente (legado vigente): §6 e ADR-0025 usam as capabilities `pending_item:read`, `pending_item:write` e `pending_item:review`, com escopo `own`/`all`                           |
-| Sucesso                   | `201` em criação e anexo; `200` em leitura, resposta, revisão e verify                                                      | Compatível — §15.4                                                                                                                                                                  |
-| Datas                     | timestamps ISO-8601 UTC; `deadline` como `yyyy-mm-dd`                                                                       | Compatível — §10                                                                                                                                                                    |
-| Idioma                    | Chaves `camelCase`; valores de enum (`field_edit`, `observation`, `requested`, `responded`, `validated`) em inglês          | Compatível — §11; os valores de enum são identificadores internos, não texto de UI                                                                                                  |
-| Idempotência              | `review` ignora reenvio de `id+decision`; `respond` não é idempotente (segunda chamada → `409`); `POST` não deduplica       | Compatível com a tabela da convenção §8.2; a idempotência do `review` é regra do contrato legado (`F1 docs/contract-pendencias_03.md` §7; `D-P23` do contrato de pendências em §12) |
-| Request-id                | Ausente                                                                                                                     | Divergente (legado vigente): sem header `x-request-id`; o `requestId` do envelope é aditivo (§2.1) — §12; anotado na §3                                                             |
-| `deadline` no wire        | A chave é sempre emitida, com `null` quando não há prazo (`F1 src/modules/pendingItems/pendingItems.repository.ts:764-766`) | Desatualizado no legado: o contrato marca `deadline` como opcional (`F1 docs/contract-pendencias_03.md` §7)                                                                         |
+| Assunto                   | Situação no legado                                                                                                          | Confronto                                                                                                                                                                    |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Base path                 | `/requests/:protocol/pending-items` e `/requests/:protocol/public/verify`, sem prefixo                                      | Divergente (legado vigente): `/api/v1` — §1                                                                                                                                  |
+| Envelope de erro          | `{ status, statusCode, message }`                                                                                           | Compatível com o envelope legado da §2.1                                                                                                                                     |
+| `code` no erro            | Ausente em todos os erros                                                                                                   | Compatível: `code` é aditivo no envelope legado — §2.1; tabela 0.1 #2                                                                                                        |
+| Validação                 | `400` com mensagem agregada, sem `code` e sem `fields`; não há `422` neste domínio                                          | Divergente (legado vigente): §3 congela `400` + `validation_error` + `fields` como lista                                                                                     |
+| Paginação                 | `GET .../pending-items` sem paginação e sem envelope de página                                                              | Compatível por exceção registrada — tabela 0.1 #6 e §4.3 (linha “Pendências”, `—`/`—`/`—`)                                                                                   |
+| `LIMIT` interno           | Consulta sem `LIMIT` interno (`F1 src/modules/pendingItems/pendingItems.repository.ts:69-78`)                               | Divergente (legado vigente): a §4.2 fixa que nenhum repositório consulta sem `limit`, e a §4.3 exige que a spec declare o `LIMIT` interno da listagem não paginada           |
+| Multipart                 | 1 arquivo, 10 MiB, allowlist de MIME; MIME inválido → `400`; tamanho → `400`                                                | Limites compatíveis; status Divergente (legado vigente): §9 congela `415` para MIME e `413` para tamanho                                                                     |
+| Rate limit                | 10 tentativas/10 min por IP+protocolo, em memória, `429` com mensagem textual                                               | Divergente (legado vigente): §13 congela `429` com `rate_limited`, `Retry-After` e storage compartilhado                                                                     |
+| Identidade do solicitante | `X-Requester-Identity` com nome+e-mail; divergência → `401` genérico; protocolo inexistente → `401`                         | Divergente (legado vigente): convenção §15.3 e ADR-0023 apontam `X-Requester-Email` como chave de busca e `404` para protocolo não encontrado                                |
+| Autorização               | Perfis `Analista`/`Gestor`/`Administrador` no router; custódia por `professional_id` em criar/revisar                       | Divergente (legado vigente): §6 e ADR-0025 usam as capabilities `pending_item:read`, `pending_item:write` e `pending_item:review`, com escopo `own`/`all`                    |
+| Sucesso                   | `201` em criação e anexo; `200` em leitura, resposta, revisão e verify                                                      | Compatível — §15.4                                                                                                                                                           |
+| Datas                     | timestamps ISO-8601 UTC; `deadline` como `yyyy-mm-dd`                                                                       | Compatível — §10                                                                                                                                                             |
+| Idioma                    | Chaves `camelCase`; valores de enum (`field_edit`, `observation`, `requested`, `responded`, `validated`) em inglês          | Compatível — §11; os valores de enum são identificadores internos, não texto de UI                                                                                           |
+| Idempotência              | `review` ignora reenvio de `id+decision`; `respond` não é idempotente (segunda chamada → `409`); `POST` não deduplica       | Compatível com a tabela da convenção §8.2; a idempotência do `review` é regra do contrato legado (`F1 docs/contract-pendencias_03.md` §7; `D-P23` do contrato de pendências) |
+| Request-id                | Ausente                                                                                                                     | Divergente (legado vigente): sem header `x-request-id`; o `requestId` do envelope é aditivo (§2.1) — §12; anotado na §3                                                      |
+| `deadline` no wire        | A chave é sempre emitida, com `null` quando não há prazo (`F1 src/modules/pendingItems/pendingItems.repository.ts:764-766`) | Desatualizado no legado: o contrato marca `deadline` como opcional (`F1 docs/contract-pendencias_03.md` §7)                                                                  |
 
 ## 14. queue
 
@@ -5978,8 +5985,8 @@ Divergências anotadas (sem decisão):
   convenção §6.
 - **Compatível:** envelope `{ data, page, pageSize, total, totalPages }` com `totalPages = 0` quando
   vazio (§4.1); `page` 1-based.
-- **Registrado (sem convenção correspondente):** `assignees` é campo aditivo no envelope de sucesso; a
-  §4.1 não o prevê.
+- **Registrado (sem convenção correspondente):** `assignees` é campo aditivo no envelope de sucesso;
+  a §4.1 não prevê campos extras.
 - **Compatível:** datas de timestamp em ISO-8601 UTC (§10).
 - **Divergente (legado vigente):** erro de validação em `400` com mensagem agregada e sem `fields`
   — a §3 e a tabela 0.1 #5 congelam `400` + `validation_error` + `fields: [{ path, message }]`.
@@ -6142,7 +6149,7 @@ Regras de composição:
 | 400    | param desconhecido                      | 400 pelo `.strict()`                                                                                      | `F1 src/modules/reports/reports.schema.ts:16`        |
 | 401    | sem sessão / sessão inválida            | `"Token não fornecido"` / `"Token inválido ou expirado"`                                                  | `F1 src/shared/middleware/auth.ts:27-45`             |
 | 403    | perfil não autorizado ou senha pendente | `"Acesso restrito ao perfil Gestor ou Administrador"` / `"Troca de senha obrigatória antes de continuar"` | `F1 src/shared/middleware/requireRole.ts:11-22`      |
-| 500    | falha não prevista                      | `"Erro interno do servidor"`                                                                              | `F1 src/shared/middleware/errorHandler.ts:39-43`     |
+| 500    | falha não prevista                      | `"Erro interno do servidor"`                                                                              | `F1 src/shared/middleware/errorHandler.ts:32-44`     |
 
 #### Transporte
 
@@ -6247,7 +6254,7 @@ Regras de composição:
   `__triage.result` quando existe o objeto aninhado, senão o `result` de topo; qualquer falha de
   parse, tipo inesperado ou `result` não textual devolve célula vazia
   (`F1 src/modules/reports/reports.service.ts:117-134`). A coluna é declarada legada e fora do
-  contrato de observações (`F1 docs/internal-notes-contract.md:9`).
+  contrato de notas internas (`F1 docs/internal-notes-contract.md:9`).
 - Linhas são montadas por concatenação de arrays fixos: um registro sem `category` não é exportado,
   porque o join com `categories` é INNER (`F1 src/modules/reports/reports.repository.ts:224`).
 
@@ -6307,12 +6314,12 @@ CSV (`F2 src/lib/api/report.api.ts:27-39`):
   `dd/mm/aaaa`, que não é payload JSON e não é regido por §10.
 - **Registrado (sem convenção correspondente):** o CSV coloca `requests.internal_notes` (coluna
   legada) no relatório como "Resultado da Triagem"
-  (`F1 src/modules/reports/reports.service.ts:155`), enquanto o contrato de observações declara a
+  (`F1 src/modules/reports/reports.service.ts:155`), enquanto o contrato de notas internas declara a
   coluna fora de escopo (`F1 docs/internal-notes-contract.md:9`). Nenhuma convenção transversal trata
   o uso dessa coluna; o estado vigente é este.
-- Sem conflito registrado: `text/csv` não é tratado pela §9 (que cobre JSON e multipart).
-- Sem conflito registrado: `Cache-Control: no-store` e `X-Content-Type-Options: nosniff` no CSV não
-  são previstos nem proibidos pelas convenções.
+- **Registrado (sem convenção correspondente):** `text/csv` não é tratado pela §9 (que cobre JSON e multipart).
+- **Registrado (sem convenção correspondente):** `Cache-Control: no-store` e `X-Content-Type-Options: nosniff`
+  no CSV não são previstos nem proibidos pelas convenções.
 - **Divergente (legado vigente):** gate por perfil (`requireRole("Gestor", "Administrador")`), sem
   capability nem escopo `own`/`all` — §6 e ADR-0025
   (`F1 src/modules/reports/reports.router.ts:8-18`).
@@ -6633,21 +6640,21 @@ atribuição/status/mapeamento e os registros completos de triagem e mapeamento.
 
 ### 17.1 Fontes
 
-| Ref | Caminho                                                                         | Uso                                                  |
-| --- | ------------------------------------------------------------------------------- | ---------------------------------------------------- |
-| F1  | `src/modules/internalNotes/internalNotes.router.ts`                             | montagem com `mergeParams` e guards                  |
-| F1  | `src/modules/internalNotes/internalNotes.controller.ts`                         | borda HTTP, ordem de validação, 201/204              |
-| F1  | `src/modules/internalNotes/internalNotes.schema.ts`                             | params, body, `limit`/`cursor`                       |
-| F1  | `src/modules/internalNotes/internalNotes.service.ts`                            | merge keyset, textos, snapshots                      |
-| F1  | `src/modules/internalNotes/internalNotes.repository.ts`                         | SQL das duas fontes e dos históricos                 |
-| F1  | `src/modules/DTOs/internalNotes/InternalNotes.dto.ts`                           | shapes da timeline e dos históricos                  |
-| F1  | `src/shared/types/internalNotes.ts`                                             | enums de ação/origem e linhas                        |
-| F1  | `src/modules/requests/triage/triage.schema.ts`                                  | `TriageAssessment` (referenciado)                    |
-| F1  | `src/modules/DTOs/queue/mapping.dto.ts`                                         | `MappingResponseDTO` (referenciado)                  |
-| F1  | `docs/internal-observations.md`                                                 | contrato vigente da timeline unificada (v2.0, draft) |
-| F1  | `docs/internal-notes-contract.md`                                               | contrato v1, só de observações                       |
-| F2  | `src/lib/api/internal-note.api.ts`, `src/lib/services/internal-note.service.ts` | cliente                                              |
-| F2  | `src/lib/types/internal-note.ts`                                                | tipos do consumidor                                  |
+| Ref | Caminho                                                                         | Uso                                                        |
+| --- | ------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| F1  | `src/modules/internalNotes/internalNotes.router.ts`                             | montagem com `mergeParams` e guards                        |
+| F1  | `src/modules/internalNotes/internalNotes.controller.ts`                         | borda HTTP, ordem de validação, 201/204                    |
+| F1  | `src/modules/internalNotes/internalNotes.schema.ts`                             | params, body, `limit`/`cursor`                             |
+| F1  | `src/modules/internalNotes/internalNotes.service.ts`                            | merge keyset, textos, snapshots                            |
+| F1  | `src/modules/internalNotes/internalNotes.repository.ts`                         | SQL das duas fontes e dos históricos                       |
+| F1  | `src/modules/DTOs/internalNotes/InternalNotes.dto.ts`                           | shapes da linha do tempo e dos históricos                  |
+| F1  | `src/shared/types/internalNotes.ts`                                             | enums de ação/origem e linhas                              |
+| F1  | `src/modules/requests/triage/triage.schema.ts`                                  | `TriageAssessment` (referenciado)                          |
+| F1  | `src/modules/DTOs/queue/mapping.dto.ts`                                         | `MappingResponseDTO` (referenciado)                        |
+| F1  | `docs/internal-observations.md`                                                 | contrato vigente da linha do tempo unificada (v2.0, draft) |
+| F1  | `docs/internal-notes-contract.md`                                               | contrato v1, só de notas internas                          |
+| F2  | `src/lib/api/internal-note.api.ts`, `src/lib/services/internal-note.service.ts` | cliente                                                    |
+| F2  | `src/lib/types/internal-note.ts`                                                | tipos do consumidor                                        |
 
 ### 17.2 Rotas
 
@@ -6979,7 +6986,7 @@ Sem corpo (`F1 src/modules/internalNotes/internalNotes.controller.ts:75`).
 - **Divergente (legado vigente):** ids de nota são BIGINT serializados como string
   (`F1 src/modules/internalNotes/internalNotes.service.ts:34`) e o checkpoint usa o mesmo BIGINT
   (`F1 src/modules/internalNotes/internalNotes.schema.ts:15-20`). §15.1/ADR-0003 determinam PK UUID
-  v4 gerada pela aplicação; a §11 só admite exceção de auditoria, não de observações.
+  v4 gerada pela aplicação; a §11 só admite exceção de auditoria, não de notas internas.
 - **Divergente (legado vigente):** ids numéricos de status no wire (`triages[].triage.exitStatus` e
   `mappings[].mapping.targetStatus`) — §15.1, ADR-0021.
 - **Divergente (legado vigente):** a autorização é só por nome de perfil, sem capability nem escopo
@@ -7013,7 +7020,7 @@ fonte de cada assunto é o confronto da própria seção; esta lista só serve d
 | --------------------------- | ---------------------------------------------------------------------------------------------------- | ----------------------------------- |
 | Base path                   | §3.1; todas as seções                                                                                | convenção §1                        |
 | Validação                   | §3.3; §3.4; §5.8; §6.7; §7.12; §8.14; §9.14; §10.7; §11.6; §12.6; §13.10; §14.6; §15.6; §16.7; §17.7 | convenção §3 (C2); tabela 0.1 #5    |
-| Paginação                   | §3.6; §8.14; §9.14; §12.6; §14.6; §15.6; §16.5                                                       | convenção §4; tabela 0.1 #6         |
+| Paginação                   | §3.6; §8.14; §9.14; §12.6; §13.10; §14.6; §15.6; §16.7                                               | convenção §4; tabela 0.1 #6         |
 | Ids                         | §5.3; §7; §8.14; §10.3; §11.6; §14.4; §15.6; §17                                                     | ADR-0003; ADR-0021; convenção §15.1 |
 | Status no wire              | §7; §9; §10; §11; §14; §15; §17                                                                      | ADR-0021; convenção §15.1           |
 | Perfis e autorização        | §5.8; §7; §8; §9; §10.7; §11.6; §12.6; §13.10; §14; §15.6; §16.7; §17.7                              | ADR-0006; ADR-0017; ADR-0025        |
@@ -7023,7 +7030,7 @@ fonte de cada assunto é o confronto da própria seção; esta lista só serve d
 | Request-id                  | §3.10; §7.12; §9.14; §10.7; §11.6; §12.6; §13.10                                                     | convenção §12                       |
 | 404 fora do envelope        | §3.10                                                                                                | §2.1                                |
 | CORS                        | §3.10                                                                                                | convenção §14                       |
-| Rate limit                  | §3.11; §13.10                                                                                        | convenção §13                       |
+| Rate limit                  | §3.11; §9.14; §13.10                                                                                 | convenção §13                       |
 | Concorrência e idempotência | §9.14; §10.7; §11.6                                                                                  | convenções §8.1 e §8.2              |
 | Datas                       | §6.7                                                                                                 | convenção §10                       |
 | Códigos de sucesso          | §3.5; §11.6                                                                                          | tabela 0.1 #20; §15.4               |
