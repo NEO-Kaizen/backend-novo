@@ -29,7 +29,6 @@ const OPENAPI_PARAMETER = /\{([A-Za-z0-9_]+)\}/g;
 
 interface MatcherResult {
   readonly path: string;
-  readonly params: Record<string, string>;
 }
 
 type RouteMatcher = (input: string) => MatcherResult | false;
@@ -62,7 +61,7 @@ export interface RouteCoverageDocument {
 
 /** Executa a guarda de cobertura; qualquer divergência lança com rota/operação no texto. */
 export function assertRouteCoverage(app: Express, document: RouteCoverageDocument): void {
-  const routes = collectRoutes(rootStack(app));
+  const routes = collectRoutes(readRootStack(app));
   const operations = collectOperations(document);
 
   for (const operation of operations) {
@@ -83,8 +82,8 @@ export function assertRouteCoverage(app: Express, document: RouteCoverageDocumen
     }
 
     if (!parametersMatch(route, operation)) {
-      const routeParameters = parameterNames(route.path, ROUTE_PARAMETER);
-      const operationParameters = parameterNames(operation.path, OPENAPI_PARAMETER);
+      const routeParameters = collectParameterNames(route.path, ROUTE_PARAMETER);
+      const operationParameters = collectParameterNames(operation.path, OPENAPI_PARAMETER);
 
       fail(
         `Operação ${formatMethod(operation.method)} ${operation.path} declara parâmetros (${operationParameters.join(", ") || "nenhum"}), mas a rota ${route.path} declara (${routeParameters.join(", ") || "nenhum"}).`,
@@ -109,7 +108,7 @@ export function assertRouteCoverage(app: Express, document: RouteCoverageDocumen
   }
 }
 
-function rootStack(app: Express): readonly RouteLayerLike[] {
+function readRootStack(app: Express): readonly RouteLayerLike[] {
   const router = (app as unknown as { router?: { stack?: readonly RouteLayerLike[] } }).router;
   const stack = router?.stack;
 
@@ -187,8 +186,8 @@ function isDocumented(
 /** Uma rota só cobre a operação se declarar os mesmos nomes de parâmetro, na mesma ordem. */
 function parametersMatch(route: CollectedRoute, operation: DocumentOperation): boolean {
   return (
-    parameterNames(operation.path, OPENAPI_PARAMETER).join(",") ===
-    parameterNames(route.path, ROUTE_PARAMETER).join(",")
+    collectParameterNames(operation.path, OPENAPI_PARAMETER).join(",") ===
+    collectParameterNames(route.path, ROUTE_PARAMETER).join(",")
   );
 }
 
@@ -229,7 +228,7 @@ function stripMounts(fullPath: string, ancestors: readonly RouteMatcher[]): stri
   return remaining === "" ? "/" : remaining;
 }
 
-function parameterNames(pattern: string, matcher: RegExp): string[] {
+function collectParameterNames(pattern: string, matcher: RegExp): string[] {
   return [...pattern.matchAll(matcher)].flatMap((match) => {
     const name = match[1];
     return name === undefined ? [] : [name];

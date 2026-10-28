@@ -1730,7 +1730,7 @@ O banco nasce vazio, então não há dado a migrar; há **consumidores** a migra
 
 A release é um **cutover coordenado**, não um adapter numérico: devolver id numérico ao frontend reintroduziria a decisão que o ADR-0003 eliminou. A ordem segura é o frontend aceitar os dois formatos e passar a usar a `key` do status; depois o backend novo entra.
 
-O contrato HTTP não está mais entre as pendências: `npm run docs:generate`, `npm run docs:lint`, `npm run docs:check` e `npm run contract:check` existem e rodam no job `quality` do CI.
+O contrato HTTP não está mais entre as pendências: `npm run docs:generate`, `npm run docs:lint`, `npm run docs:check` e `npm run contract:check` existem e rodam no job `quality` do CI. O gate `oasdiff breaking` segue pendente até `paths` deixar de estar vazio.
 
 ---
 
@@ -1768,7 +1768,7 @@ docs/openapi/
 
 ### 23.3 Montagem
 
-O `container` compõe o documento; `src/api-contract/openapi.ts` é o ponto de agregação dos `*.openapi.ts` (hoje `paths` está vazio, porque nenhum domínio publicou operações) e entrega o router do contrato ao `app.ts`, que o registra em `/api/v1`. A UI (Scalar via `@scalar/express-api-reference` + `@scalar/api-reference`) consome `/api/v1/openapi.json` e carrega o bundle UMD servido localmente pelo backend em `/api/v1/docs/assets/standalone.js`; o esquema de segurança é `sessionCookie` (`apiKey`, `in: cookie`, `name: session_id`) e operações públicas declaram `security: []`. O router só é montado quando `config.docs.isEnabled` é verdadeiro: fora de produção o default é ligado, em produção é desligado e `DOCS_ENABLED=true` faz o opt-in (`false` desliga em qualquer ambiente).
+O `container` compõe o documento; `src/api-contract/openapi.ts` é o ponto de agregação dos `*.openapi.ts` (hoje `paths` está vazio, porque nenhum domínio publicou operações) e entrega o router do contrato ao `app.ts`, que o registra em `/api/v1`. A UI (Scalar via `@scalar/express-api-reference` + `@scalar/api-reference`) consome `/api/v1/openapi.json` e carrega o bundle UMD servido localmente pelo backend em `/api/v1/docs/assets/standalone.js`; o esquema de segurança é `sessionCookie` (`apiKey`, `in: cookie`, `name: session_id`) e operações públicas declaram `security: []`. O router só é montado quando `config.docs.isEnabled` é verdadeiro; a regra de exposição por ambiente está em `04-HTTP-Contract.md` §13.
 
 Ver [ADR-0026](./adr/0026-openapi-generated-from-zod.md).
 

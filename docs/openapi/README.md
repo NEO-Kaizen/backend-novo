@@ -28,7 +28,6 @@ npm run contract:check  # cobertura rota↔operação e matriz DOCS_ENABLED
 
 ## Exposição
 
-- Documentação e UI habilitadas por padrão fora de produção; `DOCS_ENABLED=false` desliga em qualquer ambiente.
-- Em produção, desabilitadas por padrão; habilitação apenas com `DOCS_ENABLED=true`.
+- Exposição segue `04-HTTP-Contract.md` §13: fora de produção por padrão; produção só com `DOCS_ENABLED=true`, e `false` desliga em qualquer ambiente.
 - UI (Scalar via `@scalar/express-api-reference` + `@scalar/api-reference`) em `/api/v1/docs`; o HTML e o bundle UMD em `/api/v1/docs/assets/standalone.js` são servidos pelo backend.
 - Spec em `/api/v1/openapi.json`.
