@@ -1,14 +1,14 @@
 import { AppError, isAppError } from "../errors/app-error.ts";
 import type { AppErrorCode } from "../errors/app-error.ts";
+import { EXPOSED_ERROR_CODES, INTERNAL_ERROR_CODE } from "../errors/error-codes.ts";
+import type { ErrorCode } from "../errors/error-codes.ts";
 import {
   GENERIC_ERROR_MESSAGE,
-  INTERNAL_ERROR_CODE,
+  PAYLOAD_TOO_LARGE_STATUS,
   SERVER_ERROR_STATUS,
+  UNSUPPORTED_MEDIA_STATUS,
+  VALIDATION_STATUS,
 } from "./error-envelope.ts";
-
-const VALIDATION_STATUS = 400;
-const PAYLOAD_TOO_LARGE_STATUS = 413;
-const UNSUPPORTED_MEDIA_STATUS = 415;
 
 /**
  * Traduz o erro uma única vez, na borda. Erros de `body-parser` e do `multer`
@@ -31,18 +31,24 @@ export function toAppError(error: unknown): AppError {
 }
 
 export interface ExposedError {
-  readonly code: AppErrorCode;
+  readonly code: ErrorCode;
   readonly message: string;
 }
 
 /**
- * Projeta o erro para o cliente: `expose` decide entre a mensagem própria e a
- * genérica. `expose: true` só deve ser usado com códigos expostos.
+ * Projeta o erro para o cliente. `expose` e o catálogo decidem: código interno
+ * com `expose: true` continua caindo em `internal_error`.
  */
 export function toExposedError(error: AppError): ExposedError {
-  return error.expose
-    ? { code: error.code, message: error.message }
-    : { code: INTERNAL_ERROR_CODE, message: GENERIC_ERROR_MESSAGE };
+  if (!error.expose || !isErrorCode(error.code)) {
+    return { code: INTERNAL_ERROR_CODE, message: GENERIC_ERROR_MESSAGE };
+  }
+
+  return { code: error.code, message: error.message };
+}
+
+function isErrorCode(code: AppErrorCode): code is ErrorCode {
+  return (EXPOSED_ERROR_CODES as readonly string[]).includes(code);
 }
 
 function toAppErrorFromTransport(error: unknown): AppError | null {

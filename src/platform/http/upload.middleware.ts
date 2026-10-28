@@ -4,10 +4,10 @@ import multer from "multer";
 import { MEBIBYTE } from "../../core/config/config.ts";
 import type { UploadConfig } from "../../core/config/config.ts";
 import { AppError } from "../../core/errors/app-error.ts";
+import { UNSUPPORTED_MEDIA_STATUS } from "../../core/http/error-envelope.ts";
 
 const MAX_FIELDS = 10;
 const MAX_FIELD_BYTES = 2 * MEBIBYTE;
-const UNSUPPORTED_MEDIA_STATUS = 415;
 
 export interface UploadPolicy {
   /** Campos de arquivo que a rota aceita. */

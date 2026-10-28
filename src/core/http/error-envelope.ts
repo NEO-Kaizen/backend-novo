@@ -1,6 +1,8 @@
+export const VALIDATION_STATUS = 400;
+export const PAYLOAD_TOO_LARGE_STATUS = 413;
+export const UNSUPPORTED_MEDIA_STATUS = 415;
 export const SERVER_ERROR_STATUS = 500;
 export const GENERIC_ERROR_MESSAGE = "Erro interno do servidor";
-export const INTERNAL_ERROR_CODE = "internal_error";
 
 export interface FieldError {
   readonly path: string;
