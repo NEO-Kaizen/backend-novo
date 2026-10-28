@@ -111,7 +111,7 @@ npm run docs:check      # regenera e falha se o artefato estiver desatualizado
 
 ## 13. Exposição por ambiente
 
-- Documentação e UI habilitadas por padrão em desenvolvimento e teste.
+- Documentação e UI habilitadas por padrão fora de produção.
 - `DOCS_ENABLED=false` desabilita em qualquer ambiente.
 - Em produção: desabilitadas por padrão; habilitação apenas com opt-in explícito (`DOCS_ENABLED=true`).
 

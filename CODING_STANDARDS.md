@@ -100,6 +100,9 @@ const [user, orders] = await Promise.all([users.findById(id), orders.listByUser(
 - Não engula erro. Se recuperar, registre o motivo e o que foi feito.
 - Logue a causa uma vez, na borda; não faça log-and-rethrow em cada camada.
 - Resposta de erro: `{ error: { code, message, requestId } }`. `code` é estável em `snake_case` e não é traduzido; `message` é em português e só é exposta quando `expose` é true, o código está no catálogo exposto e não é `internal_error` — o resto vira `internal_error` com mensagem genérica e status 500.
+
+> **Envelope alvo vs. contrato vigente:** `{ error: { code, message, requestId } }` é o envelope alvo; o contrato da v1 ainda é o legado `{ status, statusCode, message }`, com `code` e `requestId` aditivos, conforme o ADR-0005, até o cutover coordenado com o frontend. O runtime segue o ADR-0005; este padrão descreve o alvo, não antecipa a migração.
+
 - No corpo do erro, `requestId` é o id HTTP (emenda ao C11 em `docs/04-API-Conventions.md` §12); no log estruturado, o id HTTP é `correlationId`. Fora do envelope, `requestId` é o id da solicitação de negócio.
 - Nunca devolva stack, SQL, path, nome de tabela ou versão interna.
 - Use exceção para condição excepcional; validação de entrada retorna 400, não lança erro genérico.

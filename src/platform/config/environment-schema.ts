@@ -90,6 +90,8 @@ export const EnvironmentSchema = z.strictObject({
 export type EnvironmentVariables = z.infer<typeof EnvironmentSchema>;
 
 export function toConfig(environment: EnvironmentVariables): Config {
+  const isProduction = environment.NODE_ENV === "production";
+
   return {
     environment: environment.NODE_ENV,
     port: environment.PORT,
@@ -114,7 +116,7 @@ export function toConfig(environment: EnvironmentVariables): Config {
       maxFiles: environment.UPLOAD_MAX_FILES,
       jsonBodyMaxBytes: environment.JSON_BODY_MAX_BYTES,
     },
-    docs: { enabled: environment.DOCS_ENABLED ?? environment.NODE_ENV !== "production" },
+    docs: { enabled: environment.DOCS_ENABLED ?? !isProduction },
   };
 }
 
