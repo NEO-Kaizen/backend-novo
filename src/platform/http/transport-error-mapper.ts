@@ -13,32 +13,28 @@ interface TransportMapping {
   readonly message: string;
 }
 
+const INVALID_BODY: TransportMapping = {
+  code: "validation_error",
+  status: VALIDATION_STATUS,
+  message: "Corpo da requisição inválido.",
+};
+
+const UNSUPPORTED_ENCODING: TransportMapping = {
+  code: "invalid_content_type",
+  status: UNSUPPORTED_MEDIA_STATUS,
+  message: "Codificação do corpo não suportada.",
+};
+
 const BODY_PARSER_ERRORS: Readonly<Record<string, TransportMapping>> = {
   "entity.too.large": {
     code: "payload_too_large",
     status: PAYLOAD_TOO_LARGE_STATUS,
     message: "Corpo da requisição excede o limite.",
   },
-  "entity.parse.failed": {
-    code: "validation_error",
-    status: VALIDATION_STATUS,
-    message: "Corpo da requisição inválido.",
-  },
-  "entity.verify.failed": {
-    code: "validation_error",
-    status: VALIDATION_STATUS,
-    message: "Corpo da requisição inválido.",
-  },
-  "charset.unsupported": {
-    code: "invalid_content_type",
-    status: UNSUPPORTED_MEDIA_STATUS,
-    message: "Codificação do corpo não suportada.",
-  },
-  "encoding.unsupported": {
-    code: "invalid_content_type",
-    status: UNSUPPORTED_MEDIA_STATUS,
-    message: "Codificação do corpo não suportada.",
-  },
+  "entity.parse.failed": INVALID_BODY,
+  "entity.verify.failed": INVALID_BODY,
+  "charset.unsupported": UNSUPPORTED_ENCODING,
+  "encoding.unsupported": UNSUPPORTED_ENCODING,
 };
 
 const MULTER_ERRORS: Readonly<Record<string, TransportMapping>> = {
@@ -55,7 +51,7 @@ const MULTER_ERRORS: Readonly<Record<string, TransportMapping>> = {
   },
 };
 
-const MULTER_VALIDATION_ERROR: TransportMapping = {
+const MULTER_FALLBACK: TransportMapping = {
   code: "validation_error",
   status: VALIDATION_STATUS,
   message: "Envio de arquivos inválido.",
@@ -86,7 +82,7 @@ function fromMulter(error: unknown): AppError | null {
 
   const code = readString(error, "code");
   const mapping = code === undefined ? undefined : MULTER_ERRORS[code];
-  return createExposedAppError(mapping ?? MULTER_VALIDATION_ERROR, error);
+  return createExposedAppError(mapping ?? MULTER_FALLBACK, error);
 }
 
 function createExposedAppError(mapping: TransportMapping, cause: unknown): AppError {
