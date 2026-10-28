@@ -2,6 +2,7 @@ import cookieParser from "cookie-parser";
 import express from "express";
 import type { Express } from "express";
 import type { Container } from "./container.ts";
+import { API_BASE_PATH } from "./core/http/api-base-path.ts";
 import { createCorsMiddleware } from "./platform/http/cors.middleware.ts";
 import { createErrorHandler } from "./platform/http/error-handler.middleware.ts";
 import { createNotFoundMiddleware } from "./platform/http/not-found.middleware.ts";
@@ -30,6 +31,11 @@ export function createApp(container: Container): Express {
   app.get("/health", (_req, res) => {
     res.status(200).json(HEALTH_STATUS);
   });
+
+  // Documentação é infraestrutura: fica fora do contrato e da cobertura de rotas.
+  if (container.docsRouter !== null) {
+    app.use(API_BASE_PATH, container.docsRouter);
+  }
 
   app.use(createNotFoundMiddleware());
   app.use(createErrorHandler(container.logger)); // quatro parâmetros, sempre por último

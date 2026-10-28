@@ -39,4 +39,5 @@ export interface Config {
   readonly cookieName: string;
   readonly protocolSecret: string;
   readonly uploads: UploadConfig;
+  readonly docs: { readonly enabled: boolean };
 }
