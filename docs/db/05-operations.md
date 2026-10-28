@@ -18,26 +18,27 @@ Texto **indexado ou único** é `varchar(n)` com `ck_` de comprimento; texto lon
 
 ## Configuração
 
-O boot valida a configuração ([02-Architecture § 16](../02-Architecture.md#16-configuração)). O bloco de banco é:
+O boot valida a configuração ([02-Architecture § 16](../02-Architecture.md#16-configuração)). O banco é configurado por variáveis planas; `toConfig` monta o objeto `database`:
 
 ```ts
-DATABASE: {
-  ENGINE: "postgres" | "sqlite" | "mysql",
-  HOST: string,
-  PORT: number,
-  NAME: string,
-  USER: string,
-  PASSWORD: string,
-}
+DATABASE_ENGINE: "postgres" | "sqlite" | "mysql";
+DATABASE_HOST: string;
+DATABASE_PORT: number;
+DATABASE_NAME: string;
+DATABASE_USER: string;
+DATABASE_PASSWORD: string;
+DATABASE_ACQUIRE_TIMEOUT_MS: number;
+DATABASE_CONNECT_TIMEOUT_MS: number;
+DATABASE_STATEMENT_TIMEOUT_MS: number;
 ```
 
 O schema de ambiente é `z.strictObject`, então variável desconhecida ou ausente derruba o boot. O `.env.example` documenta as variáveis; segredo nunca vai para o repositório.
 
-> **Lacuna conhecida.** O legado usa variáveis planas `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER` e `DB_PASSWORD`; o modelo novo define o bloco `DATABASE`, mas os nomes das variáveis de ambiente ainda não foram decididos. Não invente um prefixo: a decisão entra com o adapter de configuração.
+> **Legado.** O legado usa `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER` e `DB_PASSWORD`; o backend-novo usa o prefixo `DATABASE_*` (§16).
 
 > **Seed do Admin Root.** O comando de seed lê `ADMIN_ROOT_EMAIL` e `ADMIN_ROOT_PASSWORD` do ambiente; elas são **seed-only** e não entram no `EnvironmentSchema` do boot. O e-mail é normalizado e validado; a senha tem ≥ 14 caracteres e é gravada só como hash. Se a conta não existe, `users` e `credentials` são criadas na mesma transação com `must_change_password = true`. Se o e-mail já existe com outro perfil, o seed falha; se já é `Admin Root`, a senha não é reescrita. Sem as duas variáveis, o seed falha antes de escrever.
 
-> **Credencial de auditoria.** O append-only de `audit_entries` é garantido no banco: triggers `BEFORE UPDATE`/`BEFORE DELETE` nas três engines e, no Postgres/MySQL, uma credencial de aplicação sem `UPDATE`/`DELETE`/`DROP`/`TRUNCATE`. Isso exige **duas credenciais** — runtime e migração — e o bloco `DATABASE` atual tem uma. A separação é pendência de deploy ([02-Architecture § 22](../02-Architecture.md#22-pendências-de-arquitetura)).
+> **Credencial de auditoria.** O append-only de `audit_entries` é garantido no banco: triggers `BEFORE UPDATE`/`BEFORE DELETE` nas três engines e, no Postgres/MySQL, uma credencial de aplicação sem `UPDATE`/`DELETE`/`DROP`/`TRUNCATE`. Isso exige **duas credenciais** — runtime e migração — e a configuração atual tem uma. A separação é pendência de deploy ([02-Architecture § 22](../02-Architecture.md#22-pendências-de-arquitetura)).
 
 ## Schema, migrations e seeds
 
