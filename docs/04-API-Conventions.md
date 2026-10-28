@@ -93,22 +93,22 @@ divergência exige emenda aqui e emenda ao ADR correspondente.
 
 ### 2.3 Catálogo de códigos
 
-| Código                                                       | Status HTTP         | Exposto?          | Uso                                                                 |
-| ------------------------------------------------------------ | ------------------- | ----------------- | ------------------------------------------------------------------- |
-| `validation_error`                                           | 400                 | sim               | entrada inválida na borda                                           |
-| `unauthorized`                                               | 401                 | sim               | sem sessão / sessão inválida                                        |
-| `forbidden`                                                  | 403                 | sim               | capability ausente                                                  |
-| `not_found`                                                  | 404                 | sim               | recurso inexistente (também para protocolo não encontrado, sem 403) |
-| `conflict`                                                   | 409                 | sim               | concorrência / estado incompatível                                  |
-| `payload_too_large`                                          | 413                 | sim               | corpo acima do limite                                               |
-| `invalid_content_type`                                       | 415                 | sim               | `Content-Type` inesperado                                           |
-| `rate_limited`                                               | 429                 | sim               | limite de taxa excedido                                             |
-| `internal_error`                                             | 500                 | não (genérico)    | falha inesperada                                                    |
-| (domínio) `not_the_assignee`, `invalid_status_transition`, … | conforme mapeamento | conforme `expose` | regras de negócio                                                   |
+| Código                                                       | Status HTTP         | Exposto?                             | Uso                                                                 |
+| ------------------------------------------------------------ | ------------------- | ------------------------------------ | ------------------------------------------------------------------- |
+| `validation_error`                                           | 400                 | sim                                  | entrada inválida na borda                                           |
+| `unauthorized`                                               | 401                 | sim                                  | sem sessão / sessão inválida                                        |
+| `forbidden`                                                  | 403                 | sim                                  | capability ausente                                                  |
+| `not_found`                                                  | 404                 | sim                                  | recurso inexistente (também para protocolo não encontrado, sem 403) |
+| `conflict`                                                   | 409                 | sim                                  | concorrência / estado incompatível                                  |
+| `payload_too_large`                                          | 413                 | sim                                  | corpo acima do limite                                               |
+| `invalid_content_type`                                       | 415                 | sim                                  | `Content-Type` inesperado                                           |
+| `rate_limited`                                               | 429                 | sim                                  | limite de taxa excedido                                             |
+| `internal_error`                                             | 500                 | não (genérico)                       | falha inesperada                                                    |
+| (domínio) `not_the_assignee`, `invalid_status_transition`, … | conforme mapeamento | sim, após entrar em `error-codes.ts` | regras de negócio                                                   |
 
 - Códigos estáveis em `snake_case`, registrados em `core/errors/error-codes.ts` (expostos) e `core/errors/internal-codes.ts` (internos, nunca expostos).
 - Regra de `expose`: `expose: true` envia a mensagem quando o `code` pertence ao catálogo exposto e não é `internal_error`; qualquer outro caso envia `internal_error` com mensagem genérica. Stack, SQL, nome de tabela, path e versão interna **nunca** saem do servidor.
-- Códigos de domínio entram em `STATUS_BY_CODE` (`core/http/error-mapper.ts`) quando o primeiro `DomainError` existir; hoje o `AppError` carrega o próprio status.
+- Códigos de domínio entram em `core/errors/error-codes.ts` e em `STATUS_BY_CODE` (`core/http/error-mapper.ts`) quando o primeiro `DomainError` existir; até lá, `expose: true` sozinho não os expõe — e hoje o `AppError` carrega o próprio status.
 - `413`, `415` e `429` são extensões desta convenção. **Catalogado:** os três códigos estão em `core/errors/error-codes.ts` e em `02-Architecture.md` §12.2; `payload_too_large` e `invalid_content_type` já têm produtor parcial na borda (corpo acima do limite e charset não suportado); `rate_limited` só entra com o rate limiting (C12).
 
 ## 3. Forma do erro de validação (C2)

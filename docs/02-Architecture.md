@@ -1230,7 +1230,7 @@ Todo erro exposto tem um `code` em `snake_case`, estável entre versões. O `cod
 | Códigos de domínio              | `not_the_assignee`, `invalid_status_transition`, …                                                                                                      | Erros de `DomainError`         |
 | `core/errors/internal-codes.ts` | `transaction_required`                                                                                                                                  | Erros internos; nunca expostos |
 
-`counter_missing` entra com o contador de protocolo.
+`counter_missing` entra com o contador de protocolo. Códigos de domínio entram em `core/errors/error-codes.ts` com o primeiro `DomainError`; a projeção de `expose` exige que o código esteja nesse catálogo e não seja `internal_error`.
 
 ### 12.3 Erro de Domínio com Contexto de Recusa
 
@@ -1250,7 +1250,7 @@ O `context` carrega **o que** foi tentado; a borda completa com **quem** e **ond
 Erro de domínio não conhece status HTTP. O mapeamento acontece **uma vez**, na borda. O reconhecimento de `body-parser`/`multer` fica em `platform/http/transport-error-mapper.ts`; o core só vê `AppError` e o mapa de domínio. O mapa abaixo é alvo: entra com o primeiro `DomainError`; hoje o `AppError` carrega o próprio status:
 
 ```ts
-// src/core/http/error-mapper.ts
+// alvo (core/http/error-mapper.ts); entra com o primeiro DomainError
 const STATUS_BY_CODE: Readonly<Record<string, number>> = {
   validation_error: 400,
   unauthorized: 401,
