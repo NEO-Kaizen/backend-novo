@@ -65,6 +65,7 @@ O `6.0.3` **não está publicado no registry npm**; o pin é `~6.0.2`. Quando o 
 - `src/docs/openapi.ts` compõe o documento; `src/docs/components.ts` é a única definição de `ErrorEnvelope`, `ValidationError`, `LegacyValidationError`, `ConflictError`, `PaginatedResponse` e `securitySchemes`.
 - `src/platform/http/docs-router.ts` serve `/api/v1/openapi.json` e `/api/v1/docs`; o `container.ts` monta o router e o `app.ts` o registra em `/api/v1`.
 - O artefato `openapi/openapi.json` é commitado; `npm run docs:check` regenera e falha se estiver desatualizado. O gate de CI é um PR separado e ainda não existe.
+- O artefato gerado é mais estrito que o esqueleto manual (`additionalProperties: false`, `pattern` em uuid/email e limites de inteiros); todas as descrições e exemplos do esqueleto foram preservados.
 - A UI usa `@scalar/express-api-reference`, middleware oficial que serve o HTML em `/api/v1/docs` e carrega o bundle Scalar do CDN jsDelivr por padrão; assets totalmente locais exigem o pacote `@scalar/api-reference` completo ou o fallback `swagger-ui-express`. A spec continua local em `/api/v1/openapi.json`.
 - Exemplos não podem conter PII; operações públicas declaram `security: []`.
 - `POST /requests` documenta multipart (`payload` + `attachments`) e `415`; limites e MIME seguem `04-API-Conventions.md` §9.

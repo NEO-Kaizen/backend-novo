@@ -125,7 +125,11 @@ function collectRoutes(
     if (route !== undefined) {
       routes.push({
         path: route.path,
-        methods: HTTP_METHODS.filter((method) => route.methods[method] === true),
+        // `router.all` registra `_all`; expandir força operação para cada método.
+        methods:
+          route.methods._all === true
+            ? HTTP_METHODS
+            : HTTP_METHODS.filter((method) => route.methods[method] === true),
         matcher: layer.matchers?.[0],
         ancestors,
       });
@@ -149,9 +153,9 @@ function collectRoutes(
 function collectOperations(document: RouteCoverageDocument): DocumentOperation[] {
   const operations: DocumentOperation[] = [];
 
-  for (const [path, item] of Object.entries(document.paths ?? {})) {
+  for (const [path, pathItem] of Object.entries(document.paths ?? {})) {
     for (const method of HTTP_METHODS) {
-      if (item[method] !== undefined) {
+      if (pathItem[method] !== undefined) {
         operations.push({ path, method });
       }
     }
