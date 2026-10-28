@@ -1480,7 +1480,7 @@ export function createApp(container: Container): Express {
 
 ## 16. Configuração
 
-A configuração é lida e validada **no boot**. Aplicação com configuração inválida não sobe.
+A configuração é lida e validada **no boot**. Aplicação com configuração inválida não sobe. O schema é plano por 12-factor; `toConfig` monta o bloco `DATABASE` aninhado.
 
 ```ts
 // src/platform/config/environment-schema.ts
