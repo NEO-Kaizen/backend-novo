@@ -3,6 +3,18 @@ import type { Logger } from "../../core/service/logger.ts";
 
 const UNMATCHED_ROUTE = "unmatched";
 
+type RequestLogOutcome = "completed" | "aborted";
+
+/** Allowlist do log de requisição: nenhum campo fora daqui. */
+type RequestLogFields = Readonly<{
+  correlationId: string;
+  method: string;
+  route: string;
+  status: number;
+  durationMs: number;
+  aborted?: true;
+}>;
+
 /**
  * Uma linha por requisição, emitida em `finish` ou, quando o cliente desconecta
  * antes, em `close` com `aborted: true`. Só campos da allowlist: sem query
@@ -11,33 +23,35 @@ const UNMATCHED_ROUTE = "unmatched";
 export function createRequestLoggerMiddleware(logger: Logger): RequestHandler {
   return (req, res, next) => {
     const startedAt = performance.now();
-    let logged = false;
+    let hasLogged = false;
 
-    const log = (aborted: boolean): void => {
-      if (logged) {
+    const logOnce = (outcome: RequestLogOutcome): void => {
+      if (hasLogged) {
         return;
       }
-      logged = true;
+      hasLogged = true;
 
-      logger.info(
-        {
-          correlationId: req.id,
-          method: req.method,
-          route: routeOf(req),
-          status: res.statusCode,
-          durationMs: Math.round(performance.now() - startedAt),
-          ...(aborted ? { aborted } : {}),
-        },
-        aborted ? "requisição interrompida" : "requisição concluída",
-      );
+      const isAborted = outcome === "aborted";
+      const fields: RequestLogFields = {
+        correlationId: req.id,
+        method: req.method,
+        route: routeOf(req),
+        status: res.statusCode,
+        durationMs: Math.round(performance.now() - startedAt),
+        ...(isAborted ? { aborted: true as const } : {}),
+      };
+
+      logger.info(fields, isAborted ? "requisição interrompida" : "requisição concluída");
     };
 
     res.once("finish", () => {
-      log(false);
+      logOnce("completed");
     });
     res.once("close", () => {
       // `close` também segue `finish`; só conta como aborto se a resposta não terminou.
-      log(!res.writableEnded);
+      if (!res.writableEnded) {
+        logOnce("aborted");
+      }
     });
 
     next();
