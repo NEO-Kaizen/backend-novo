@@ -108,7 +108,7 @@ npm run contract:check  # cobertura rota↔operação e matriz DOCS_ENABLED
 ```
 
 - Os três comandos `docs:*` são o único caminho de manutenção do artefato. O artefato `openapi/openapi.json` é **commitado** e a edição manual é proibida: toda mudança passa por `npm run docs:generate`.
-- O job `quality` do CI roda `docs:check`, `docs:lint` e `contract:check`. O gate `oasdiff breaking` contra a base continua pendente: ele só passa a morder quando `paths` deixar de estar vazio.
+- O job `quality` do CI roda `docs:check`, `docs:lint` e `contract:check`, mais `contract:check --probe` para provar que a guarda falha quando deve. O gate `oasdiff breaking` contra a base continua pendente: ele só passa a morder quando `paths` deixar de estar vazio.
 
 ## 13. Exposição por ambiente
 

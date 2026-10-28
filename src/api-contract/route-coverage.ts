@@ -7,18 +7,9 @@ import { API_BASE_PATH, SCALAR_BUNDLE_PUBLIC_PATH } from "../core/http/api-base-
  * rota alcançável no método declarado.
  */
 
-export const HTTP_METHODS = [
-  "get",
-  "put",
-  "post",
-  "delete",
-  "options",
-  "head",
-  "patch",
-  "trace",
-] as const;
+const HTTP_METHODS = ["get", "put", "post", "delete", "options", "head", "patch", "trace"] as const;
 
-export type HttpMethod = (typeof HTTP_METHODS)[number];
+type HttpMethod = (typeof HTTP_METHODS)[number];
 
 /** Rotas de infraestrutura: não são contrato de domínio (`04-HTTP-Contract.md` §4). */
 const EXCLUDED_PATHS: readonly string[] = [
