@@ -96,10 +96,10 @@ const [user, orders] = await Promise.all([users.findById(id), orders.listByUser(
 
 - `AppError` carrega `code` estável (`snake_case`), `status`, `expose` e `cause`.
 - Erros de domínio não conhecem HTTP; o mapeamento para status acontece na borda.
-- `catch` recebe `unknown`; estreite com `isAppError`/`toAppError`.
+- `catch` recebe `unknown`; estreite com `isAppError` e, na borda HTTP, `toHttpAppError`.
 - Não engula erro. Se recuperar, registre o motivo e o que foi feito.
 - Logue a causa uma vez, na borda; não faça log-and-rethrow em cada camada.
-- Resposta de erro: `{ error: { code, message, requestId } }`. `code` é estável em `snake_case` e não é traduzido; `message` é em português e só é exposta quando `expose` é true — o resto vira `internal_error` com mensagem genérica.
+- Resposta de erro: `{ error: { code, message, requestId } }`. `code` é estável em `snake_case` e não é traduzido; `message` é em português e só é exposta quando `expose` é true, o código está no catálogo exposto e não é `internal_error` — o resto vira `internal_error` com mensagem genérica e status 500.
 - No corpo do erro, `requestId` é o id HTTP (emenda ao C11 em `docs/04-API-Conventions.md` §12); no log estruturado, o id HTTP é `correlationId`. Fora do envelope, `requestId` é o id da solicitação de negócio.
 - Nunca devolva stack, SQL, path, nome de tabela ou versão interna.
 - Use exceção para condição excepcional; validação de entrada retorna 400, não lança erro genérico.
@@ -198,6 +198,8 @@ if (!parsed.success) {
 - Use `res.status(...).json(...)`; não responda duas vezes.
 - Metadados de rota (OpenAPI) ficam co-localizados em `*.openapi.ts` no domínio; o handler não define contrato.
 
+**Nomenclatura de middleware.** Middleware de plataforma vive em `platform/http/<conceito>.middleware.ts` e exporta `create<Conceito>Middleware(...)`, que devolve `RequestHandler` — inclusive quando não recebe dependência. O error handler mantém `createErrorHandler`, pela assinatura de quatro parâmetros do Express. Rotas de domínio seguem `docs/02-Architecture.md` §4 (`<domínio>.router.ts`, `.controller.ts`, …).
+
 ```ts
 const getUser: RequestHandler<{ id: string }, UserDto, never, never, AppLocals> = async (
   req,
@@ -212,15 +214,19 @@ const getUser: RequestHandler<{ id: string }, UserDto, never, never, AppLocals> 
 const errorHandler: ErrorRequestHandler = (err, req, res, next) => {
   if (res.headersSent) return next(err);
 
-  const appErr = toAppError(err);
-  req.log.error({ err, code: appErr.code }, "falha ao processar requisição");
+  const appErr = toHttpAppError(err);
+  const { code, message, status } = toExposedError(appErr);
+  const fields = { correlationId: req.id, code: appErr.code, status };
 
-  res.status(appErr.status).json({
-    error: {
-      code: appErr.code,
-      message: appErr.expose ? appErr.message : "Erro interno do servidor",
-      requestId: req.id,
-    },
+  if (isServerError(status)) {
+    logger.error({ ...fields, err }, "falha ao processar requisição");
+  } else {
+    // 4xx: sem causa crua — a mensagem do parser pode ecoar trecho do body (§9).
+    logger.warn(fields, "requisição recusada");
+  }
+
+  res.status(status).json({
+    error: { code, message, requestId: req.id },
   });
 };
 ```
@@ -248,6 +254,7 @@ const errorHandler: ErrorRequestHandler = (err, req, res, next) => {
 - Redija `authorization`, `cookie`, `set-cookie`, `password`, `token` e `secret`.
 - Não logue PII.
 - Logue a causa do erro uma vez, na borda; não faça log-and-rethrow.
+- Exceção: 4xx não loga a causa. A `message` do parser pode ecoar trecho do body; o 4xx registra `correlationId`, `code` e `status`. 5xx mantém a causa.
 - Campos, não concatenação: `logger.info({ userId }, "user loaded")`.
 
 ## 10. Testes

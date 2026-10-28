@@ -15,21 +15,26 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "check": "npm run typecheck && npm run lint && npm run format:check",
-    "test": "echo \"No tests configured yet\""
+    "test": "echo \"No tests configured yet — see test/README.md\""
   },
   "engines": {
     "node": ">=24"
   },
   "dependencies": {
-    "dotenv": "^17.4.2",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.6",
     "express": "^5.2.1",
     "knex": "^3.3.0",
+    "multer": "^2.5.0",
     "pg": "^8.23.0",
     "zod": "^4.5.4"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@types/cookie-parser": "^1.4.10",
+    "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
+    "@types/multer": "^2.3.0",
     "@types/node": "^24",
     "eslint": "^10.8.1",
     "eslint-config-prettier": "^10.1.8",

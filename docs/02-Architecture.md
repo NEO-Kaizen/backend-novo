@@ -98,8 +98,8 @@ src/
 │   └── pagination/            # PageQuery, Page
 │
 ├── platform/                  # adaptadores concretos — conhecem core
-│   ├── database/              # KnexDatabase, PostgresDialect, SqliteDialect, MySqlDialect
-│   ├── http/                  # middlewares: request-id, auth, access-mode, erro
+│   ├── database/              # KnexDatabase, PostgresDialect (Sqlite/MySql: alvo)
+│   ├── http/                  # <conceito>.middleware.ts: request-id, auth, access-mode, erro
 │   ├── events/                # publicador de eventos em memória
 │   ├── logging/               # adapter do logger
 │   ├── authorization/         # StaticAuthorizationService
@@ -843,7 +843,7 @@ export interface AttemptRecorder {
 ```
 
 ```ts
-// src/platform/http/error-handler.ts
+// src/platform/http/error-handler.middleware.ts
 export function createErrorHandler(dependencies: {
   readonly attempts: AttemptRecorder;
   readonly clock: Clock;
@@ -929,12 +929,12 @@ export interface TransactionManager {
 }
 ```
 
-`KnexDatabase` (`src/platform/database/knex-database.ts`) implementa as duas portas. Trocar a engine significa trocar o `client` do Knex e o `Dialect` — nenhum repositório muda.
+`KnexDatabase` (`src/platform/database/knex-database.ts`) implementa as duas portas. Trocar a engine significa trocar o `client` do Knex e o `Dialect` — nenhum repositório muda (dialetos disponíveis: §10.2).
 
 ```ts
 const database = createDatabase(config);
 // config.database.engine === "postgres" → KnexDatabase com PostgresDialect
-// config.database.engine === "sqlite"   → KnexDatabase com SqliteDialect
+// engine ≠ postgres → erro no boot: dialeto não implementado
 ```
 
 ```ts
@@ -959,14 +959,12 @@ export interface Dialect {
   supportsReturning(): boolean;
   supportsRowLocks(): boolean;
   supportsUpsertMerge(): boolean;
-  /** Predicado de cor hexadecimal válida, na sintaxe da engine. */
-  hexColorCheck(column: string): string;
-  /** DDL da guarda append-only da auditoria, na sintaxe da engine. */
-  auditAppendOnlyGuard(): readonly string[];
 }
 ```
 
-Implementações: `PostgresDialect`, `SqliteDialect`, `MySqlDialect`. O `supportsUpsertMerge()` declara se a engine aceita merge no alvo do conflito: quem precisa de upsert consulta a capacidade e degrada para `insert` + `update` quando ela é falsa — a divergência fica declarada no `Dialect`, não espalhada em `if` de repositório.
+Adiado: `hexColorCheck()` e `auditAppendOnlyGuard()` entram com as migrations, quando houver consumidor e suíte.
+
+Implementações: `PostgresDialect`. `SqliteDialect` e `MySqlDialect` são o alvo de portabilidade e ainda não têm implementação. O `supportsUpsertMerge()` declara se a engine aceita merge no alvo do conflito: quem precisa de upsert consulta a capacidade e degrada para `insert` + `update` quando ela é falsa — a divergência fica declarada no `Dialect`, não espalhada em `if` de repositório.
 
 ### 10.3 Regras de Portabilidade
 
@@ -1140,25 +1138,25 @@ O `TransactionManager` usa `AsyncLocalStorage` para propagar a transação corre
 ```ts
 // src/platform/database/knex-database.ts
 export class KnexDatabase implements Database, TransactionManager {
-  private readonly scope = new AsyncLocalStorage<Knex>();
+  private readonly transactionScope = new AsyncLocalStorage<Knex.Transaction>();
 
   get client(): Knex {
-    return this.scope.getStore() ?? this.knex;
+    return this.transactionScope.getStore() ?? this.knex;
   }
 
   async run<T>(work: () => Promise<T>): Promise<T> {
-    return this.nested(async (trx) => this.scope.run(trx, work));
+    return this.nested(async (trx) => this.transactionScope.run(trx, work));
   }
 
   async runSnapshot<T>(work: () => Promise<T>): Promise<T> {
-    return this.nested(async (trx) => this.scope.run(trx, work), "repeatable read");
+    return this.nested(async (trx) => this.transactionScope.run(trx, work), "repeatable read");
   }
 
   private async nested<T>(
     use: (trx: Knex.Transaction) => Promise<T>,
     isolationLevel?: Knex.IsolationLevels,
   ): Promise<T> {
-    const current = this.scope.getStore();
+    const current = this.transactionScope.getStore();
     if (current) {
       // Transação aninhada herda o isolamento da externa: é savepoint, não uma
       // transação independente. O nível só vale quando a transação é raiz.
@@ -1202,8 +1200,8 @@ A regra "escrita só dentro de transação" é garantida pelo **repositório**, 
 ```ts
 // src/platform/database/knex-database.ts
 assertInTransaction(): void {
-  if (!this.scope.getStore()) {
-    throw new AppError("transaction_required", 500, "escrita fora de transação");
+  if (!this.transactionScope.getStore()) {
+    throw new AppError("transaction_required", SERVER_ERROR_STATUS, "escrita fora de transação");
   }
 }
 ```
@@ -1226,11 +1224,13 @@ O erro é interno e não exposto: chegar a ele é bug, não condição de negóc
 
 Todo erro exposto tem um `code` em `snake_case`, estável entre versões. O `code` é o que o frontend deve usar para decidir comportamento; a `message` é para o humano e pode mudar.
 
-| Registro                        | Códigos                                                                                    | Quem usa                       |
-| ------------------------------- | ------------------------------------------------------------------------------------------ | ------------------------------ |
-| `core/errors/error-codes.ts`    | `validation_error`, `not_found`, `conflict`, `unauthorized`, `forbidden`, `internal_error` | Erros expostos ao cliente      |
-| Códigos de domínio              | `not_the_assignee`, `invalid_status_transition`, …                                         | Erros de `DomainError`         |
-| `core/errors/internal-codes.ts` | `transaction_required`, `protocol_collision`, `counter_missing`                            | Erros internos; nunca expostos |
+| Registro                        | Códigos                                                                                                                                                 | Quem usa                       |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
+| `core/errors/error-codes.ts`    | `validation_error`, `not_found`, `conflict`, `unauthorized`, `forbidden`, `internal_error`, `payload_too_large`, `invalid_content_type`, `rate_limited` | Erros expostos ao cliente      |
+| Códigos de domínio              | `not_the_assignee`, `invalid_status_transition`, …                                                                                                      | Erros de `DomainError`         |
+| `core/errors/internal-codes.ts` | `transaction_required`                                                                                                                                  | Erros internos; nunca expostos |
+
+`counter_missing` entra com o contador de protocolo. Códigos de domínio entram em `core/errors/error-codes.ts` com o primeiro `DomainError`; a projeção de `expose` exige que o código esteja nesse catálogo e não seja `internal_error`.
 
 ### 12.3 Erro de Domínio com Contexto de Recusa
 
@@ -1247,10 +1247,10 @@ O `context` carrega **o que** foi tentado; a borda completa com **quem** e **ond
 
 ### 12.4 Mapeamento HTTP
 
-Erro de domínio não conhece status HTTP. O mapeamento acontece **uma vez**, na borda:
+Erro de domínio não conhece status HTTP. O mapeamento acontece **uma vez**, na borda. O reconhecimento de `body-parser`/`multer` fica em `platform/http/transport-error-mapper.ts`; o core só vê `AppError` e o mapa de domínio. O mapa abaixo é alvo: entra com o primeiro `DomainError`; hoje o `AppError` carrega o próprio status:
 
 ```ts
-// src/core/http/error-mapper.ts
+// alvo (core/http/error-mapper.ts); entra com o primeiro DomainError
 const STATUS_BY_CODE: Readonly<Record<string, number>> = {
   validation_error: 400,
   unauthorized: 401,
@@ -1263,7 +1263,7 @@ const STATUS_BY_CODE: Readonly<Record<string, number>> = {
 };
 ```
 
-`AppError` carrega o próprio status; `DomainError` não — o dele vem deste registro. Uma fonte por tipo de erro.
+`AppError` carrega o próprio status; `DomainError` não — o dele vem deste registro. Uma fonte por tipo de erro. Os códigos de borda (`payload_too_large`, `invalid_content_type`, `rate_limited`) não usam este mapa: são `AppError` com status próprio.
 
 ### 12.5 Envelope de Resposta
 
@@ -1279,8 +1279,8 @@ Esse envelope é **temporário**. O `CODING_STANDARDS.md` define `{ "error": { "
 
 | Regra                                             | Efeito                                                                   |
 | ------------------------------------------------- | ------------------------------------------------------------------------ |
-| `expose: true`                                    | A mensagem vai para o cliente                                            |
-| `expose: false` (padrão)                          | O cliente recebe `internal_error` com mensagem genérica                  |
+| `expose: true` e `code` no catálogo exposto       | A mensagem vai para o cliente (exceto `internal_error`)                  |
+| Qualquer outro caso (inclui `expose: false`)      | O cliente recebe `internal_error` com mensagem genérica e status 500     |
 | Stack, SQL, nome de tabela, path e versão interna | Nunca saem do servidor                                                   |
 | Causa do erro                                     | Registrada **uma vez**, na borda; camada interna não faz log-and-rethrow |
 
@@ -1442,31 +1442,23 @@ A transição começa quando o frontend consome `permissions`; a gestão de perf
 // src/app.ts
 export function createApp(container: Container): Express {
   const app = express();
+  app.disable("x-powered-by");
 
-  app.use(requestIdMiddleware);
-  app.use(express.json({ limit: "1mb" }));
+  app.use(createRequestIdMiddleware(container.ids));
+  app.use(createRequestLoggerMiddleware(container.logger));
+  app.use(createSecurityHeadersMiddleware(container.config.environment));
+  app.use(createCorsMiddleware(container.config.cors.origins));
+  app.use(express.json({ limit: container.config.uploads.jsonBodyMaxBytes }));
   app.use(cookieParser());
-  app.use(
-    cors({
-      origin: container.config.cors.origins,
-      credentials: true,
-      exposedHeaders: ["Content-Disposition", "x-request-id"],
-    }),
-  );
 
-  app.use("/api/v1/auth", container.modules.auth.router);
-  app.use("/api/v1/requests", container.modules.requests.router);
-  app.use("/api/v1/audit", container.modules.audit.router);
-  // ...
+  app.get("/health", (_req, res) => {
+    res.status(200).json({ status: "ok" });
+  });
 
-  app.use(notFoundHandler);
-  app.use(
-    createErrorHandler({
-      attempts: container.attempts,
-      clock: container.clock,
-      logger: container.logger,
-    }),
-  ); // quatro parâmetros, sempre por último
+  // módulos de domínio: app.use("/api/v1/<domínio>", container.modules.<domínio>.router);
+
+  app.use(createNotFoundMiddleware());
+  app.use(createErrorHandler(container.logger)); // quatro parâmetros, sempre por último
   return app;
 }
 ```
@@ -1478,54 +1470,91 @@ export function createApp(container: Container): Express {
 | Depois de `headersSent`, o handler delega com `next(err)` | Não se responde duas vezes                                                            |
 | `app.ts` não cria dependência                             | Recebe o `Container` pronto; a aplicação pode ser montada em teste sem subir servidor |
 
+`/health` é sonda de infraestrutura, não contrato de domínio: responde 200 sem autenticação, fora do prefixo `/api/v1` e fora do OpenAPI. É liveness, não readiness: não consulta o banco — o pool abre a conexão na primeira consulta.
+
 ---
 
 ## 16. Configuração
 
-A configuração é lida e validada **no boot**. Aplicação com configuração inválida não sobe.
+A configuração é lida e validada **no boot**. Aplicação com configuração inválida não sobe. Variáveis planas; `toConfig` monta os objetos aninhados (`database`, `cors`, `uploads`).
 
 ```ts
 // src/platform/config/environment-schema.ts
+// positiveInteger(): z.coerce.number().int().positive(), com mensagens pt-BR.
+// MEBIBYTE = 1024 * 1024 (src/core/config/config.ts).
 export const EnvironmentSchema = z.strictObject({
   NODE_ENV: z.enum(["development", "test", "production"]),
-  PORT: z.coerce.number().int().positive(),
-  DATABASE: z.strictObject({
-    ENGINE: z.enum(["postgres", "sqlite", "mysql"]),
-    HOST: z.string(),
-    PORT: z.coerce.number().int().positive(),
-    NAME: z.string(),
-    USER: z.string(),
-    PASSWORD: z.string(),
-  }),
-  CORS: z.strictObject({
-    ORIGINS: z.array(z.string()),
-  }),
+  PORT: positiveInteger().max(65_535).default(3000),
+  DATABASE_ENGINE: z.enum(DATABASE_ENGINES).default("postgres"),
+  DATABASE_HOST: z.string().min(1),
+  DATABASE_PORT: positiveInteger().max(65_535),
+  DATABASE_NAME: z.string().min(1),
+  DATABASE_USER: z.string().min(1),
+  DATABASE_PASSWORD: z.string(), // presente, pode ser vazio (trust local)
+  DATABASE_ACQUIRE_TIMEOUT_MS: positiveInteger().default(10_000),
+  DATABASE_CONNECT_TIMEOUT_MS: positiveInteger().default(5_000),
+  DATABASE_STATEMENT_TIMEOUT_MS: positiveInteger().default(30_000),
+  // Lista separada por vírgula; normalizeOrigin() valida cada item (omitido no recorte).
+  CORS_ORIGINS: z.string().transform((value) => value.split(",")),
   JWT_SECRET: z.string().min(32),
+  JWT_EXPIRES_IN: z
+    .string()
+    .regex(/^\d+[smhd]$/)
+    .default("1d"),
+  COOKIE_NAME: z.string().max(64).default("session_id"),
   PROTOCOL_SECRET: z.string().min(32),
+  UPLOAD_MAX_FILE_BYTES: positiveInteger().default(10 * MEBIBYTE),
+  UPLOAD_MAX_FILES: positiveInteger().default(5),
+  JSON_BODY_MAX_BYTES: positiveInteger().default(MEBIBYTE),
 });
 ```
 
 ```ts
 // src/core/config/config.ts
+export interface DatabaseConfig {
+  readonly engine: DatabaseEngine;
+  readonly host: string;
+  readonly port: number;
+  readonly name: string;
+  readonly user: string;
+  readonly password: string;
+  readonly acquireTimeoutMs: number;
+  readonly connectTimeoutMs: number;
+  readonly statementTimeoutMs: number;
+}
+
 export interface Config {
   readonly environment: "development" | "test" | "production";
   readonly port: number;
-  /** Espelha o bloco `DATABASE` do schema de ambiente. */
+  /** Espelha o bloco `DATABASE_*` do schema de ambiente. */
   readonly database: DatabaseConfig;
   readonly cors: { readonly origins: readonly string[] };
   readonly jwtSecret: string;
+  readonly jwtExpiresIn: string;
+  readonly cookieName: string;
   readonly protocolSecret: string;
+  readonly uploads: {
+    readonly maxFileBytes: number;
+    readonly maxFiles: number;
+    readonly jsonBodyMaxBytes: number;
+  };
 }
 ```
 
 > **Seed-only.** `ADMIN_ROOT_EMAIL` e `ADMIN_ROOT_PASSWORD` são lidas pelo comando de seed, não pelo `EnvironmentSchema`; o boot da aplicação não as exige. A regra e o comportamento do seed estão em [`03-Data-Model.md` § 25.3](./03-Data-Model.md#253-admin-root).
 
-| Regra                                                                | Motivo                                              |
-| -------------------------------------------------------------------- | --------------------------------------------------- |
-| Segredo ausente ou curto demais derruba o boot em produção           | Falhar cedo é melhor que falhar no primeiro request |
-| `.env.example` documenta as variáveis                                | Segredo nunca vai para o repositório                |
-| Nenhum `process.env` fora de `platform/config`                       | Uma fonte de configuração                           |
-| `Config` (interface) e `EnvironmentSchema` (Zod) têm nomes distintos | O schema valida; a interface é o contrato interno   |
+| Regra                                                                | Motivo                                                                                                                         |
+| -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| Segredo ausente ou curto demais derruba o boot em produção           | Falhar cedo é melhor que falhar no primeiro request                                                                            |
+| `.env.example` documenta as variáveis                                | Segredo nunca vai para o repositório                                                                                           |
+| Nenhum `process.env` fora de `platform/config`                       | Uma fonte de configuração                                                                                                      |
+| `Config` (interface) e `EnvironmentSchema` (Zod) têm nomes distintos | O schema valida; a interface é o contrato interno                                                                              |
+| Variáveis planas, `Config` aninhado                                  | `strictObject` sobre `process.env` rejeitaria PATH, HOME e afins; `loadConfig` seleciona as chaves conhecidas antes de validar |
+| `DATABASE_ENGINE` lista o alvo de portabilidade                      | Só `postgres` tem dialeto hoje; engine sem dialeto falha no boot com mensagem clara (§ 10.2)                                   |
+| `NODE_ENV` sem default                                               | Produção não cai em modo development por variável ausente                                                                      |
+| `DATABASE_PASSWORD` pode ser vazio                                   | Autenticação por trust local; a variável precisa existir                                                                       |
+| Pool e conexão têm timeout (`*_TIMEOUT_MS`)                          | Sem espera indefinida em aquisição, conexão ou query                                                                           |
+| `COOKIE_NAME` e `JWT_EXPIRES_IN` no schema                           | Requeridos pelo C6 (`04-API-Conventions.md` § 5)                                                                               |
 
 ---
 
@@ -1551,6 +1580,11 @@ export interface Logger {
 | PII não entra em log                                                                                 | Dado pessoal não é log                 |
 | A causa de um erro é logada **uma vez**, na borda                                                    | Camada interna não faz log-and-rethrow |
 | Método, rota, status e duração em todo log de requisição                                             | Métrica de saúde                       |
+| Requisição abortada registra `aborted: true`                                                         | Rastro de desconexão                   |
+
+**Exceção:** 4xx não loga a causa — a `message` do parser pode ecoar trecho do body; a regra canônica está em `CODING_STANDARDS.md` §9.
+
+O nível mínimo vem do ambiente: `development` e `production` registram a partir de `info`; `test` não registra. Não há `LOG_LEVEL` no schema — o ambiente já decide o ruído aceitável.
 
 **O log é rastro de tentativa, não de fato.** Uma transação que faz _rollback_ pode deixar um log dizendo que o status mudou, sem auditoria correspondente. Por isso o log de sucesso sai **depois** do commit, e para saber o que de fato aconteceu se olha a **auditoria** — ver [§ 9.4](#94-auditoria-e-log-o-que-cada-um-garante).
 
@@ -1655,7 +1689,7 @@ Cada linha aponta a seção que define a regra. Um PR que muda mais de uma camad
 | [ ] | Exemplos no spec sem PII                                                                | [§ 23](#23-contrato-http-openapi)                                         | Revisão manual                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | [ ] | Autorização verificada no servidor, em um lugar só por domínio                          | [§ 14.4](#144-autorização)                                                | `AuthorizationService.assert`                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | [ ] | Log estruturado com request id; sem PII; sem `console.log`                              | [§ 17](#17-log)                                                           | `rg "console\.(log\|error)" src/`                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| [ ] | Segredo vem de ambiente validado; nunca no repositório                                  | [§ 16](#16-configuração)                                                  | `.env.example` sem valor                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| [ ] | Segredo vem de ambiente validado; nunca no repositório                                  | [§ 16](#16-configuração)                                                  | `.env.example` sem segredo real (placeholders de desenvolvimento)                                                                                                                                                                                                                                                                                                                                                                                                        |
 
 ---
 

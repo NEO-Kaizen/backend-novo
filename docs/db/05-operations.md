@@ -18,26 +18,27 @@ Texto **indexado ou único** é `varchar(n)` com `ck_` de comprimento; texto lon
 
 ## Configuração
 
-O boot valida a configuração ([02-Architecture § 16](../02-Architecture.md#16-configuração)). O bloco de banco é:
+O boot valida a configuração ([02-Architecture § 16](../02-Architecture.md#16-configuração)). O banco é configurado por variáveis planas; `toConfig` monta o objeto `database`:
 
 ```ts
-DATABASE: {
-  ENGINE: "postgres" | "sqlite" | "mysql",
-  HOST: string,
-  PORT: number,
-  NAME: string,
-  USER: string,
-  PASSWORD: string,
-}
+DATABASE_ENGINE: "postgres" | "sqlite" | "mysql";
+DATABASE_HOST: string;
+DATABASE_PORT: number;
+DATABASE_NAME: string;
+DATABASE_USER: string;
+DATABASE_PASSWORD: string;
+DATABASE_ACQUIRE_TIMEOUT_MS: number;
+DATABASE_CONNECT_TIMEOUT_MS: number;
+DATABASE_STATEMENT_TIMEOUT_MS: number;
 ```
 
 O schema de ambiente é `z.strictObject`, então variável desconhecida ou ausente derruba o boot. O `.env.example` documenta as variáveis; segredo nunca vai para o repositório.
 
-> **Lacuna conhecida.** O legado usa variáveis planas `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER` e `DB_PASSWORD`; o modelo novo define o bloco `DATABASE`, mas os nomes das variáveis de ambiente ainda não foram decididos. Não invente um prefixo: a decisão entra com o adapter de configuração.
+> **Legado.** O legado usa `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER` e `DB_PASSWORD`; o backend-novo usa o prefixo `DATABASE_*` (§16).
 
 > **Seed do Admin Root.** O comando de seed lê `ADMIN_ROOT_EMAIL` e `ADMIN_ROOT_PASSWORD` do ambiente; elas são **seed-only** e não entram no `EnvironmentSchema` do boot. O e-mail é normalizado e validado; a senha tem ≥ 14 caracteres e é gravada só como hash. Se a conta não existe, `users` e `credentials` são criadas na mesma transação com `must_change_password = true`. Se o e-mail já existe com outro perfil, o seed falha; se já é `Admin Root`, a senha não é reescrita. Sem as duas variáveis, o seed falha antes de escrever.
 
-> **Credencial de auditoria.** O append-only de `audit_entries` é garantido no banco: triggers `BEFORE UPDATE`/`BEFORE DELETE` nas três engines e, no Postgres/MySQL, uma credencial de aplicação sem `UPDATE`/`DELETE`/`DROP`/`TRUNCATE`. Isso exige **duas credenciais** — runtime e migração — e o bloco `DATABASE` atual tem uma. A separação é pendência de deploy ([02-Architecture § 22](../02-Architecture.md#22-pendências-de-arquitetura)).
+> **Credencial de auditoria.** O append-only de `audit_entries` é garantido no banco: triggers `BEFORE UPDATE`/`BEFORE DELETE` nas três engines e, no Postgres/MySQL, uma credencial de aplicação sem `UPDATE`/`DELETE`/`DROP`/`TRUNCATE`. Isso exige **duas credenciais** — runtime e migração — e a configuração atual tem uma. A separação é pendência de deploy ([02-Architecture § 22](../02-Architecture.md#22-pendências-de-arquitetura)).
 
 ## Schema, migrations e seeds
 
@@ -160,19 +161,19 @@ A estratégia concreta (in-memory, arquivo temporário, container) está **em ab
 
 ## Diagnóstico
 
-| Sintoma                                                       | Causa provável                                         | O que fazer                                                                                                                   |
-| ------------------------------------------------------------- | ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
-| Migration falha ao criar FK                                   | Tabela referenciada ainda não existe                   | Confira a ordem em [§ 4](../03-Data-Model.md#4-integridade-referencial-e-ordem-de-criação) e o timestamp da migration         |
-| Seed falha em `users.profile_id`                              | O seed do domínio `users` não inseriu `profiles` antes | Insira `profiles` antes de `users` no seed do domínio                                                                         |
-| Seed duplica linha                                            | A busca pela chave natural não foi usada               | Implemente create-if-absent; não use id fixo nem `merge`                                                                      |
-| `ENUM`/`ARRAY`/`jsonb` funciona no Postgres e quebra no MySQL | Tipo nativo fora do `Dialect`                          | Use coluna com `ck_`, tabela filha e `dialect.jsonType()`                                                                     |
-| Índice funcional `LOWER(name)` quebra no MySQL                | `LOWER()` em índice não é portátil                     | Use coluna normalizada mantida pela aplicação (`normalized_name`)                                                             |
-| `forUpdate` não bloqueia                                      | SQLite não suporta row lock                            | Consulte `dialect.supportsRowLocks()` e degrade                                                                               |
-| Upsert com merge falha                                        | Engine não suporta merge no alvo                       | Consulte `dialect.supportsUpsertMerge()` e faça insert + update                                                               |
-| Migration parcialmente aplicada                               | Falha no meio do batch                                 | Verifique `knex_migrations`; recupere conforme a engine, em banco descartável ou com backup                                   |
-| Protocolo duplicado                                           | Leitura por protocolo com `.first()`                   | Use a sondagem `LIMIT 2` que falha explicitamente ([§ 8.1](../03-Data-Model.md#81-requests))                                  |
-| Predicado de cor hexadecimal quebra em uma engine             | `INSTR`/regex fora do `Dialect`                        | Use `dialect.hexColorCheck(column)`; o predicado é por engine ([02-Architecture § 10.2](../02-Architecture.md#102-o-dialect)) |
-| Auditoria aceita `UPDATE`/`DELETE`                            | Guarda só na aplicação, sem trigger/privilégio         | Use `dialect.auditAppendOnlyGuard()` e a credencial de runtime sem escrita ([§ 15.1](../03-Data-Model.md#151-audit_entries))  |
+| Sintoma                                                       | Causa provável                                         | O que fazer                                                                                                                                                                                                      |
+| ------------------------------------------------------------- | ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Migration falha ao criar FK                                   | Tabela referenciada ainda não existe                   | Confira a ordem em [§ 4](../03-Data-Model.md#4-integridade-referencial-e-ordem-de-criação) e o timestamp da migration                                                                                            |
+| Seed falha em `users.profile_id`                              | O seed do domínio `users` não inseriu `profiles` antes | Insira `profiles` antes de `users` no seed do domínio                                                                                                                                                            |
+| Seed duplica linha                                            | A busca pela chave natural não foi usada               | Implemente create-if-absent; não use id fixo nem `merge`                                                                                                                                                         |
+| `ENUM`/`ARRAY`/`jsonb` funciona no Postgres e quebra no MySQL | Tipo nativo fora do `Dialect`                          | Use coluna com `ck_`, tabela filha e `dialect.jsonType()`                                                                                                                                                        |
+| Índice funcional `LOWER(name)` quebra no MySQL                | `LOWER()` em índice não é portátil                     | Use coluna normalizada mantida pela aplicação (`normalized_name`)                                                                                                                                                |
+| `forUpdate` não bloqueia                                      | SQLite não suporta row lock                            | Consulte `dialect.supportsRowLocks()` e degrade                                                                                                                                                                  |
+| Upsert com merge falha                                        | Engine não suporta merge no alvo                       | Consulte `dialect.supportsUpsertMerge()` e faça insert + update                                                                                                                                                  |
+| Migration parcialmente aplicada                               | Falha no meio do batch                                 | Verifique `knex_migrations`; recupere conforme a engine, em banco descartável ou com backup                                                                                                                      |
+| Protocolo duplicado                                           | Leitura por protocolo com `.first()`                   | Use a sondagem `LIMIT 2` que falha explicitamente ([§ 8.1](../03-Data-Model.md#81-requests))                                                                                                                     |
+| Predicado de cor hexadecimal quebra em uma engine             | `INSTR`/regex fora do `Dialect`                        | Use `dialect.hexColorCheck(column)` quando implementado; o predicado é por engine ([02-Architecture § 10.2](../02-Architecture.md#102-o-dialect))                                                                |
+| Auditoria aceita `UPDATE`/`DELETE`                            | Guarda só na aplicação, sem trigger/privilégio         | Use `dialect.auditAppendOnlyGuard()` quando implementado ([02-Architecture § 10.2](../02-Architecture.md#102-o-dialect)) e a credencial de runtime sem escrita ([§ 15.1](../03-Data-Model.md#151-audit_entries)) |
 
 ## Segurança, acesso e retenção
 

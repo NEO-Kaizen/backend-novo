@@ -25,4 +25,19 @@ export default defineConfig(
       ],
     },
   },
+  {
+    // Uma fonte de configuração: o ambiente só é lido em platform/config (§16).
+    files: ["src/**/*.ts"],
+    ignores: ["src/platform/config/**"],
+    rules: {
+      "no-restricted-properties": [
+        "error",
+        {
+          object: "process",
+          property: "env",
+          message: "Leia o ambiente apenas em src/platform/config.",
+        },
+      ],
+    },
+  },
 );

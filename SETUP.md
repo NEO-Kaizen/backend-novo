@@ -113,14 +113,18 @@ Instale as dependências e valide o build antes de subir o processo compilado:
 
 ```bash
 npm ci
+cp .env.example .env   # gera o .env de desenvolvimento
 npm run check
 npm run build
 npm start:prod
+curl -i localhost:3000/health
 ```
 
 Para desenvolver, rode `npm run dev` em um terminal próprio: ele usa `--watch` sobre `src/server.ts` e **não retorna** — as demais sequências não avançam enquanto ele estiver ativo.
 
-`npm start:prod` executa `dist/server.js`. O `.env` é opcional: os scripts usam `--env-file-if-exists=.env`.
+`npm start:prod` executa `dist/server.js`. Os scripts carregam `.env` com `--env-file-if-exists`. As variáveis obrigatórias do schema (`docs/02-Architecture.md` § 16) precisam existir — no `.env` em dev ou no ambiente em produção; sem elas o processo encerra no boot com a lista do que falta. Os valores de `.env.example` são apenas de desenvolvimento e devem ser trocados em qualquer ambiente compartilhado.
+
+`/health` responde 200 sem autenticação e não consulta o banco; a conexão com o Postgres só abre na primeira query.
 
 ## 4. Context7 MCP
 
@@ -219,12 +223,13 @@ Esses comandos citam `.context7API`; a política do projeto os nega ao agente. E
 
 ## Problemas comuns
 
-| Sintoma                   | Causa provável                      | Solução                              |
-| ------------------------- | ----------------------------------- | ------------------------------------ |
-| `gh: command not found`   | Terminal aberto antes da instalação | Abra uma nova janela do terminal     |
-| `HTTP 401`                | Credencial inválida ou expirada     | `gh auth login`                      |
-| `missing required scopes` | Escopo ausente                      | `gh auth refresh --scopes project`   |
-| Versão antiga no Linux    | Pacote da distribuição              | Use o repositório oficial deste guia |
+| Sintoma                             | Causa provável                      | Solução                                        |
+| ----------------------------------- | ----------------------------------- | ---------------------------------------------- |
+| `gh: command not found`             | Terminal aberto antes da instalação | Abra uma nova janela do terminal               |
+| `HTTP 401`                          | Credencial inválida ou expirada     | `gh auth login`                                |
+| `missing required scopes`           | Escopo ausente                      | `gh auth refresh --scopes project`             |
+| Versão antiga no Linux              | Pacote da distribuição              | Use o repositório oficial deste guia           |
+| `Configuração de ambiente inválida` | `.env` ausente ou incompleto        | `cp .env.example .env` e preencha as variáveis |
 
 ## Referências
 

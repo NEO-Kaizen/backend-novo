@@ -24,10 +24,10 @@ divergência exige emenda aqui e emenda ao ADR correspondente.
 | 1   | Base path e versionamento      | decidido | `/api/v1` para todos os endpoints; sem prefixo em v2 por ora                                                                                                                                  | `02-Architecture.md` §15; `01-Overview.md` §3                                                                                                  | Backend         |
 | 2   | Envelope de erro (legado)      | decidido | `{ status, statusCode, message }` + `code` e `requestId` aditivos; vigente até a migração                                                                                                     | ADR-0005; `02-Architecture.md` §12.5                                                                                                           | Backend + FE    |
 | 3   | Envelope de erro (alvo)        | decidido | `{ error: { code, message, requestId } }`, em cutover coordenado                                                                                                                              | `CODING_STANDARDS.md` §5; ADR-0005                                                                                                             | Backend + FE    |
-| 4   | Catálogo de códigos            | decidido | snake_case; 400/401/403/404/409/413/415/429/500; regra de `expose`                                                                                                                            | `02-Architecture.md` §12.2/§12.4/§12.6 (seis códigos base); 413/415/429: extensão (§2.3)                                                       | Backend         |
+| 4   | Catálogo de códigos            | decidido | snake_case; 400/401/403/404/409/413/415/429/500; regra de `expose`                                                                                                                            | `02-Architecture.md` §12.2 (catálogo), §12.4 (mapeamento) e §12.6 (exposição)                                                                  | Backend         |
 | 5   | Validação (400)                | decidido | 400 + `validation_error` + mensagem pt-BR + `fields: [{ path, message }]`; o legado misto (422/objeto no fluxo de requests e 400/mensagem em outros endpoints) é unificado                    | `CODING_STANDARDS.md` §6; C2                                                                                                                   | Backend + FE    |
 | 6   | Paginação                      | decidido | `{ data, page, pageSize, total, totalPages }`; default 20, máximo 100, clamp de página; `totalPages: 0` quando vazio; exceções em §4.3                                                        | `02-Architecture.md` §10.6; C3/C4/C5                                                                                                           | Backend         |
-| 7   | Sessão e cookie                | decidido | `session_id`, HttpOnly, SameSite=Lax, Secure em produção, TTL 1 dia; env `COOKIE_NAME` e `JWT_EXPIRES_IN` (implementação pendente)                                                            | C6; `02-Architecture.md` §14.1; F1 (`src/configs.ts`; `src/modules/auth/auth.controller.ts`)                                                   | Backend + Infra |
+| 7   | Sessão e cookie                | decidido | `session_id`, HttpOnly, SameSite=Lax, Secure em produção, TTL 1 dia; env `COOKIE_NAME` e `JWT_EXPIRES_IN`                                                                                     | C6; `02-Architecture.md` §14.1; F1 (`src/configs.ts`; `src/modules/auth/auth.controller.ts`)                                                   | Backend + Infra |
 | 8   | Autorização                    | decidido | 26 keys; escopo `none`/`owner` (`own`/`all`); atribuibilidade; 5 perfis; FE por perfil                                                                                                        | ADR-0025; `02-Architecture.md` §14.4–§14.6                                                                                                     | Backend + FE    |
 | 9   | `/auth/me` — DTO               | decidido | `id, name, email, role, permissions?, mustChangePassword, avatarUrl (string ou null)`                                                                                                         | C7; `02-Architecture.md` §14.4; F2 (`src/lib/types/auth.ts`)                                                                                   | Backend + FE    |
 | 10  | Concorrência                   | decidido | `PATCH` de status com `targetStatusKey` (destino) e `expectedStatusKey` (precondição); 409 com `currentStatusKey` e `currentStatusId?` no corpo do erro; leitura e escrita na mesma transação | C8; `02-Architecture.md` §11.1                                                                                                                 | Backend + FE    |
@@ -42,7 +42,7 @@ divergência exige emenda aqui e emenda ao ADR correspondente.
 | 19  | Header do solicitante          | decidido | Aceitar `X-Requester-Email` e `X-Requester-Identity` por uma release; depois só Email; o header não autentica                                                                                 | C10; ADR-0023                                                                                                                                  | Backend + FE    |
 | 20  | Códigos de sucesso             | decidido | 200 leitura/atualização; 201 criação; 204 sem corpo                                                                                                                                           | F1 (`docs/solicitations-api-requests-0_4.md` §1 — 201; `docs/audit-history-contract.md` §1–§3 — 200; `docs/internal-observations.md` §7 — 204) | Backend         |
 | 21  | Envelope de auditoria (legado) | decidido | `{ items, total, page, limit }`; item com `audit_id` numérico, `entity_type_label` e `action_type`; mantido até a migração                                                                    | `02-Architecture.md` §22.1; F1 (`docs/audit-history-contract.md`); F2 (`src/lib/types/audit.ts`)                                               | Backend + FE    |
-| 22  | Multipart — limites por rota   | decidido | Limites por rota, por arquivo e total de arquivos em §9; nenhum outro limite é válido                                                                                                         | F1; este §9                                                                                                                                    | Backend         |
+| 22  | Multipart — limites por rota   | decidido | Limites por rota, por arquivo e total (tamanho) por requisição em §9; o parser também limita 10 campos não-arquivo (defesa contra DoS); nenhum outro limite é válido                          | F1; este §9                                                                                                                                    | Backend         |
 
 ### 0.2 Decisões abertas
 
@@ -54,6 +54,7 @@ divergência exige emenda aqui e emenda ao ADR correspondente.
 ## 1. Base path e versionamento
 
 - Todos os endpoints públicos vivem sob `/api/v1` (ex.: `POST /api/v1/requests`).
+- Exceção: `/health` é sonda de infraestrutura, vive fora do prefixo e não é contrato de domínio (`02-Architecture.md` § 15).
 - Sem versionamento por header ou por conteúdo; a versão está no path.
 - `v2` não existe; quando existir, convive com `v1` por janela documentada.
 - O frontend configura a origem via `PUBLIC_API_URL`; o path do backend é fixo em `/api/v1`.
@@ -92,23 +93,23 @@ divergência exige emenda aqui e emenda ao ADR correspondente.
 
 ### 2.3 Catálogo de códigos
 
-| Código                                                       | Status HTTP         | Exposto?          | Uso                                                                 |
-| ------------------------------------------------------------ | ------------------- | ----------------- | ------------------------------------------------------------------- |
-| `validation_error`                                           | 400                 | sim               | entrada inválida na borda                                           |
-| `unauthorized`                                               | 401                 | sim               | sem sessão / sessão inválida                                        |
-| `forbidden`                                                  | 403                 | sim               | capability ausente                                                  |
-| `not_found`                                                  | 404                 | sim               | recurso inexistente (também para protocolo não encontrado, sem 403) |
-| `conflict`                                                   | 409                 | sim               | concorrência / estado incompatível                                  |
-| `payload_too_large`                                          | 413                 | sim               | corpo acima do limite                                               |
-| `invalid_content_type`                                       | 415                 | sim               | `Content-Type` inesperado                                           |
-| `rate_limited`                                               | 429                 | sim               | limite de taxa excedido                                             |
-| `internal_error`                                             | 500                 | não (genérico)    | falha inesperada                                                    |
-| (domínio) `not_the_assignee`, `invalid_status_transition`, … | conforme mapeamento | conforme `expose` | regras de negócio                                                   |
+| Código                                                       | Status HTTP         | Exposto?                             | Uso                                                                 |
+| ------------------------------------------------------------ | ------------------- | ------------------------------------ | ------------------------------------------------------------------- |
+| `validation_error`                                           | 400                 | sim                                  | entrada inválida na borda                                           |
+| `unauthorized`                                               | 401                 | sim                                  | sem sessão / sessão inválida                                        |
+| `forbidden`                                                  | 403                 | sim                                  | capability ausente                                                  |
+| `not_found`                                                  | 404                 | sim                                  | recurso inexistente (também para protocolo não encontrado, sem 403) |
+| `conflict`                                                   | 409                 | sim                                  | concorrência / estado incompatível                                  |
+| `payload_too_large`                                          | 413                 | sim                                  | corpo acima do limite                                               |
+| `invalid_content_type`                                       | 415                 | sim                                  | `Content-Type` inesperado                                           |
+| `rate_limited`                                               | 429                 | sim                                  | limite de taxa excedido                                             |
+| `internal_error`                                             | 500                 | não (genérico)                       | falha inesperada                                                    |
+| (domínio) `not_the_assignee`, `invalid_status_transition`, … | conforme mapeamento | sim, após entrar em `error-codes.ts` | regras de negócio                                                   |
 
 - Códigos estáveis em `snake_case`, registrados em `core/errors/error-codes.ts` (expostos) e `core/errors/internal-codes.ts` (internos, nunca expostos).
-- Regra de `expose`: `expose: true` envia a mensagem; `expose: false` (padrão) envia `internal_error` com mensagem genérica. Stack, SQL, nome de tabela, path e versão interna **nunca** saem do servidor.
-- Códigos de domínio entram em `STATUS_BY_CODE` (`core/http/error-mapper.ts`) para mapear para status HTTP.
-- `413`, `415` e `429` são extensões desta convenção. **Pendência de implementação:** Dono Backend; Destino `02-Architecture.md` §12.2 e `core/errors/error-codes.ts`; Prazo/gatilho: antes da primeira rota que use os códigos.
+- Regra de `expose`: `expose: true` envia a mensagem quando o `code` pertence ao catálogo exposto e não é `internal_error`; qualquer outro caso envia `internal_error` com mensagem genérica e status 500. Stack, SQL, nome de tabela, path e versão interna **nunca** saem do servidor.
+- Códigos de domínio entram em `core/errors/error-codes.ts` e em `STATUS_BY_CODE` (`core/http/error-mapper.ts`) quando o primeiro `DomainError` existir; até lá, `expose: true` sozinho não os expõe — e hoje o `AppError` carrega o próprio status.
+- `413`, `415` e `429` são extensões desta convenção. **Catalogado:** os três códigos estão em `core/errors/error-codes.ts` e em `02-Architecture.md` §12.2; `payload_too_large` e `invalid_content_type` já têm produtor parcial na borda (corpo acima do limite e charset não suportado); `rate_limited` só entra com o rate limiting (C12).
 
 ## 3. Forma do erro de validação (C2)
 
@@ -164,7 +165,6 @@ Os valores 20/100 da auditoria são os globais; a exceção é o parâmetro `lim
 - Atributos: `HttpOnly`, `SameSite=Lax`, `Secure` em produção, `Path=/`, `credentials: true` no CORS.
 - TTL: 1 dia (configurável via `JWT_EXPIRES_IN`, default `1d`).
 - Validação por requisição: assinatura + expiração; relê usuário/perfil no banco; compara `password_changed_at` com o do token.
-- **Pendência de implementação (não é decisão de API):** o env schema (`src/platform/config/environment-schema.ts`) ainda não tem `COOKIE_NAME` nem `JWT_EXPIRES_IN`. Dono: Backend + Infra. Destino: o próprio env schema. Prazo/gatilho: antes do primeiro deploy com sessão.
 - Tokens, cookies e segredos nunca em URL nem em body; a única exceção é a senha de `POST /auth/login`, que vai no body, nunca em URL ou log.
 
 ## 6. Autorização (ADR-0025)
@@ -234,15 +234,17 @@ Os valores 20/100 da auditoria são os globais; a exceção é o parâmetro `lim
 
 **Limites por rota:**
 
-| Rota                                                                       | Arquivos | Limite por arquivo                                        | Total de arquivos | MIME                                         |
-| -------------------------------------------------------------------------- | -------- | --------------------------------------------------------- | ----------------- | -------------------------------------------- |
-| `POST /api/v1/requests` (anexos)                                           | 5        | 10 MiB                                                    | 50 MiB            | PDF, DOCX, XLSX, PNG, JPEG                   |
-| `POST /api/v1/requests/:protocol/pending-items/:pendingItemId/attachments` | 1        | 10 MiB                                                    | 10 MiB            | PDF, DOCX, XLSX, PNG, JPEG                   |
-| `PUT /api/v1/users/me` (avatar)                                            | 1        | 2 MiB                                                     | 2 MiB             | JPEG, PNG                                    |
-| `PATCH /api/v1/portal-config/assets`                                       | 8        | favicon 1 MiB; logo e avatar 2 MiB; imagem de login 5 MiB | 20 MiB            | conforme a chave (PNG, SVG, ICO, JPEG, WebP) |
+| Rota                                                                       | Arquivos | Limite por arquivo                                        | Total (tamanho) | MIME                                         | Extensão                                                            |
+| -------------------------------------------------------------------------- | -------- | --------------------------------------------------------- | --------------- | -------------------------------------------- | ------------------------------------------------------------------- |
+| `POST /api/v1/requests` (anexos)                                           | 5        | 10 MiB                                                    | 50 MiB          | PDF, DOCX, XLSX, PNG, JPEG                   | `.pdf`, `.docx`, `.xlsx`, `.png`, `.jpg`, `.jpeg`                   |
+| `POST /api/v1/requests/:protocol/pending-items/:pendingItemId/attachments` | 1        | 10 MiB                                                    | 10 MiB          | PDF, DOCX, XLSX, PNG, JPEG                   | `.pdf`, `.docx`, `.xlsx`, `.png`, `.jpg`, `.jpeg`                   |
+| `PUT /api/v1/users/me` (avatar)                                            | 1        | 2 MiB                                                     | 2 MiB           | JPEG, PNG                                    | `.jpg`, `.jpeg`, `.png`                                             |
+| `PATCH /api/v1/portal-config/assets`                                       | 8        | favicon 1 MiB; logo e avatar 2 MiB; imagem de login 5 MiB | 20 MiB          | conforme a chave (PNG, SVG, ICO, JPEG, WebP) | conforme a chave (`.png`, `.svg`, `.ico`, `.jpg`, `.jpeg`, `.webp`) |
 
-- O **Total de arquivos** é a soma dos máximos por arquivo e não é validado como um limite único: o multer limita a contagem e o tamanho de cada arquivo; em assets, o `fileSize` global é 5 MiB e o limite por chave (`validateAssetSizes`) roda depois do multer. O 413 vem do arquivo que exceder o seu limite, não da soma.
-- A parte JSON (`payload`/`assets`) tem limite próprio de 2 MiB e não entra no total de arquivos; com todos os máximos, a requisição pode chegar a 52 MiB em requests (2 + 50) e 22 MiB em assets (2 + 20).
+- O **Total (tamanho)** é a soma dos máximos por arquivo e não é validado como um limite único: o multer limita a contagem e o tamanho de cada arquivo; em assets, o `fileSize` global é 5 MiB e o limite por chave (`validateAssetSizes`) roda depois do multer. O 413 vem do arquivo que exceder o seu limite, não da soma.
+- A parte JSON (`payload`/`assets`) tem limite próprio de 2 MiB e não entra no total (tamanho); com todos os máximos, a requisição pode chegar a 52 MiB em requests (2 + 50) e 22 MiB em assets (2 + 20).
+- Além dos limites da tabela, o parser limita a 10 campos não-arquivo por requisição; exceder → **400** `validation_error`.
+- A allowlist efetiva (MIME e extensão) é a da tabela; a política da rota a aplica.
 - JSON body: 1 MiB por default (`JSON_BODY_MAX_BYTES`, aplicado em `express.json`); quando a rota tiver parte JSON no multipart (`payload` ou `assets`), o limite da parte é 2 MiB.
 - **Harmonização registrada:** o legado de requests/pendências devolvia 400 para tamanho e o de requests para MIME; a convenção nova usa **413** para tamanho e **415** para MIME. O FE lê `message`, então a mudança de status não quebra a renderização.
 - Rotas multipart: requests (anexos), pendências (anexos), avatar do usuário e assets do portal.
@@ -291,7 +293,7 @@ Os valores 20/100 da auditoria são os globais; a exceção é o parâmetro `lim
 - Origens explícitas (lista configurável), sem wildcard.
 - `credentials: true`.
 - `exposedHeaders`: `Content-Disposition` (obrigatório, para downloads) e `x-request-id`.
-- Métodos e headers permitidos registrados no bootstrap (`app.ts`).
+- Métodos e headers permitidos registrados no middleware de CORS (`platform/http/cors.middleware.ts`).
 
 ## 15. Convenções correlatas
 
