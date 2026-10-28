@@ -40,7 +40,7 @@ export interface ExposedError {
  * com `expose: true` continua caindo em `internal_error`.
  */
 export function toExposedError(error: AppError): ExposedError {
-  if (!error.expose || !isErrorCode(error.code)) {
+  if (!error.expose || error.code === INTERNAL_ERROR_CODE || !isErrorCode(error.code)) {
     return { code: INTERNAL_ERROR_CODE, message: GENERIC_ERROR_MESSAGE };
   }
 
