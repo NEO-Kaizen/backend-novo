@@ -1,10 +1,6 @@
 import type { ErrorRequestHandler } from "express";
-import {
-  errorEnvelope,
-  SERVER_ERROR_STATUS,
-  toPublicError,
-} from "../../core/http/error-envelope.ts";
-import { toAppError } from "../../core/http/error-mapper.ts";
+import { errorEnvelope, SERVER_ERROR_STATUS } from "../../core/http/error-envelope.ts";
+import { toAppError, toExposedError } from "../../core/http/error-mapper.ts";
 import type { Logger } from "../../core/service/logger.ts";
 
 /**
@@ -41,7 +37,7 @@ export function createErrorHandler(logger: Logger): ErrorRequestHandler {
       logger.warn(fields, "requisição recusada");
     }
 
-    const { code, message } = toPublicError(appError);
+    const { code, message } = toExposedError(appError);
     res
       .status(appError.status)
       .json(errorEnvelope(appError.status, message, { code, requestId: req.id }));

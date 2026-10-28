@@ -1,7 +1,6 @@
-import type { AppError } from "../errors/app-error.ts";
-
 export const SERVER_ERROR_STATUS = 500;
 export const GENERIC_ERROR_MESSAGE = "Erro interno do servidor";
+export const INTERNAL_ERROR_CODE = "internal_error";
 
 export interface FieldError {
   readonly path: string;
@@ -30,16 +29,4 @@ export function errorEnvelope(
   extras: ErrorEnvelopeExtras = {},
 ): ErrorEnvelope {
   return { status: "error", statusCode, message, ...extras };
-}
-
-export interface PublicError {
-  readonly code: string;
-  readonly message: string;
-}
-
-/** Projeta o erro para o cliente: `expose` decide entre a mensagem própria e a genérica. */
-export function toPublicError(error: AppError): PublicError {
-  return error.expose
-    ? { code: error.code, message: error.message }
-    : { code: "internal_error", message: GENERIC_ERROR_MESSAGE };
 }

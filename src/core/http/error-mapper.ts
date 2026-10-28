@@ -1,5 +1,10 @@
 import { AppError, isAppError } from "../errors/app-error.ts";
-import { GENERIC_ERROR_MESSAGE, SERVER_ERROR_STATUS } from "./error-envelope.ts";
+import type { AppErrorCode } from "../errors/app-error.ts";
+import {
+  GENERIC_ERROR_MESSAGE,
+  INTERNAL_ERROR_CODE,
+  SERVER_ERROR_STATUS,
+} from "./error-envelope.ts";
 
 const VALIDATION_STATUS = 400;
 const PAYLOAD_TOO_LARGE_STATUS = 413;
@@ -20,9 +25,24 @@ export function toAppError(error: unknown): AppError {
     return transportError;
   }
 
-  return new AppError("internal_error", SERVER_ERROR_STATUS, GENERIC_ERROR_MESSAGE, {
+  return new AppError(INTERNAL_ERROR_CODE, SERVER_ERROR_STATUS, GENERIC_ERROR_MESSAGE, {
     cause: error,
   });
+}
+
+export interface ExposedError {
+  readonly code: AppErrorCode;
+  readonly message: string;
+}
+
+/**
+ * Projeta o erro para o cliente: `expose` decide entre a mensagem própria e a
+ * genérica. `expose: true` só deve ser usado com códigos expostos.
+ */
+export function toExposedError(error: AppError): ExposedError {
+  return error.expose
+    ? { code: error.code, message: error.message }
+    : { code: INTERNAL_ERROR_CODE, message: GENERIC_ERROR_MESSAGE };
 }
 
 function toAppErrorFromTransport(error: unknown): AppError | null {
