@@ -36,7 +36,7 @@ Regra de dependências (`docs/02-Architecture.md` §19): `domains` não importa 
 - `summary` e `description` em português.
 - Toda operação tem schema de request (quando aplicável) e schema de response explícito.
 - Toda rota Express 5 de negócio tem operação documentada e vice-versa (cobertura bidirecional).
-- Exceção à cobertura: rotas de infraestrutura (`/health`, `/api/v1/openapi.json`, `/api/v1/docs` e `/api/v1/docs/assets/standalone.js`) não têm operação e ficam fora do teste de cobertura.
+- Exceção à cobertura: rotas de infraestrutura (`/health`, `/api/v1/openapi.json`, `/api/v1/docs` e `/api/v1/docs/assets/standalone.js`) não têm operação e ficam fora da guarda de cobertura (`npm run contract:check`).
 - Exemplos obrigatórios em schemas e responses; **sem PII** (sem e-mail, nome, telefone ou dado real de pessoa).
 
 ## 5. Segurança
@@ -74,7 +74,7 @@ A variante `LegacyValidationError` (`422`/objeto) será removida quando a migra�
 { "data": [], "page": 1, "pageSize": 20, "total": 0, "totalPages": 0 }
 ```
 
-No artefato (`openapi/openapi.json`), o componente `PaginatedResponse` é a definição; `src/api-contract/components.ts` é a única definição no código. O componente declara `additionalProperties: true`: campos aditivos futuros não quebram clientes que validem o schema estrito. No request, o parâmetro `PageSize` tem default **20** e máximo **100**; acima do máximo é `400` `validation_error` (`docs/04-API-Conventions.md` §4.2). No response, `pageSize` é o tamanho efetivo e não declara default; `page` é a única clampada. Exceções registradas em `docs/04-API-Conventions.md` (timeline por cursor; auditoria padrão) são documentadas na spec de domínio correspondente.
+No artefato (`openapi/openapi.json`), o componente `PaginatedResponse` é a definição; `src/api-contract/components.ts` é a única definição no código. O componente segue a política de aditivos da §6 (`additionalProperties: true`). No request, o parâmetro `PageSize` tem default **20** e máximo **100**; acima do máximo é `400` `validation_error` (`docs/04-API-Conventions.md` §4.2). No response, `pageSize` é o tamanho efetivo e não declara default; `page` é a única clampada. Exceções registradas em `docs/04-API-Conventions.md` (timeline por cursor; auditoria padrão) são documentadas na spec de domínio correspondente.
 
 ## 8. Multipart
 
@@ -104,10 +104,11 @@ No artefato (`openapi/openapi.json`), o componente `PaginatedResponse` é a defi
 npm run docs:generate   # regenera openapi/openapi.json a partir dos schemas Zod
 npm run docs:lint       # spectral lint openapi/openapi.json
 npm run docs:check      # regenera e falha se o artefato estiver desatualizado
+npm run contract:check  # cobertura rota↔operação e matriz DOCS_ENABLED
 ```
 
-- Os três comandos são o único caminho de manutenção do artefato. O artefato `openapi/openapi.json` é **commitado** e a edição manual é proibida: toda mudança passa por `npm run docs:generate`.
-- O gate de CI (`docs:generate` → `docs:lint` → `docs:check`, mais `oasdiff breaking` contra a base) é um PR separado e ainda não existe.
+- Os três comandos `docs:*` são o único caminho de manutenção do artefato. O artefato `openapi/openapi.json` é **commitado** e a edição manual é proibida: toda mudança passa por `npm run docs:generate`.
+- O job `quality` do CI roda `docs:check`, `docs:lint` e `contract:check`. O gate `oasdiff breaking` contra a base continua pendente: ele só passa a morder quando `paths` deixar de estar vazio.
 
 ## 13. Exposição por ambiente
 
@@ -117,7 +118,7 @@ npm run docs:check      # regenera e falha se o artefato estiver desatualizado
 
 ## 14. Lint do spec
 
-- `spectral lint openapi/openapi.json` usa `spectral:oas`; `.spectral.yaml` eleva `operation-operationId` e `operation-tags` a erro.
+- `npm run docs:lint` roda `spectral lint openapi/openapi.json` com `spectral:oas`; `.spectral.yaml` eleva `operation-operationId` e `operation-tags` a erro.
 - Não há regras customizadas. As regras de `description`/`example` em schema e a verificação de PII serão adicionadas como regras customizadas.
 - A verificação automatizada de PII é uma regra customizada futura; hoje os exemplos são revisados no checklist da §15.
 
@@ -131,6 +132,7 @@ npm run docs:check      # regenera e falha se o artefato estiver desatualizado
 - [ ] Operações públicas declaram `security: []`.
 - [ ] Multipart documenta limites e `415`.
 - [ ] Artefato regenerado e `npm run docs:check` verde.
+- [ ] `npm run contract:check` verde: rota nova tem operação e a matriz `DOCS_ENABLED` continua válida.
 
 ## 16. Referências
 

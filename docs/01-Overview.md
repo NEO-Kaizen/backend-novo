@@ -94,7 +94,7 @@ A reescrita não é uma reimplementação linha a linha. O legado é a **fonte d
 | Autorização  | Matriz de capabilities em código, com escopo e atribuibilidade | [ADR-0025](./adr/0025-authorization-capability-scope.md)            |
 | Auditoria    | Alteração orientada a evento; tentativa gravada na borda       | [ADR-0007](./adr/0007-event-driven-audit.md)                        |
 
-> Ferramentas de apoio: npm (lockfile v3), ESLint (flat config) e Prettier estão definidas em `package.json`, `eslint.config.js` e `.prettierrc`; os testes de contrato usam `node --test`, e o runner definitivo para a suíte completa segue em aberto (issue própria).
+> Ferramentas de apoio: npm (lockfile v3), ESLint (flat config) e Prettier estão definidas em `package.json`, `eslint.config.js` e `.prettierrc`; a guarda do contrato roda por `npm run contract:check`, e o runner definitivo para a suíte completa segue em aberto (issue própria).
 
 ---
 
