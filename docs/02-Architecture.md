@@ -137,7 +137,7 @@ seeds/<domain>/                # seeds donos por cada domínio
 knexfile.ts
 ```
 
-> Pastas e arquivos são criados conforme a necessidade. Um domínio sem tabelas próprias não tem `schema/`; um domínio sem rotas públicas não precisa de subpastas.
+> Pastas e arquivos são criados conforme a necessidade. Um domínio sem tabelas próprias não tem `schema/`; um domínio sem rotas públicas não precisa de subpastas. O diretório `src/docs/` (composição do OpenAPI) está detalhado na §23.1.
 
 Schema e migrations pertencem ao domínio — a definição da tabela vive em `src/domains/<domínio>/schema/`, ao lado da regra que a usa. Ver [ADR-0004](./adr/0004-domain-owned-schema-and-migrations.md).
 
@@ -1583,7 +1583,8 @@ core      → (nenhuma dependência interna)
 domains   → core
 domains   → outro domain: apenas via port publicada (import de tipo)
 platform  → core
-container → core + platform + domains
+docs      → core + domains (metadados)
+container → core + platform + domains + docs
 ```
 
 | Proibição                                                                        | Por quê                                                                                                                                                |
@@ -1593,6 +1594,7 @@ container → core + platform + domains
 | Um domínio **nunca** importa repositório, service ou controller de outro domínio | Fronteira entre áreas                                                                                                                                  |
 | Um service **nunca** recebe a porta `Database`                                   | A fábrica passa o banco ao repositório, não ao service ([§ 8.2](#82-fábrica-de-módulo)); sem a capacidade, o service não monta SQL fora do repositório |
 | `platform` **nunca** importa de `domains`                                        | Inclusive o _error handler_: ele recebe a porta `AttemptRecorder`, não o domínio                                                                       |
+| `docs` **não** é importado por `core`, `domains` ou `platform`                   | O spec é composto no container; o router recebe o documento pronto                                                                                     |
 | `app.ts` e `server.ts` **nunca** criam dependência                               | Eles consomem o `Container`                                                                                                                            |
 
 ---
@@ -1649,6 +1651,8 @@ Cada linha aponta a seção que define a regra. Um PR que muda mais de uma camad
 | [ ] | Nenhuma coluna `ENUM`; conjunto fechado é `text` + `ck_` ou tabela de referência        | [`03-Data-Model.md` § 2.7](./03-Data-Model.md#27-conjuntos-fechados)      | `rg "\.enu\(" src/domains`                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | [ ] | `ON DELETE RESTRICT` em toda chave estrangeira; nada é apagado                          | [`03-Data-Model.md` § 2.11](./03-Data-Model.md#211-política-de-exclusão)  | `rg "onDelete\(" src/domains`                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | [ ] | Schema alterado, modelo documentado atualizado                                          | [ADR-0010](./adr/0010-data-model-doc-is-the-spec.md)                      | Diff em `03-Data-Model.md` no mesmo PR                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| [ ] | Rota documentada no OpenAPI com request/response schemas explícitos                     | [§ 23](#23-contrato-http-openapi)                                         | `*.openapi.ts` + revisão manual                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| [ ] | Exemplos no spec sem PII                                                                | [§ 23](#23-contrato-http-openapi)                                         | Revisão manual                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | [ ] | Autorização verificada no servidor, em um lugar só por domínio                          | [§ 14.4](#144-autorização)                                                | `AuthorizationService.assert`                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | [ ] | Log estruturado com request id; sem PII; sem `console.log`                              | [§ 17](#17-log)                                                           | `rg "console\.(log\|error)" src/`                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | [ ] | Segredo vem de ambiente validado; nunca no repositório                                  | [§ 16](#16-configuração)                                                  | `.env.example` sem valor                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
@@ -1664,6 +1668,7 @@ As pendências de **schema** estão no [`03-Data-Model.md` § 21](./03-Data-Mode
 | Envelope de erro `{ error: { code, message, requestId } }` | Frontend precisa ajustar `readErrorMessage`                                                                                                                                                                                                           | Release coordenada com o frontend    |
 | Contratos publicados: ids numéricos e 4 perfis             | O frontend atual descarta id que não seja número em categorias e status                                                                                                                                                                               | Release coordenada; ver § 22.1       |
 | Suíte de testes automatizados                              | Rede de segurança ausente para a reescrita                                                                                                                                                                                                            | Ferramentas de teste decididas       |
+| Gerador OpenAPI e spike de compatibilidade                 | Sem gerador, o artefato é mantido manualmente e não há gate de drift                                                                                                                                                                                  | Adoção do gerador                    |
 | Credencial de runtime e de migração                        | O append-only por privilégio exige duas credenciais no Postgres/MySQL; hoje o schema de ambiente tem uma                                                                                                                                              | Implementação do deploy              |
 | Contrato da API de auditoria                               | A rota é montada; o formato de resposta não está acordado. O `Page<AuditEntry>` de [§ 9.3](#93-auditoria-de-alteração-por-eventos) é o contrato do service; a tradução para o formato da rota é do controller ([§ 6](#6-responsabilidades-de-camada)) | Formalização do domínio de auditoria |
 | RBAC configurável                                          | Desenho no Apêndice C; o Apêndice B continua sendo o contrato                                                                                                                                                                                         | Frontend consumir `permissions`      |
@@ -1686,7 +1691,45 @@ A release é um **cutover coordenado**, não um adapter numérico: devolver id n
 
 ---
 
-## 23. Índice
+## 23. Contrato HTTP (OpenAPI)
+
+O contrato HTTP será derivado dos schemas Zod e dos metadados de rota. A política normativa completa está em `docs/04-HTTP-Contract.md`; as convenções transversais (base path, envelope, paginação, sessão, autorização, etc.) estão em `docs/04-API-Conventions.md`.
+
+### 23.1 Estrutura alvo
+
+```text
+src/
+├── docs/
+│   ├── openapi.ts          # compõe createDocument a partir dos *.openapi.ts
+│   ├── components.ts       # ErrorEnvelope, variantes de erro, PaginatedResponse, securitySchemes
+│   └── generate-openapi.ts  # escreve openapi/openapi.json
+├── domains/
+│   └── <domínio>/
+│       ├── <domínio>.schema.ts   # schemas Zod (request/response)
+│       └── <domínio>.openapi.ts  # metadados de rota, sem import de platform
+└── platform/
+    └── http/
+        └── docs-router.ts  # serve /api/v1/openapi.json e /api/v1/docs
+openapi/
+└── openapi.json            # artefato commitado
+docs/openapi/
+└── README.md               # comandos e regra do artefato
+.spectral.yaml              # lint do spec
+```
+
+### 23.2 Regras
+
+`*.openapi.ts` não importa `platform`; a composição é feita em `src/docs/openapi.ts` (regra de dependências em §19). `src/platform/http/docs-router.ts` é o único lugar que serve o spec e a UI.
+
+### 23.3 Montagem
+
+Quando o kernel existir, o `container` vai compor o documento a partir dos `*.openapi.ts` e vai entregar o router de docs ao `app.ts`, que o registrará em `/api/v1`. A UI (Scalar self-hosted) consumirá `/api/v1/openapi.json`; o esquema de segurança é `sessionCookie` (`apiKey`, `in: cookie`, `name: session_id`) e operações públicas declaram `security: []`.
+
+Ver [ADR-0026](./adr/0026-openapi-generated-from-zod.md).
+
+---
+
+## 24. Índice
 
 ```text
 § 4  Estrutura de Diretórios      § 14 Autenticação e Autorização
@@ -1698,5 +1741,5 @@ A release é um **cutover coordenado**, não um adapter numérico: devolver id n
 § 10 Persistência com Knex        § 20 Anti-padrões
 § 11 Transações                   § 21 Checklist de Revisão
 § 12 Erros                        § 22 Pendências de Arquitetura
-§ 13 Validação e a Borda
+§ 13 Validação e a Borda          § 23 Contrato HTTP (OpenAPI)
 ```

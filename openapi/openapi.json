@@ -1,0 +1,279 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "MAAT Backend API",
+    "version": "0.0.0",
+    "description": "Contrato HTTP do backend-novo. As operações serão geradas a partir dos schemas Zod."
+  },
+  "servers": [
+    {
+      "url": "/api/v1",
+      "description": "Base path da API; a origem é definida pelo ambiente."
+    }
+  ],
+  "paths": {},
+  "components": {
+    "securitySchemes": {
+      "sessionCookie": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "session_id",
+        "description": "Sessão JWT em cookie HttpOnly; nome default session_id."
+      }
+    },
+    "parameters": {
+      "PageSize": {
+        "name": "pageSize",
+        "in": "query",
+        "description": "Default 20; máximo 100. Acima do máximo a API responde 400 validation_error.",
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 20
+        },
+        "example": 20
+      },
+      "RequesterEmail": {
+        "name": "X-Requester-Email",
+        "in": "header",
+        "required": false,
+        "description": "E-mail do solicitante na janela de compatibilidade; não autentica. Ver `04-API-Conventions.md` §15.3 e ADR-0023.",
+        "schema": {
+          "type": "string",
+          "format": "email"
+        },
+        "example": "requester@example.com"
+      },
+      "RequesterIdentity": {
+        "name": "X-Requester-Identity",
+        "in": "header",
+        "required": false,
+        "deprecated": true,
+        "description": "Identidade legada aceita por uma release; será removida quando a janela de compatibilidade fechar (ADR-0023).",
+        "schema": {
+          "type": "string"
+        },
+        "example": "legacy-requester"
+      }
+    },
+    "schemas": {
+      "ErrorEnvelope": {
+        "type": "object",
+        "description": "Envelope de erro vigente (legado, ADR-0005), sem os aditivos de validação e concorrência. As respostas de validação e concorrência referenciam os componentes derivados.",
+        "properties": {
+          "status": {
+            "type": "string",
+            "const": "error"
+          },
+          "statusCode": {
+            "type": "integer"
+          },
+          "message": {
+            "type": "string"
+          },
+          "code": {
+            "$ref": "#/components/schemas/ErrorCode"
+          },
+          "requestId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Correlation id HTTP (aditivo)."
+          }
+        },
+        "required": ["status", "statusCode", "message"],
+        "example": {
+          "status": "error",
+          "statusCode": 404,
+          "message": "Solicitação não encontrada.",
+          "code": "not_found",
+          "requestId": "00000000-0000-4000-8000-000000000000"
+        }
+      },
+      "FieldError": {
+        "type": "object",
+        "description": "Erro de validação de um campo.",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Caminho do campo, por exemplo demand.title."
+          },
+          "message": {
+            "type": "string",
+            "description": "Mensagem pt-BR do campo."
+          }
+        },
+        "required": ["path", "message"],
+        "example": {
+          "path": "demand.title",
+          "message": "Informe o título."
+        }
+      },
+      "ValidationError": {
+        "description": "Envelope do 400 de validação unificado (transitório, migração C2): fields é um array.",
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ErrorEnvelope"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "statusCode": {
+                "const": 400
+              },
+              "code": {
+                "const": "validation_error"
+              },
+              "fields": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/FieldError"
+                }
+              }
+            },
+            "required": ["code", "fields"]
+          }
+        ],
+        "example": {
+          "status": "error",
+          "statusCode": 400,
+          "message": "Dados inválidos.",
+          "code": "validation_error",
+          "fields": [
+            {
+              "path": "demand.title",
+              "message": "Informe o título."
+            }
+          ]
+        }
+      },
+      "LegacyValidationError": {
+        "description": "Corpo 422 vigente do fluxo de requests durante a migração C2: fields é um objeto indexado pelo caminho do campo. Será removido quando o 400 unificado entrar.",
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ErrorEnvelope"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "statusCode": {
+                "const": 422
+              },
+              "fields": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": ["fields"]
+          }
+        ],
+        "example": {
+          "status": "error",
+          "statusCode": 422,
+          "message": "Dados inválidos.",
+          "fields": {
+            "demand.title": "Informe o título."
+          }
+        }
+      },
+      "ConflictError": {
+        "description": "Envelope do 409 de concorrência: estende ErrorEnvelope com a key do status atual e, opcionalmente, o UUID de fallback.",
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ErrorEnvelope"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "statusCode": {
+                "const": 409
+              },
+              "code": {
+                "const": "conflict"
+              },
+              "currentStatusKey": {
+                "type": "string",
+                "description": "Key do status atual (§8.1 de 04-API-Conventions.md)."
+              },
+              "currentStatusId": {
+                "type": "string",
+                "format": "uuid",
+                "description": "UUID do status atual (fallback de migração)."
+              }
+            },
+            "required": ["code", "currentStatusKey"]
+          }
+        ],
+        "example": {
+          "status": "error",
+          "statusCode": 409,
+          "message": "O status foi alterado por outra pessoa.",
+          "code": "conflict",
+          "currentStatusKey": "in_progress"
+        }
+      },
+      "PaginatedResponse": {
+        "type": "object",
+        "description": "Envelope de paginação padrão.",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {}
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Página efetiva (1-based). Acima de `totalPages`, é ajustada para `totalPages`; com `total` 0, volta 1 (§4.2)."
+          },
+          "pageSize": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Tamanho efetivo da página. Sem default próprio: o default 20 e o máximo 100 são do parâmetro de request `PageSize`; acima do máximo a request recebe 400 validation_error (§4.2)."
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "totalPages": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": ["data", "page", "pageSize", "total", "totalPages"],
+        "example": {
+          "data": [],
+          "page": 1,
+          "pageSize": 20,
+          "total": 0,
+          "totalPages": 0
+        }
+      },
+      "ErrorCode": {
+        "type": "string",
+        "description": "Código estável em snake_case. A lista abaixo é a conhecida hoje; clientes devem ter fallback para códigos desconhecidos. Será gerado de core/errors/error-codes.ts; os códigos de core/errors/internal-codes.ts nunca são expostos.",
+        "enum": [
+          "validation_error",
+          "unauthorized",
+          "forbidden",
+          "not_found",
+          "conflict",
+          "rate_limited",
+          "invalid_content_type",
+          "payload_too_large",
+          "internal_error",
+          "not_the_assignee",
+          "invalid_status_transition"
+        ],
+        "example": "not_found"
+      }
+    }
+  },
+  "security": [
+    {
+      "sessionCookie": []
+    }
+  ]
+}
