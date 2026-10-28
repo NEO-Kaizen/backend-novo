@@ -1279,8 +1279,8 @@ Esse envelope é **temporário**. O `CODING_STANDARDS.md` define `{ "error": { "
 
 | Regra                                             | Efeito                                                                   |
 | ------------------------------------------------- | ------------------------------------------------------------------------ |
-| `expose: true`                                    | A mensagem vai para o cliente                                            |
-| `expose: false` (padrão)                          | O cliente recebe `internal_error` com mensagem genérica                  |
+| `expose: true` e `code` no catálogo exposto       | A mensagem vai para o cliente (exceto `internal_error`)                  |
+| Qualquer outro caso (inclui `expose: false`)      | O cliente recebe `internal_error` com mensagem genérica                  |
 | Stack, SQL, nome de tabela, path e versão interna | Nunca saem do servidor                                                   |
 | Causa do erro                                     | Registrada **uma vez**, na borda; camada interna não faz log-and-rethrow |
 
