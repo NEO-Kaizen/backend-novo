@@ -3,15 +3,12 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { apiReference } from "@scalar/express-api-reference";
 import { Router } from "express";
-import { API_BASE_PATH } from "../../core/http/api-base-path.ts";
+import { API_BASE_PATH, SCALAR_BUNDLE_ROUTE } from "../../core/http/api-base-path.ts";
 
 /** Visão mínima do documento gerado que o router precisa para servir e titular a UI. */
 export interface ApiContractMetadata {
   readonly info: { readonly title: string };
 }
-
-/** Rota do bundle UMD do Scalar; o arquivo vem do pacote instalado, nunca de CDN. */
-const SCALAR_BUNDLE_ROUTE = "/docs/assets/standalone.js";
 
 /**
  * Servidor do contrato e da documentação: o spec e a UI consomem o documento
@@ -45,9 +42,10 @@ export function createApiContractRouter(document: ApiContractMetadata): Router {
 
 /**
  * Caminho absoluto do UMD do Scalar. A resolução fica dentro da fábrica, então
- * um processo com docs desligados não depende do pacote. O pin exato em
- * `package.json` é o que sustenta o layout `dist/browser/standalone.js`; se ele
- * mudar, o boot falha com o caminho no texto em vez de servir 404 em runtime.
+ * um processo com docs desligados não resolve nem exige o bundle; o pacote
+ * `@scalar/express-api-reference` continua sendo uma dependência de runtime. O
+ * pin exato em `package.json` é o que sustenta o layout `dist/browser/standalone.js`;
+ * se ele mudar, o boot falha com o caminho no texto em vez de servir 404 em runtime.
  */
 function resolveScalarBundle(): string {
   const entry = createRequire(import.meta.url).resolve("@scalar/api-reference");

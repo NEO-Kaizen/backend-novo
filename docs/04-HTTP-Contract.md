@@ -115,6 +115,7 @@ npm run contract:check  # cobertura rota↔operação e matriz DOCS_ENABLED
 - Documentação e UI habilitadas por padrão fora de produção.
 - `DOCS_ENABLED=false` desabilita em qualquer ambiente.
 - Em produção: desabilitadas por padrão; habilitação apenas com opt-in explícito (`DOCS_ENABLED=true`).
+- A UI é self-hosted: o HTML e o bundle UMD são servidos pelo backend, sem CDN em runtime.
 
 ## 14. Lint do spec
 
