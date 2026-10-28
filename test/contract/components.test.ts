@@ -14,6 +14,7 @@ interface SchemaLike {
   maximum?: number;
   properties?: Record<string, SchemaLike>;
   required?: readonly string[];
+  additionalProperties?: boolean;
 }
 
 interface ParameterLike {
@@ -154,6 +155,22 @@ describe("componentes do OpenAPI", () => {
       "status",
       "statusCode",
     ]);
+  });
+
+  it("mantém os envelopes abertos a campos aditivos", () => {
+    for (const name of [
+      "ErrorEnvelope",
+      "ValidationError",
+      "LegacyValidationError",
+      "ConflictError",
+      "PaginatedResponse",
+    ]) {
+      assert.equal(
+        document.components?.schemas?.[name]?.additionalProperties,
+        true,
+        `envelope fechado: ${name}`,
+      );
+    }
   });
 
   it("modela o envelope de paginação com os campos obrigatórios", () => {

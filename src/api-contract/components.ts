@@ -8,15 +8,16 @@ import { EXPOSED_ERROR_CODES } from "../core/errors/error-codes.ts";
  * escreve o JSON.
  */
 
-// `not_the_assignee` e `invalid_status_transition` são os códigos de domínio do
-// porte legado conhecidos hoje. Saem desta lista quando os domínios que os
-// emitem registrarem cada um em `core/errors/error-codes.ts`.
+// `not_the_assignee` e `invalid_status_transition` vêm do porte legado e estão
+// hardcoded aqui porque os domínios que os emitem ainda não foram implementados.
+// Cada um migra para `core/errors/error-codes.ts` junto com seu domínio, quando
+// então esta lista passa a ser montada só do catálogo exposto.
 export const ErrorCode = z
   .enum([...EXPOSED_ERROR_CODES, "not_the_assignee", "invalid_status_transition"])
   .meta({
     id: "ErrorCode",
     description:
-      "Código estável em snake_case. A lista abaixo é a conhecida hoje; clientes devem ter fallback para códigos desconhecidos. Será gerado de core/errors/error-codes.ts; os códigos de core/errors/internal-codes.ts nunca são expostos.",
+      "Código estável em snake_case. A lista abaixo é montada de EXPOSED_ERROR_CODES mais os códigos de domínio conhecidos (not_the_assignee, invalid_status_transition); clientes devem ter fallback para códigos desconhecidos. Os códigos de core/errors/internal-codes.ts nunca são expostos.",
     example: "not_found",
   });
 
@@ -37,6 +38,10 @@ export const FieldError = z
     },
   });
 
+/** Status fixo de uma variante de erro; `override` mantém `type: integer` e `const` no JSON. */
+const statusCode = (status: number) =>
+  z.literal(status).meta({ override: { type: "integer", const: status } });
+
 export const ErrorEnvelope = z
   .object({
     status: z.literal("error"),
@@ -47,6 +52,7 @@ export const ErrorEnvelope = z
   })
   .meta({
     id: "ErrorEnvelope",
+    override: { additionalProperties: true },
     description:
       "Envelope de erro vigente (legado, ADR-0005), sem os aditivos de validação e concorrência. As respostas de validação e concorrência referenciam os componentes derivados.",
     example: {
@@ -59,11 +65,12 @@ export const ErrorEnvelope = z
   });
 
 export const ValidationError = ErrorEnvelope.extend({
-  statusCode: z.literal(400).meta({ override: { type: "integer", const: 400 } }),
+  statusCode: statusCode(400),
   code: z.literal("validation_error"),
   fields: z.array(FieldError),
 }).meta({
   id: "ValidationError",
+  override: { additionalProperties: true },
   description:
     "Envelope do 400 de validação unificado (transitório, migração C2): fields é um array.",
   example: {
@@ -81,10 +88,11 @@ export const ValidationError = ErrorEnvelope.extend({
 });
 
 export const LegacyValidationError = ErrorEnvelope.extend({
-  statusCode: z.literal(422).meta({ override: { type: "integer", const: 422 } }),
+  statusCode: statusCode(422),
   fields: z.record(z.string(), z.string()),
 }).meta({
   id: "LegacyValidationError",
+  override: { additionalProperties: true },
   description:
     "Corpo 422 vigente do fluxo de requests durante a migração C2: fields é um objeto indexado pelo caminho do campo. Será removido quando o 400 unificado entrar.",
   example: {
@@ -98,12 +106,13 @@ export const LegacyValidationError = ErrorEnvelope.extend({
 });
 
 export const ConflictError = ErrorEnvelope.extend({
-  statusCode: z.literal(409).meta({ override: { type: "integer", const: 409 } }),
+  statusCode: statusCode(409),
   code: z.literal("conflict"),
   currentStatusKey: z.string().describe("Key do status atual (§8.1 de 04-API-Conventions.md)."),
   currentStatusId: z.uuid().optional().describe("UUID do status atual (fallback de migração)."),
 }).meta({
   id: "ConflictError",
+  override: { additionalProperties: true },
   description:
     "Envelope do 409 de concorrência: estende ErrorEnvelope com a key do status atual e, opcionalmente, o UUID de fallback.",
   example: {
@@ -136,6 +145,7 @@ export const PaginatedResponse = z
   })
   .meta({
     id: "PaginatedResponse",
+    override: { additionalProperties: true },
     description: "Envelope de paginação padrão.",
     example: {
       data: [],
