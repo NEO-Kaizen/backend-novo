@@ -959,9 +959,6 @@ export interface Dialect {
   supportsReturning(): boolean;
   supportsRowLocks(): boolean;
   supportsUpsertMerge(): boolean;
-  // Adiado (ver nota abaixo):
-  // hexColorCheck(column: string): string;
-  // auditAppendOnlyGuard(): readonly string[];
 }
 ```
 
