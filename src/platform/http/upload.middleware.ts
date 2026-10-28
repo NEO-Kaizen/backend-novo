@@ -15,6 +15,8 @@ export interface UploadPolicy {
   readonly fields: readonly multer.Field[];
   /** MIME types aceitos; qualquer outro vira 415. */
   readonly allowedMimeTypes: readonly string[];
+  /** Extensões aceitas, minúsculas e com ponto (ex.: `.png`); qualquer outra vira 415. */
+  readonly allowedExtensions: readonly string[];
   /** Sobrescreve `UPLOAD_MAX_FILE_BYTES` para a rota (ex.: avatar 2 MiB). */
   readonly maxFileBytes?: number;
   /** Sobrescreve `UPLOAD_MAX_FILES` para a rota (ex.: avatar 1 arquivo). */
@@ -29,7 +31,8 @@ export interface UploadPolicy {
  * O total de arquivos não é validado como limite único (§9): o 413 vem do
  * arquivo ou da parte JSON que exceder o próprio limite.
  *
- * O MIME é o declarado pelo cliente; conferir o conteúdo fica para a rota.
+ * O MIME e a extensão são os declarados pelo cliente; conferir o conteúdo fica
+ * para a rota.
  */
 export function createUploadMiddleware(
   uploads: UploadConfig,
@@ -45,7 +48,12 @@ export function createUploadMiddleware(
       fieldSize: MAX_FIELD_BYTES,
     },
     fileFilter: (_req, file, callback) => {
-      if (!policy.allowedMimeTypes.includes(file.mimetype)) {
+      const extension = extname(file.originalname).toLowerCase();
+      const isAllowed =
+        policy.allowedMimeTypes.includes(file.mimetype) &&
+        policy.allowedExtensions.includes(extension);
+
+      if (!isAllowed) {
         callback(
           new AppError(
             "invalid_content_type",
