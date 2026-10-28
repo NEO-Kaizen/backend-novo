@@ -33,8 +33,8 @@ export function createApp(container: Container): Express {
   });
 
   // Documentação é infraestrutura: fica fora do contrato e da cobertura de rotas.
-  if (container.docsRouter !== null) {
-    app.use(API_BASE_PATH, container.docsRouter);
+  if (container.apiContractRouter !== null) {
+    app.use(API_BASE_PATH, container.apiContractRouter);
   }
 
   app.use(createNotFoundMiddleware());

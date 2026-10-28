@@ -25,9 +25,9 @@ Não há contrato de máquina em Markdown por domínio: este documento é a pol�
 
 ## 3. Estrutura alvo
 
-A árvore de `src/docs`, `src/domains/*.openapi.ts`, `src/platform/http/docs-router.ts`, `openapi/`, `docs/openapi/` e `.spectral.yaml` está em `docs/02-Architecture.md` §23.1; este documento não a duplica.
+A árvore de `src/api-contract`, `src/domains/*.openapi.ts`, `src/platform/http/api-contract-router.ts`, `openapi/`, `docs/openapi/` e `.spectral.yaml` está em `docs/02-Architecture.md` §23.1; este documento não a duplica.
 
-Regra de dependências (`docs/02-Architecture.md` §19): `domains` não importa `platform`; `*.openapi.ts` não importa `platform`. A composição dos metadados de rota acontece em `src/docs/openapi.ts`.
+Regra de dependências (`docs/02-Architecture.md` §19): `domains` não importa `platform`; `*.openapi.ts` não importa `platform`. A composição dos metadados de rota acontece em `src/api-contract/openapi.ts`.
 
 ## 4. Metadados de rota
 
@@ -62,7 +62,7 @@ Aditivos permitidos (não quebram o cliente): `code` (snake_case estável), `req
 - `LegacyValidationError` — base + `fields` objeto indexado pelo caminho, para o `422` vigente do fluxo de requests durante a migração C2.
 - `ConflictError` — base + `currentStatusKey` e, opcionalmente, `currentStatusId`, para o `409` de concorrência (`docs/04-API-Conventions.md` §8.1).
 
-Cada resposta de erro referencia o componente do seu status; nenhuma resposta usa `ErrorEnvelope` como união de formatos. `src/docs/components.ts` é a única definição, e `ErrorEnvelope` é a base. O campo `code` referencia o componente `ErrorCode`, gerado de `core/errors/error-codes.ts`; no artefato, a lista é a do `docs/04-API-Conventions.md` §2.3, mais códigos de domínio conhecidos. `core/errors/internal-codes.ts` nunca é exposto. O `code` é opcional no envelope legado e clientes devem ter fallback para valores desconhecidos.
+Cada resposta de erro referencia o componente do seu status; nenhuma resposta usa `ErrorEnvelope` como união de formatos. `src/api-contract/components.ts` é a única definição, e `ErrorEnvelope` é a base. O campo `code` referencia o componente `ErrorCode`, gerado de `core/errors/error-codes.ts`; no artefato, a lista é a do `docs/04-API-Conventions.md` §2.3, mais códigos de domínio conhecidos. `core/errors/internal-codes.ts` nunca é exposto. O `code` é opcional no envelope legado e clientes devem ter fallback para valores desconhecidos.
 
 A variante `LegacyValidationError` (`422`/objeto) será removida quando a migração C2 (`docs/04-API-Conventions.md` §3) concluir; até lá, as duas variantes coexistem e a escolha é pelo status da resposta.
 
@@ -72,7 +72,7 @@ A variante `LegacyValidationError` (`422`/objeto) será removida quando a migra�
 { "data": [], "page": 1, "pageSize": 20, "total": 0, "totalPages": 0 }
 ```
 
-No artefato (`openapi/openapi.json`), o componente `PaginatedResponse` é a definição; `src/docs/components.ts` é a única definição no código. No request, o parâmetro `PageSize` tem default **20** e máximo **100**; acima do máximo é `400` `validation_error` (`docs/04-API-Conventions.md` §4.2). No response, `pageSize` é o tamanho efetivo e não declara default; `page` é a única clampada. Exceções registradas em `docs/04-API-Conventions.md` (timeline por cursor; auditoria padrão) são documentadas na spec de domínio correspondente.
+No artefato (`openapi/openapi.json`), o componente `PaginatedResponse` é a definição; `src/api-contract/components.ts` é a única definição no código. No request, o parâmetro `PageSize` tem default **20** e máximo **100**; acima do máximo é `400` `validation_error` (`docs/04-API-Conventions.md` §4.2). No response, `pageSize` é o tamanho efetivo e não declara default; `page` é a única clampada. Exceções registradas em `docs/04-API-Conventions.md` (timeline por cursor; auditoria padrão) são documentadas na spec de domínio correspondente.
 
 ## 8. Multipart
 
