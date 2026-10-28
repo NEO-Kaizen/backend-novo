@@ -62,7 +62,9 @@ Aditivos permitidos (não quebram o cliente): `code` (snake_case estável), `req
 - `LegacyValidationError` — base + `fields` objeto indexado pelo caminho, para o `422` vigente do fluxo de requests durante a migração C2.
 - `ConflictError` — base + `currentStatusKey` e, opcionalmente, `currentStatusId`, para o `409` de concorrência (`docs/04-API-Conventions.md` §8.1).
 
-Cada resposta de erro referencia o componente do seu status; nenhuma resposta usa `ErrorEnvelope` como união de formatos. `src/api-contract/components.ts` é a única definição, e `ErrorEnvelope` é a base. O campo `code` referencia o componente `ErrorCode`, gerado de `core/errors/error-codes.ts`; no artefato, a lista é a do `docs/04-API-Conventions.md` §2.3, mais códigos de domínio conhecidos. `core/errors/internal-codes.ts` nunca é exposto. O `code` é opcional no envelope legado e clientes devem ter fallback para valores desconhecidos.
+Cada resposta de erro referencia o componente do seu status; nenhuma resposta usa `ErrorEnvelope` como união de formatos. `src/api-contract/components.ts` é a única definição, e `ErrorEnvelope` é a base. Os envelopes (`ErrorEnvelope`, `ValidationError`, `LegacyValidationError` e `ConflictError`) declaram `additionalProperties: true` no artefato para preservar a política de aditivos: cliente que valide estrito continua aceitando `code`, `requestId`, `fields` e futuros campos aditivos.
+
+O campo `code` referencia o componente `ErrorCode`, que **não é gerado automaticamente**: é montado em `components.ts` a partir de `EXPOSED_ERROR_CODES` (`core/errors/error-codes.ts`), a lista do `docs/04-API-Conventions.md` §2.3, mais os códigos de domínio conhecidos hoje — `not_the_assignee` e `invalid_status_transition`. Esses dois vêm do porte legado e estão hardcoded porque os domínios que os emitem ainda não foram implementados; cada um migra para `core/errors/error-codes.ts` junto com seu domínio e só então entra em `ErrorCode` pela lista exposta. `core/errors/internal-codes.ts` nunca é exposto. O `code` é opcional no envelope legado e clientes devem ter fallback para valores desconhecidos.
 
 A variante `LegacyValidationError` (`422`/objeto) será removida quando a migração C2 (`docs/04-API-Conventions.md` §3) concluir; até lá, as duas variantes coexistem e a escolha é pelo status da resposta.
 
@@ -72,7 +74,7 @@ A variante `LegacyValidationError` (`422`/objeto) será removida quando a migra�
 { "data": [], "page": 1, "pageSize": 20, "total": 0, "totalPages": 0 }
 ```
 
-No artefato (`openapi/openapi.json`), o componente `PaginatedResponse` é a definição; `src/api-contract/components.ts` é a única definição no código. No request, o parâmetro `PageSize` tem default **20** e máximo **100**; acima do máximo é `400` `validation_error` (`docs/04-API-Conventions.md` §4.2). No response, `pageSize` é o tamanho efetivo e não declara default; `page` é a única clampada. Exceções registradas em `docs/04-API-Conventions.md` (timeline por cursor; auditoria padrão) são documentadas na spec de domínio correspondente.
+No artefato (`openapi/openapi.json`), o componente `PaginatedResponse` é a definição; `src/api-contract/components.ts` é a única definição no código. O componente declara `additionalProperties: true`: campos aditivos futuros não quebram clientes que validem o schema estrito. No request, o parâmetro `PageSize` tem default **20** e máximo **100**; acima do máximo é `400` `validation_error` (`docs/04-API-Conventions.md` §4.2). No response, `pageSize` é o tamanho efetivo e não declara default; `page` é a única clampada. Exceções registradas em `docs/04-API-Conventions.md` (timeline por cursor; auditoria padrão) são documentadas na spec de domínio correspondente.
 
 ## 8. Multipart
 
