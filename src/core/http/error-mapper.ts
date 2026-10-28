@@ -1,9 +1,14 @@
 import { AppError, isAppError } from "../errors/app-error.ts";
-import { GENERIC_ERROR_MESSAGE, SERVER_ERROR_STATUS } from "./error-envelope.ts";
-
-const VALIDATION_STATUS = 400;
-const PAYLOAD_TOO_LARGE_STATUS = 413;
-const UNSUPPORTED_MEDIA_STATUS = 415;
+import type { AppErrorCode } from "../errors/app-error.ts";
+import { EXPOSED_ERROR_CODES, INTERNAL_ERROR_CODE } from "../errors/error-codes.ts";
+import type { ErrorCode } from "../errors/error-codes.ts";
+import {
+  GENERIC_ERROR_MESSAGE,
+  PAYLOAD_TOO_LARGE_STATUS,
+  SERVER_ERROR_STATUS,
+  UNSUPPORTED_MEDIA_STATUS,
+  VALIDATION_STATUS,
+} from "./error-envelope.ts";
 
 /**
  * Traduz o erro uma única vez, na borda. Erros de `body-parser` e do `multer`
@@ -20,16 +25,37 @@ export function toAppError(error: unknown): AppError {
     return transportError;
   }
 
-  return new AppError("internal_error", SERVER_ERROR_STATUS, GENERIC_ERROR_MESSAGE, {
+  return new AppError(INTERNAL_ERROR_CODE, SERVER_ERROR_STATUS, GENERIC_ERROR_MESSAGE, {
     cause: error,
   });
+}
+
+export interface ExposedError {
+  readonly code: ErrorCode;
+  readonly message: string;
+}
+
+/**
+ * Projeta o erro para o cliente. `expose` e o catálogo decidem: código interno
+ * com `expose: true` continua caindo em `internal_error`.
+ */
+export function toExposedError(error: AppError): ExposedError {
+  if (!error.expose || error.code === INTERNAL_ERROR_CODE || !isErrorCode(error.code)) {
+    return { code: INTERNAL_ERROR_CODE, message: GENERIC_ERROR_MESSAGE };
+  }
+
+  return { code: error.code, message: error.message };
+}
+
+function isErrorCode(code: AppErrorCode): code is ErrorCode {
+  return (EXPOSED_ERROR_CODES as readonly string[]).includes(code);
 }
 
 function toAppErrorFromTransport(error: unknown): AppError | null {
   const type = readString(error, "type");
 
   if (type === "entity.too.large") {
-    return exposed(
+    return toExposedAppError(
       "payload_too_large",
       PAYLOAD_TOO_LARGE_STATUS,
       "Corpo da requisição excede o limite.",
@@ -37,10 +63,15 @@ function toAppErrorFromTransport(error: unknown): AppError | null {
     );
   }
   if (type === "entity.parse.failed" || type === "entity.verify.failed") {
-    return exposed("validation_error", VALIDATION_STATUS, "Corpo da requisição inválido.", error);
+    return toExposedAppError(
+      "validation_error",
+      VALIDATION_STATUS,
+      "Corpo da requisição inválido.",
+      error,
+    );
   }
   if (type === "charset.unsupported" || type === "encoding.unsupported") {
-    return exposed(
+    return toExposedAppError(
       "invalid_content_type",
       UNSUPPORTED_MEDIA_STATUS,
       "Codificação do corpo não suportada.",
@@ -52,7 +83,7 @@ function toAppErrorFromTransport(error: unknown): AppError | null {
     const code = readString(error, "code");
 
     if (code === "LIMIT_FILE_SIZE") {
-      return exposed(
+      return toExposedAppError(
         "payload_too_large",
         PAYLOAD_TOO_LARGE_STATUS,
         "Arquivo excede o limite de tamanho.",
@@ -61,7 +92,7 @@ function toAppErrorFromTransport(error: unknown): AppError | null {
     }
     // Parte JSON (`payload`/`assets`) acima de 2 MiB: §9 pede 413, não 400.
     if (code === "LIMIT_FIELD_VALUE") {
-      return exposed(
+      return toExposedAppError(
         "payload_too_large",
         PAYLOAD_TOO_LARGE_STATUS,
         "Campo excede o limite de tamanho.",
@@ -69,14 +100,19 @@ function toAppErrorFromTransport(error: unknown): AppError | null {
       );
     }
 
-    return exposed("validation_error", VALIDATION_STATUS, "Envio de arquivos inválido.", error);
+    return toExposedAppError(
+      "validation_error",
+      VALIDATION_STATUS,
+      "Envio de arquivos inválido.",
+      error,
+    );
   }
 
   return null;
 }
 
 /** Erros de transporte que podem ser expostos ao cliente, sempre com a causa preservada. */
-function exposed(
+function toExposedAppError(
   code: "payload_too_large" | "validation_error" | "invalid_content_type",
   status: number,
   message: string,

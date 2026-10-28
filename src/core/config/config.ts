@@ -1,5 +1,7 @@
 export type Environment = "development" | "test" | "production";
 
+export const MEBIBYTE = 1024 * 1024;
+
 export const DATABASE_ENGINES = ["postgres", "sqlite", "mysql"] as const;
 
 export type DatabaseEngine = (typeof DATABASE_ENGINES)[number];

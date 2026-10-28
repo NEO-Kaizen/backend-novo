@@ -16,7 +16,7 @@ const READ_SNAPSHOT_ISOLATION: Knex.IsolationLevels = "repeatable read";
 export class KnexDatabase implements Database, TransactionManager {
   readonly dialect: Dialect;
   private readonly knex: Knex;
-  private readonly scope = new AsyncLocalStorage<Knex.Transaction>();
+  private readonly transactionScope = new AsyncLocalStorage<Knex.Transaction>();
 
   constructor(knex: Knex, dialect: Dialect) {
     this.knex = knex;
@@ -24,7 +24,7 @@ export class KnexDatabase implements Database, TransactionManager {
   }
 
   get client(): Knex {
-    return this.scope.getStore() ?? this.knex;
+    return this.transactionScope.getStore() ?? this.knex;
   }
 
   async run<T>(work: () => Promise<T>): Promise<T> {
@@ -36,7 +36,7 @@ export class KnexDatabase implements Database, TransactionManager {
   }
 
   assertInTransaction(): void {
-    if (this.scope.getStore() === undefined) {
+    if (this.transactionScope.getStore() === undefined) {
       throw new AppError("transaction_required", 500, "escrita fora de transação");
     }
   }
@@ -49,15 +49,15 @@ export class KnexDatabase implements Database, TransactionManager {
     work: () => Promise<T>,
     isolationLevel?: Knex.IsolationLevels,
   ): Promise<T> {
-    const current = this.scope.getStore();
+    const current = this.transactionScope.getStore();
 
     if (current !== undefined) {
       // Aninhamento é savepoint: herda o isolamento da transação externa.
-      return current.transaction((nested) => this.scope.run(nested, work));
+      return current.transaction((nested) => this.transactionScope.run(nested, work));
     }
 
     return this.knex.transaction(
-      (transaction) => this.scope.run(transaction, work),
+      (transaction) => this.transactionScope.run(transaction, work),
       isolationLevel === undefined ? undefined : { isolationLevel },
     );
   }
