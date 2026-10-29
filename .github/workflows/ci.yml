@@ -29,14 +29,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Typecheck
-        run: npm run typecheck
-
-      - name: Lint
-        run: npm run lint
-
-      - name: Format check
-        run: npm run format:check
+      - name: Check (typecheck src + test, lint, format)
+        run: npm run check
 
       - name: Contract artifact
         run: npm run docs:check
@@ -52,3 +46,33 @@ jobs:
 
       - name: Build
         run: npm run build
+
+  test:
+    name: Tests (fast suite)
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Coverage
+        run: npm run test:coverage
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-fast
+          path: coverage/fast/
+          retention-days: 7
+          if-no-files-found: warn
