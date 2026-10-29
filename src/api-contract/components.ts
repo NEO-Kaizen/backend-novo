@@ -220,6 +220,11 @@ export const securitySchemes = {
   },
 } satisfies ZodOpenApiComponentsObject["securitySchemes"];
 
+/**
+ * `FieldError`, `RequesterEmail` e `RequesterIdentity` vêm do esqueleto manual
+ * (`openapi/openapi.json` da base) e são mantidos para preservar o artefato;
+ * não são componentes novos deste kernel.
+ */
 export const components = {
   schemas: {
     ErrorEnvelope,

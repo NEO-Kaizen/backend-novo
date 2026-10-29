@@ -19,7 +19,7 @@ Não há contrato de máquina em Markdown por domínio: este documento é a pol�
 ## 2. Versão e gerador
 
 - OpenAPI **3.1.0** — versão estável adotada. O `zod-openapi` 6.x também lista `3.2.0` nas typings, mas o suporte documentado cobre 3.1.x; 3.2 não é adotado enquanto não houver suporte documentado completo.
-- Gerador: **`zod-openapi`** no pin **`~6.0.2`**, sem monkey patch, usando `.meta()` nativo do Zod. O `6.0.3` não está publicado no registry npm.
+- Gerador: **`zod-openapi`** no pin **`~6.0.2`**, sem monkey patch, usando `.meta()` nativo do Zod. A versão **`6.0.3` do `zod-openapi`** não está publicada no registry npm.
 - Proibido: `tsoa`, decorators, geração baseada em AST do TypeScript.
 - O spike de compatibilidade está registrado no ADR-0026: `zod-openapi` **6.0.2** contra Node 24.22.1, TypeScript 6.0.3, Zod 4.6.7 e `nodenext`; `z.iso.datetime()`, `z.file()` e o security scheme de cookie foram validados. Quando o TypeScript 7 for adotado, o spike é repetido e a saída é registrada no ADR.
 
@@ -119,7 +119,8 @@ npm run contract:check  # cobertura rota↔operação e matriz DOCS_ENABLED
 
 ## 14. Lint do spec
 
-- `npm run docs:lint` roda `spectral lint openapi/openapi.json` com `spectral:oas`; `.spectral.yaml` eleva `operation-operationId` e `operation-tags` a erro.
+- `npm run docs:lint` roda `spectral lint openapi/openapi.json --fail-severity=warn` com `spectral:oas`: qualquer warning quebra o gate. `.spectral.yaml` eleva `operation-operationId` e `operation-tags` a erro.
+- `oas3-unused-component` fica desligado enquanto `paths` estiver vazio; todos os componentes do kernel ainda não têm operação. Reative a regra quando o primeiro domínio publicar rotas (#74).
 - Não há regras customizadas. As regras de `description`/`example` em schema e a verificação de PII serão adicionadas como regras customizadas.
 - A verificação automatizada de PII é uma regra customizada futura; hoje os exemplos são revisados no checklist da §15.
 

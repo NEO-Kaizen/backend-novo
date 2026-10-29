@@ -18,7 +18,7 @@
     "test": "echo \"No tests configured yet — see test/README.md\"",
     "contract:check": "node src/api-contract/check-contract.ts",
     "docs:generate": "node src/api-contract/generate-openapi.ts && prettier --write openapi/openapi.json",
-    "docs:lint": "spectral lint openapi/openapi.json",
+    "docs:lint": "spectral lint openapi/openapi.json --fail-severity=warn",
     "docs:check": "npm run docs:generate && git diff --exit-code -- openapi/"
   },
   "engines": {

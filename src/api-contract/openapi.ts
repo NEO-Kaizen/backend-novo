@@ -27,6 +27,10 @@ export function createOpenApiDocument(): ReturnType<typeof createDocument> {
       version: CONTRACT_VERSION,
       description:
         "Contrato HTTP do backend-novo. As operações serão geradas a partir dos schemas Zod.",
+      contact: {
+        name: "NEO-Kaizen",
+        url: "https://github.com/NEO-Kaizen/backend-novo",
+      },
     },
     servers: [
       {

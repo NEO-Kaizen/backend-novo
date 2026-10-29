@@ -24,7 +24,7 @@ npm run contract:check  # cobertura rota↔operação e matriz DOCS_ENABLED
 
 ## Lint
 
-`spectral lint openapi/openapi.json` usa `spectral:oas`; `.spectral.yaml` eleva `operation-operationId` e `operation-tags` a erro. Não há regras customizadas; as regras de `description`/`example` em schema serão adicionadas depois. O artefato já traz exemplos em todos os schemas e parâmetros; a regra que os exige ainda não existe. Enquanto `paths` estiver vazio, os warnings de componente não usado e de `info` são esperados.
+`npm run docs:lint` usa `spectral:oas` com `--fail-severity=warn`: qualquer warning quebra o gate. `.spectral.yaml` eleva `operation-operationId` e `operation-tags` a erro e desliga `oas3-unused-component` enquanto `paths` estiver vazio — todos os componentes do kernel ainda não têm operação. Reative a regra quando o primeiro domínio publicar rotas (#74). Não há regras customizadas; as regras de `description`/`example` em schema serão adicionadas depois. O artefato já traz exemplos em todos os schemas e parâmetros; a regra que os exige ainda não existe.
 
 ## Exposição
 

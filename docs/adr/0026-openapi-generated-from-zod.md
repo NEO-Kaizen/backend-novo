@@ -48,9 +48,9 @@ Resultados:
 - O security scheme de cookie renderiza `{ type: "apiKey", in: "cookie", name: "session_id" }`.
 - `components.parameters` com `meta` no `param` renderiza `PageSize` com default 20 e máximo 100.
 
-O `6.0.3` **não está publicado no registry npm**; o pin é `~6.0.2`. Quando o TypeScript 7 for adotado, o spike é repetido e a saída é registrada aqui.
+A versão **`6.0.3` do `zod-openapi`** não está publicada no registry npm; o pin é `~6.0.2`. Quando o TypeScript 7 for adotado, o spike é repetido e a saída é registrada aqui.
 
-O TypeScript 7.0 já está publicado, mas a adoção continua bloqueada: o 7.0 não expõe a API do compilador (ela chega no 7.1) e o `typescript-eslint` atual suporta `<6.1.0`. O upgrade só entra quando os dois gates abrirem; até lá, o pin `~6.0.3` permanece.
+O TypeScript 7.0 já está publicado, mas a adoção continua bloqueada: o 7.0 não expõe a API do compilador (ela chega no 7.1) e o `typescript-eslint` atual suporta `<6.1.0`. O upgrade só entra quando os dois gates abrirem; até lá, o pin `~6.0.3` do TypeScript permanece.
 
 ## Alternativas consideradas
 
@@ -67,8 +67,8 @@ O TypeScript 7.0 já está publicado, mas a adoção continua bloqueada: o 7.0 n
 - `src/api-contract/openapi.ts` compõe o documento; `src/api-contract/components.ts` é a única definição de `ErrorEnvelope`, `ValidationError`, `LegacyValidationError`, `ConflictError`, `PaginatedResponse` e `securitySchemes`.
 - `src/platform/http/api-contract-router.ts` serve `/api/v1/openapi.json` e `/api/v1/docs`; o `container.ts` monta o router e o `app.ts` o registra em `/api/v1`.
 - O artefato `openapi/openapi.json` é commitado; `npm run docs:check` regenera e falha se estiver desatualizado. O job `quality` do CI roda `docs:check`, `docs:lint`, `contract:check` e `contract:check --probe`; o `oasdiff breaking` fica registrado e só morde quando `paths` deixar de estar vazio.
-- O bundle UMD do Scalar (`dist/browser/standalone.js`, ~4,9 MB) é servido pelo backend sem compressão e com `Cache-Control: public, max-age=3600`; sem hash de conteúdo, o cache revalida a cada hora. Aceito porque a UI é opcional e fica desligada em produção por padrão; compressão entra com o middleware HTTP, se ele existir. O caminho do pacote é resolvido com `import.meta.resolve`, sem `require`; o pin exato de `@scalar/api-reference` sustenta o caminho interno do bundle, e o router falha no boot com o caminho no texto se o layout mudar.
-- O artefato gerado é mais estrito que o esqueleto manual em `pattern` (uuid/email) e limites de inteiros; todas as descrições foram preservadas. Os envelopes de resposta (`ErrorEnvelope`, `ValidationError`, `LegacyValidationError`, `ConflictError` e `PaginatedResponse`) são a exceção declarada: seguem a política de aditivos de `04-HTTP-Contract.md` §6 e §7. O esqueleto manual não declarava `additionalProperties` (aberto por default no JSON Schema); como o `zod-openapi` fecha objetos por default, o override explícito para `true` preserva o comportamento original.
+- O bundle UMD do Scalar (`dist/browser/standalone.js`, ~4,9 MB) é servido sem compressão, com `Cache-Control: public, max-age=3600` e sem hash de conteúdo. Aceito porque a UI é opcional e fica desligada em produção por padrão. O caminho é resolvido com `import.meta.resolve`, sem `require`; o pin exato sustenta o layout interno e o boot falha nomeando o caminho se ele mudar.
+- O artefato gerado é mais estrito que o esqueleto manual em `pattern` (uuid/email) e limites de inteiros; as descrições foram preservadas. `FieldError`, `RequesterEmail` e `RequesterIdentity` também vêm do esqueleto e foram mantidos. Os envelopes e `PaginatedResponse` declaram `additionalProperties: true` para preservar a política de aditivos de `04-HTTP-Contract.md` §6/§7; o esqueleto não declarava a chave (aberto por default) e o `zod-openapi` fecha objetos por default.
 - Exemplos não podem conter PII; operações públicas declaram `security: []`.
 - `POST /requests` documenta multipart (`payload` + `attachments`) e `415`; limites e MIME seguem `04-API-Conventions.md` §9.
 - `Set-Cookie` e seus atributos são documentados nas respostas de login e troca de senha.

@@ -14,7 +14,7 @@ Layout single-context: `GLOSSARY.md` na raiz e `docs/adr/`. Consulte `docs/agent
 
 ### Coding standards
 
-Antes de escrever ou alterar código em `src/` ou `test/`, leia `CODING_STANDARDS.md`. Para rota ou OpenAPI, leia também `docs/04-HTTP-Contract.md`; para schema, `docs/03-Data-Model.md`.
+Antes de escrever ou alterar código em `src/` ou `test/`, leia `CODING_STANDARDS.md`. Para rota ou OpenAPI, leia também `docs/04-API-Conventions.md` e `docs/04-HTTP-Contract.md`; para schema, `docs/03-Data-Model.md`.
 
 ### Data model
 
