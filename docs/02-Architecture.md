@@ -1743,15 +1743,15 @@ O contrato HTTP é derivado dos schemas Zod e dos metadados de rota. A política
 ```text
 src/
 ├── api-contract/
-│   ├── openapi.ts          # compõe createDocument a partir dos *.openapi.ts
-│   ├── components.ts       # ErrorEnvelope, variantes de erro, PaginatedResponse, securitySchemes
-│   ├── generate-openapi.ts  # escreve openapi/openapi.json
-│   ├── route-coverage.ts   # guarda bidirecional rota↔operação
-│   ├── express-route-stack.ts # fronteira com os internals do Express 5
-│   ├── check-contract.ts   # CLI de contract:check (orquestra cobertura, DOCS_ENABLED e --probe)
-│   ├── check-route-coverage.ts # cobertura no app real
-│   ├── check-docs-exposure.ts  # matriz DOCS_ENABLED e ciclo do servidor
-│   └── probe-route-coverage.ts # sondas da guarda
+│   ├── openapi.ts               # compõe createDocument a partir dos *.openapi.ts
+│   ├── components.ts            # ErrorEnvelope, variantes de erro, PaginatedResponse, securitySchemes
+│   ├── generate-openapi.ts      # escreve openapi/openapi.json
+│   ├── route-coverage.ts        # guarda bidirecional rota↔operação
+│   ├── express-route-stack.ts   # fronteira com os internals do Express 5
+│   ├── check-contract.ts        # CLI de contract:check (orquestra cobertura, DOCS_ENABLED e --probe)
+│   ├── check-route-coverage.ts  # cobertura no app real
+│   ├── check-docs-exposure.ts   # matriz DOCS_ENABLED e ciclo do servidor
+│   └── probe-route-coverage.ts  # sondas da guarda
 ├── domains/
 │   └── <domínio>/
 │       ├── <domínio>.schema.ts   # schemas Zod (request/response)
