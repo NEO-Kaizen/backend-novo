@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
-import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { apiReference } from "@scalar/express-api-reference";
 import { Router } from "express";
 import {
@@ -11,17 +11,14 @@ import {
   SCALAR_BUNDLE_ROUTE,
 } from "../../core/http/api-base-path.ts";
 
-/** Visão mínima do documento gerado que o router precisa para servir e titular a UI. */
-export interface ApiContractMetadata {
-  readonly info: { readonly title: string };
-}
-
 /**
  * Servidor do contrato e da documentação: o spec e a UI consomem o documento
  * pronto. O router recebe o documento do container e não importa
  * `src/api-contract`.
  */
-export function createApiContractRouter(document: ApiContractMetadata): Router {
+export function createApiContractRouter(document: {
+  readonly info: { readonly title: string };
+}): Router {
   const router = Router();
   const bundlePath = resolveScalarBundle();
 
@@ -54,7 +51,7 @@ export function createApiContractRouter(document: ApiContractMetadata): Router {
  * se ele mudar, o boot falha com o caminho no texto em vez de servir 404 em runtime.
  */
 function resolveScalarBundle(): string {
-  const entry = createRequire(import.meta.url).resolve("@scalar/api-reference");
+  const entry = fileURLToPath(import.meta.resolve("@scalar/api-reference"));
   const bundlePath = join(dirname(entry), "browser/standalone.js");
 
   if (!existsSync(bundlePath)) {
