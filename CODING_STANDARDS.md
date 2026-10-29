@@ -247,7 +247,8 @@ Métricas, tracing e SLOs pertencem à arquitetura/operação, não a este padr�
 
 **Sempre** teste comportamento, não implementação.
 
-- O runner e o harness definitivos estão em aberto; a decisão vive em `test/README.md`. Quando a suíte entrar, o caminho natural da stack é `node:test` + `node:assert/strict` + `fetch`; Vitest e Supertest não estão instalados.
+- O runner é **Vitest**, com Supertest contra `createApp(container)` em porta efêmera; a decisão e o harness vivem em `test/README.md`. `npm test` é a esteira rápida — unitário e loopback, sem banco real, Docker ou rede externa; o que precisar de engine real entra como `*.integration.test.ts` na esteira de confiança (`npm run test:integration`).
+- Testes passam pelo type-check do projeto: `tsconfig.test.json` inclui `src` e `test`, e o script `typecheck:test` entra em `npm run check`.
 - `describe("POST /api/v1/users")` + `it("retorna 400 quando o e-mail é inválido")`.
 - Um comportamento por teste; arrange-act-assert; evite múltiplas asserções não relacionadas.
 - Injete clock, ID e RNG; o domínio não chama `Date.now()`, `new Date()` ou `Math.random()`.
@@ -257,8 +258,7 @@ Métricas, tracing e SLOs pertencem à arquitetura/operação, não a este padr�
 - Teste HTTP contra `createApp(container)` em porta efêmera, sem `listen` fixo; o esqueleto está em `test/README.md`.
 - Cubra caminhos de erro e regras de negócio; cobertura é consequência, não meta.
 - Fixtures com builders e defaults seguros; sem PII ou dado real.
-- Testes também passam pelo type-check. `tsconfig.json` hoje cobre só `src`; quando a suíte existir, um `tsconfig.test.json` que inclua `test/` entra junto.
-- Cobertura e `mock.module` ainda são experimentais no Node 24; não condicione o build a elas.
+- Cobertura sai do `@vitest/coverage-v8` no CI, publica relatório sem threshold global; o gate por arquivo novo/alterado entra quando a suíte estabilizar (#70).
 - Testes de contrato validam respostas representativas contra `openapi/openapi.json` (`npm run contract:check`).
 
 ## 11. Comentários e código morto
@@ -288,12 +288,14 @@ Métricas, tracing e SLOs pertencem à arquitetura/operação, não a este padr�
 - [ ] Schema alterado? `docs/03-Data-Model.md` e os derivados `docs/db/02-reference.md`, `docs/db/03-erd.md` e `docs/db/schema.dbml` atualizados no mesmo PR (checklist em `docs/02-Architecture.md` §21).
 - [ ] Rota alterada? `*.openapi.ts` e `openapi/openapi.json` atualizados via `npm run docs:generate`; `npm run docs:lint` e `npm run contract:check` verdes (checklist em `docs/04-HTTP-Contract.md` §15).
 - [ ] Exemplos no spec sem PII.
-- [ ] `npm run check` e `npm run contract:check` verdes; `npm test` quando a suíte existir; testes cobertos pelo type-check.
+- [ ] `npm run check` e `npm run contract:check` verdes; `npm test` (e `npm run test:integration` quando a suíte existir); testes cobertos pelo type-check.
 - [ ] Exceções a este documento registradas no PR.
 
 ## Referências
 
-- Node.js — [ESM](https://nodejs.org/docs/latest-v24.x/api/esm.html) · [Type stripping](https://nodejs.org/docs/latest-v24.x/api/typescript.html) · [Test runner](https://nodejs.org/docs/latest-v24.x/api/test.html) · [HTTP](https://nodejs.org/docs/latest-v24.x/api/http.html)
+- Node.js — [ESM](https://nodejs.org/docs/latest-v24.x/api/esm.html) · [Type stripping](https://nodejs.org/docs/latest-v24.x/api/typescript.html) · [HTTP](https://nodejs.org/docs/latest-v24.x/api/http.html)
+- Vitest — [Test contexts](https://vitest.dev/guide/test-context.html) · [Coverage](https://vitest.dev/guide/coverage.html) · [Projects](https://vitest.dev/guide/projects.html)
+- Supertest — [Usage](https://github.com/ladjs/supertest#api)
 - TypeScript — [Handbook](https://www.typescriptlang.org/docs/handbook/intro.html) · [Narrowing](https://www.typescriptlang.org/docs/handbook/2/narrowing.html) · [`erasableSyntaxOnly`](https://www.typescriptlang.org/tsconfig/#erasableSyntaxOnly) · [TS 7.0](https://devblogs.microsoft.com/typescript/announcing-typescript-7-0/)
 - Express — [Error handling](https://expressjs.com/en/guide/error-handling.html) · [Migrating 5](https://expressjs.com/en/guide/migrating-5.html) · [Security best practices](https://expressjs.com/en/advanced/best-practice-security.html)
 - Zod — [Documentation](https://zod.dev/) · [Error customization](https://zod.dev/error-customization)
