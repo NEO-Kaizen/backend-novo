@@ -34,7 +34,7 @@
           "not_the_assignee",
           "invalid_status_transition"
         ],
-        "description": "Código estável em snake_case. A lista abaixo é montada de EXPOSED_ERROR_CODES mais os códigos de domínio conhecidos (not_the_assignee, invalid_status_transition); clientes devem ter fallback para códigos desconhecidos. Os códigos de core/errors/internal-codes.ts nunca são expostos.",
+        "description": "Código estável em snake_case. Será gerado de core/errors/error-codes.ts; os códigos de core/errors/internal-codes.ts nunca são expostos.",
         "example": "not_found"
       },
       "FieldError": {
@@ -83,7 +83,7 @@
         },
         "required": ["status", "statusCode", "message"],
         "additionalProperties": true,
-        "description": "Envelope de erro vigente (legado, ADR-0005), sem os aditivos de validação e concorrência. As respostas de validação e concorrência referenciam os componentes derivados.",
+        "description": "Envelope de erro vigente (legado, ADR-0005).",
         "example": {
           "status": "error",
           "statusCode": 404,

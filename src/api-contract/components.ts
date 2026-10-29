@@ -12,14 +12,21 @@ import { EXPOSED_ERROR_CODES } from "../core/errors/error-codes.ts";
 // hardcoded aqui porque os domínios que os emitem ainda não foram implementados.
 // Cada um migra para `core/errors/error-codes.ts` junto com seu domínio, quando
 // então esta lista passa a ser montada só do catálogo exposto.
-export const ErrorCodeSchema = z
+export const ErrorCode = z
   .enum([...EXPOSED_ERROR_CODES, "not_the_assignee", "invalid_status_transition"])
   .meta({
     id: "ErrorCode",
     description:
-      "Código estável em snake_case. A lista abaixo é montada de EXPOSED_ERROR_CODES mais os códigos de domínio conhecidos (not_the_assignee, invalid_status_transition); clientes devem ter fallback para códigos desconhecidos. Os códigos de core/errors/internal-codes.ts nunca são expostos.",
+      "Código estável em snake_case. Será gerado de core/errors/error-codes.ts; os códigos de core/errors/internal-codes.ts nunca são expostos.",
     example: "not_found",
   });
+
+/**
+ * O esqueleto manual não declarava `additionalProperties`; no JSON Schema isso
+ * mantém o objeto aberto. O zod-openapi fecha objetos por default, então o
+ * override preserva a política de aditivos de `04-HTTP-Contract.md` §6/§7.
+ */
+const additivePolicy = { override: { additionalProperties: true } } as const;
 
 export const FieldError = z
   .object({
@@ -47,14 +54,13 @@ export const ErrorEnvelope = z
     status: z.literal("error"),
     statusCode: z.int(),
     message: z.string(),
-    code: ErrorCodeSchema.optional(),
+    code: ErrorCode.optional(),
     requestId: z.uuid().optional().describe("Correlation id HTTP (aditivo)."),
   })
   .meta({
     id: "ErrorEnvelope",
-    override: { additionalProperties: true },
-    description:
-      "Envelope de erro vigente (legado, ADR-0005), sem os aditivos de validação e concorrência. As respostas de validação e concorrência referenciam os componentes derivados.",
+    ...additivePolicy,
+    description: "Envelope de erro vigente (legado, ADR-0005).",
     example: {
       status: "error",
       statusCode: 404,
@@ -70,7 +76,7 @@ export const ValidationError = ErrorEnvelope.extend({
   fields: z.array(FieldError),
 }).meta({
   id: "ValidationError",
-  override: { additionalProperties: true },
+  ...additivePolicy,
   description:
     "Envelope do 400 de validação unificado (transitório, migração C2): fields é um array.",
   example: {
@@ -92,7 +98,7 @@ export const LegacyValidationError = ErrorEnvelope.extend({
   fields: z.record(z.string(), z.string()),
 }).meta({
   id: "LegacyValidationError",
-  override: { additionalProperties: true },
+  ...additivePolicy,
   description:
     "Corpo 422 vigente do fluxo de requests durante a migração C2: fields é um objeto indexado pelo caminho do campo. Será removido quando o 400 unificado entrar.",
   example: {
@@ -112,7 +118,7 @@ export const ConflictError = ErrorEnvelope.extend({
   currentStatusId: z.uuid().optional().describe("UUID do status atual (fallback de migração)."),
 }).meta({
   id: "ConflictError",
-  override: { additionalProperties: true },
+  ...additivePolicy,
   description:
     "Envelope do 409 de concorrência: estende ErrorEnvelope com a key do status atual e, opcionalmente, o UUID de fallback.",
   example: {
@@ -145,7 +151,7 @@ export const PaginatedResponse = z
   })
   .meta({
     id: "PaginatedResponse",
-    override: { additionalProperties: true },
+    ...additivePolicy,
     description: "Envelope de paginação padrão.",
     example: {
       data: [],
@@ -221,7 +227,7 @@ export const components = {
     LegacyValidationError,
     ConflictError,
     PaginatedResponse,
-    ErrorCodeSchema,
+    ErrorCode,
     FieldError,
   },
   parameters: {
