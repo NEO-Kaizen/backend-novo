@@ -41,6 +41,10 @@
 
     // Leitura adicional (override cobre flags perigosas)
     { "action": "shell", "resource": "git grep *", "effect": "allow" },
+    { "action": "shell", "resource": "git bisect log*", "effect": "allow" },
+    { "action": "shell", "resource": "git remote -v*", "effect": "allow" },
+    { "action": "shell", "resource": "git remote show*", "effect": "allow" },
+    { "action": "shell", "resource": "git remote get-url*", "effect": "allow" },
     { "action": "shell", "resource": "git blame *", "effect": "allow" },
     { "action": "shell", "resource": "git stash list*", "effect": "allow" },
     { "action": "shell", "resource": "git stash show*", "effect": "allow" },
@@ -80,6 +84,10 @@
     // GitHub CLI: todo comando pede confirmação por padrão.
     { "action": "shell", "resource": "gh *", "effect": "ask" },
     { "action": "shell", "resource": "gh status*", "effect": "allow" },
+    { "action": "shell", "resource": "gh auth status*", "effect": "allow" },
+    { "action": "shell", "resource": "gh pr checks*", "effect": "allow" },
+    { "action": "shell", "resource": "gh run view*", "effect": "allow" },
+    { "action": "shell", "resource": "gh run watch*", "effect": "allow" },
     { "action": "shell", "resource": "gh issue list*", "effect": "allow" },
     { "action": "shell", "resource": "gh issue status*", "effect": "allow" },
     { "action": "shell", "resource": "gh issue view*", "effect": "allow" },
@@ -161,6 +169,9 @@
     { "action": "shell", "resource": "* -x*", "effect": "ask" },
     { "action": "shell", "resource": "*--compress-program*", "effect": "ask" },
     { "action": "shell", "resource": "*--show-token*", "effect": "ask" },
+    { "action": "shell", "resource": "*--watch*", "effect": "ask" },
+    { "action": "shell", "resource": "*--log*", "effect": "ask" },
+    { "action": "shell", "resource": "*--log-failed*", "effect": "ask" },
     { "action": "shell", "resource": "gh run view *--log*", "effect": "ask" },
 
     // Scripts versionados e revisados no package.json.
