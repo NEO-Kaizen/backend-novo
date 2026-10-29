@@ -2,6 +2,7 @@ import type { Express } from "express";
 import {
   API_BASE_PATH,
   DOCS_UI_PUBLIC_PATH,
+  HEALTH_PATH,
   OPENAPI_SPEC_PUBLIC_PATH,
   SCALAR_BUNDLE_PUBLIC_PATH,
 } from "../core/http/api-base-path.ts";
@@ -26,12 +27,17 @@ const HTTP_METHODS = ["get", "put", "post", "delete", "options", "head", "patch"
 
 type HttpMethod = (typeof HTTP_METHODS)[number];
 
-/** Rotas de infraestrutura: não são contrato de domínio (`04-HTTP-Contract.md` §4). */
-const EXCLUDED_PATHS: readonly string[] = [
-  "/health",
-  OPENAPI_SPEC_PUBLIC_PATH,
-  DOCS_UI_PUBLIC_PATH,
-  SCALAR_BUNDLE_PUBLIC_PATH,
+/** Rota de infraestrutura: não é contrato de domínio (`04-HTTP-Contract.md` §4). */
+interface InfrastructureRoute {
+  readonly name: string;
+  readonly path: string;
+}
+
+const INFRASTRUCTURE_ROUTES: readonly InfrastructureRoute[] = [
+  { name: "health", path: HEALTH_PATH },
+  { name: "openapi", path: OPENAPI_SPEC_PUBLIC_PATH },
+  { name: "docs", path: DOCS_UI_PUBLIC_PATH },
+  { name: "bundle do Scalar", path: SCALAR_BUNDLE_PUBLIC_PATH },
 ];
 
 const ROUTE_PARAMETER = /:([A-Za-z0-9_]+)/g;
@@ -62,9 +68,11 @@ export function assertRouteCoverage(
   for (const operation of operations) {
     const fullPath = `${API_BASE_PATH}${operation.path}`;
 
-    if (isInfrastructurePath(fullPath)) {
+    const infrastructureRoute = findInfrastructureRoute(fullPath);
+
+    if (infrastructureRoute !== undefined) {
       fail(
-        `Operação ${formatMethod(operation.method)} ${operation.path} aponta para rota de infraestrutura, que não tem operação.`,
+        `Operação ${formatMethod(operation.method)} ${operation.path} aponta para a rota de infraestrutura ${infrastructureRoute.name}, que não tem operação.`,
       );
     }
 
@@ -92,7 +100,7 @@ export function assertRouteCoverage(
         continue;
       }
 
-      if (EXCLUDED_PATHS.some((excluded) => matchesPath(route, excluded))) {
+      if (INFRASTRUCTURE_ROUTES.some((excluded) => matchesPath(route, excluded.path))) {
         continue;
       }
 
@@ -173,8 +181,8 @@ function parametersMatch(route: CollectedRoute, operation: DocumentOperation): b
   );
 }
 
-function isInfrastructurePath(fullPath: string): boolean {
-  return EXCLUDED_PATHS.includes(fullPath);
+function findInfrastructureRoute(fullPath: string): InfrastructureRoute | undefined {
+  return INFRASTRUCTURE_ROUTES.find((route) => route.path === fullPath);
 }
 
 /**

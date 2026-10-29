@@ -19,28 +19,36 @@ interface RunningServer {
   close(): Promise<void>;
 }
 
+type DocsExpectation = "exposed" | "hidden";
+
 interface DocsScenario {
   readonly name: string;
   readonly environment: NodeJS.ProcessEnv;
-  readonly isExposed: boolean;
+  readonly expectation: DocsExpectation;
+}
+
+interface DocsResponse {
+  readonly scenario: DocsScenario;
+  readonly label: string;
+  readonly response: Response;
 }
 
 const DOCS_SCENARIOS: readonly DocsScenario[] = [
   {
     name: "produção sem DOCS_ENABLED",
     environment: { NODE_ENV: "production" },
-    isExposed: false,
+    expectation: "hidden",
   },
   {
     name: "produção com DOCS_ENABLED=true",
     environment: { NODE_ENV: "production", DOCS_ENABLED: "true" },
-    isExposed: true,
+    expectation: "exposed",
   },
-  { name: "teste sem DOCS_ENABLED", environment: {}, isExposed: true },
+  { name: "teste sem DOCS_ENABLED", environment: {}, expectation: "exposed" },
   {
     name: "desenvolvimento com DOCS_ENABLED=false",
     environment: { NODE_ENV: "development", DOCS_ENABLED: "false" },
-    isExposed: false,
+    expectation: "hidden",
   },
 ];
 
@@ -61,78 +69,81 @@ async function checkDocsScenario(
       sendRequest(`${server.baseUrl}${DOCS_UI_PUBLIC_PATH}`),
     ]);
 
-    if (scenario.isExposed) {
-      await assertDocsExposed(scenario, server.baseUrl, spec, ui);
+    const specResponse = toDocsResponse(scenario, "spec", spec);
+    const uiResponse = toDocsResponse(scenario, "UI", ui);
+
+    if (scenario.expectation === "exposed") {
+      await assertDocsExposed(server.baseUrl, specResponse, uiResponse);
     } else {
-      await assertDocsHidden(scenario, spec, ui);
+      await assertDocsHidden(specResponse, uiResponse);
     }
   } finally {
     await server.close();
   }
 }
 
-async function assertDocsHidden(
-  scenario: DocsScenario,
-  spec: Response,
-  ui: Response,
-): Promise<void> {
-  assertStatus(scenario, "spec", spec.status, 404);
-  assertStatus(scenario, "UI", ui.status, 404);
-  assertCode(scenario, "spec", await spec.json(), "not_found");
-  assertCode(scenario, "UI", await ui.json(), "not_found");
+function toDocsResponse(scenario: DocsScenario, label: string, response: Response): DocsResponse {
+  return { scenario, label, response };
+}
+
+async function assertDocsHidden(spec: DocsResponse, ui: DocsResponse): Promise<void> {
+  assertStatus(spec, 404);
+  assertStatus(ui, 404);
+  await assertCode(spec, "not_found");
+  await assertCode(ui, "not_found");
 }
 
 async function assertDocsExposed(
-  scenario: DocsScenario,
   baseUrl: string,
-  spec: Response,
-  ui: Response,
+  spec: DocsResponse,
+  ui: DocsResponse,
 ): Promise<void> {
-  assertStatus(scenario, "spec", spec.status, 200);
-  assertStatus(scenario, "UI", ui.status, 200);
+  assertStatus(spec, 200);
+  assertStatus(ui, 200);
 
-  const version = readField(await spec.json(), "openapi");
+  const version = readField(await spec.response.json(), "openapi");
   if (version !== OPENAPI_SPEC_VERSION) {
     throw new Error(
-      `${scenario.name}: o spec respondeu OpenAPI ${String(version ?? "desconhecido")}, esperava ${OPENAPI_SPEC_VERSION}.`,
+      `${spec.scenario.name}: o spec respondeu OpenAPI ${String(version ?? "desconhecido")}, esperava ${OPENAPI_SPEC_VERSION}.`,
     );
   }
 
-  const html = await ui.text();
+  const html = await ui.response.text();
   if (!html.includes(SCALAR_BUNDLE_PUBLIC_PATH)) {
     throw new Error(
-      `${scenario.name}: a UI não referencia o bundle local ${SCALAR_BUNDLE_PUBLIC_PATH}.`,
+      `${ui.scenario.name}: a UI não referencia o bundle local ${SCALAR_BUNDLE_PUBLIC_PATH}.`,
     );
   }
   if (/jsdelivr/i.test(html)) {
-    throw new Error(`${scenario.name}: a UI ainda carrega o Scalar de CDN.`);
+    throw new Error(`${ui.scenario.name}: a UI ainda carrega o Scalar de CDN.`);
   }
 
-  const asset = await sendRequest(`${baseUrl}${SCALAR_BUNDLE_PUBLIC_PATH}`, "HEAD");
-  assertStatus(scenario, "bundle local", asset.status, 200);
+  const asset = toDocsResponse(
+    spec.scenario,
+    "bundle local",
+    await sendRequest(`${baseUrl}${SCALAR_BUNDLE_PUBLIC_PATH}`, "HEAD"),
+  );
+  assertStatus(asset, 200);
 
-  if (!/javascript/.test(asset.headers.get("content-type") ?? "")) {
-    throw new Error(`${scenario.name}: o bundle local não respondeu como JavaScript.`);
-  }
-}
-
-function assertStatus(
-  scenario: DocsScenario,
-  label: string,
-  actual: number,
-  expected: number,
-): void {
-  if (actual !== expected) {
-    throw new Error(`${scenario.name}: ${label} respondeu ${actual}, esperava ${expected}.`);
+  if (!/javascript/.test(asset.response.headers.get("content-type") ?? "")) {
+    throw new Error(`${asset.scenario.name}: o bundle local não respondeu como JavaScript.`);
   }
 }
 
-function assertCode(scenario: DocsScenario, label: string, body: unknown, expected: string): void {
-  const code = readField(body, "code");
+function assertStatus(target: DocsResponse, expected: number): void {
+  if (target.response.status !== expected) {
+    throw new Error(
+      `${target.scenario.name}: ${target.label} respondeu ${target.response.status}, esperava ${expected}.`,
+    );
+  }
+}
+
+async function assertCode(target: DocsResponse, expected: string): Promise<void> {
+  const code = readField(await target.response.json(), "code");
 
   if (code !== expected) {
     throw new Error(
-      `${scenario.name}: ${label} respondeu code "${String(code)}", esperava "${expected}".`,
+      `${target.scenario.name}: ${target.label} respondeu code "${String(code)}", esperava "${expected}".`,
     );
   }
 }

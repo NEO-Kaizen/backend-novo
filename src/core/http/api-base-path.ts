@@ -1,3 +1,6 @@
+/** Sonda de infraestrutura, fora do contrato versionado. */
+export const HEALTH_PATH = "/health";
+
 /**
  * Base path único da API versionada (`docs/04-API-Conventions.md` §1). O
  * contrato, o router de docs e a cobertura de rotas leem daqui para não haver
