@@ -38,5 +38,17 @@ jobs:
       - name: Format check
         run: npm run format:check
 
+      - name: Contract artifact
+        run: npm run docs:check
+
+      - name: Contract lint
+        run: npm run docs:lint
+
+      - name: Contract coverage
+        run: npm run contract:check
+
+      - name: Contract guard self-test
+        run: npm run contract:check -- --probe
+
       - name: Build
         run: npm run build

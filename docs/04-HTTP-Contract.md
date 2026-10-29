@@ -9,7 +9,7 @@ Decisões transversais (base path, envelope de erro, paginação, sessão, autor
 Hierarquia:
 
 1. **Schemas Zod + metadados de rota** (código) — fonte única.
-2. **OpenAPI 3.1.0** (`openapi/openapi.json`) — artefato versionado; gerado e publicado quando o pipeline existir.
+2. **OpenAPI 3.1.0** (`openapi/openapi.json`) — artefato versionado; gerado por `npm run docs:generate`.
 3. **Specs narrativas de domínio** (template em `docs/_template.md`) — explicam regras que o OpenAPI não expressa; não são contrato de máquina.
 
 Documentos normativos (`04-API-Conventions.md`, `02-Architecture.md`, `03-Data-Model.md`) complementam regras que o OpenAPI não expressa, mas não são contrato de máquina.
@@ -18,16 +18,16 @@ Não há contrato de máquina em Markdown por domínio: este documento é a pol�
 
 ## 2. Versão e gerador
 
-- OpenAPI **3.1.0** — versão estável adotada. O `zod-openapi` 6.x também lista `3.2.0` nas typings, mas o suporte documentado cobre 3.1.x; a adoção de 3.2 fica para o spike.
-- Gerador: **`zod-openapi` 6.x**, sem monkey patch, usando `.meta()` nativo do Zod.
+- OpenAPI **3.1.0** — versão estável adotada. O `zod-openapi` 6.x também lista `3.2.0` nas typings, mas o suporte documentado cobre 3.1.x; 3.2 não é adotado enquanto não houver suporte documentado completo.
+- Gerador: **`zod-openapi`** no pin **`~6.0.2`**, sem monkey patch, usando `.meta()` nativo do Zod. A versão **`6.0.3` do `zod-openapi`** não está publicada no registry npm.
 - Proibido: `tsoa`, decorators, geração baseada em AST do TypeScript.
-- A adoção do gerador exige o spike de compatibilidade previsto no ADR-0026: `zod-openapi` 6.x contra a stack instalada (`~6.0.3` no `package.json`), Node 24, `nodenext`, `z.iso.datetime()`/`z.iso.date()` e `z.file()`. Quando o TypeScript 7 for adotado, o spike é repetido e a saída é registrada no ADR.
+- O spike de compatibilidade está registrado no ADR-0026: `zod-openapi` **6.0.2** contra Node 24.22.1, TypeScript 6.0.3, Zod 4.6.7 e `nodenext`; `z.iso.datetime()`, `z.file()` e o security scheme de cookie foram validados. Quando o TypeScript 7 for adotado, o spike é repetido e a saída é registrada no ADR.
 
 ## 3. Estrutura alvo
 
-A árvore de `src/docs`, `src/domains/*.openapi.ts`, `src/platform/http/docs-router.ts`, `openapi/`, `docs/openapi/` e `.spectral.yaml` está em `docs/02-Architecture.md` §23.1; este documento não a duplica.
+A árvore de `src/api-contract`, `src/domains/*.openapi.ts`, `src/platform/http/api-contract-router.ts`, `openapi/`, `docs/openapi/` e `.spectral.yaml` está em `docs/02-Architecture.md` §23.1; este documento não a duplica.
 
-Regra de dependências (`docs/02-Architecture.md` §19): `domains` não importa `platform`; `*.openapi.ts` não importa `platform`. A composição dos metadados de rota acontece em `src/docs/openapi.ts`.
+Regra de dependências (`docs/02-Architecture.md` §19): `domains` não importa `platform`; `*.openapi.ts` não importa `platform`. A composição dos metadados de rota acontece em `src/api-contract/openapi.ts`.
 
 ## 4. Metadados de rota
 
@@ -36,7 +36,7 @@ Regra de dependências (`docs/02-Architecture.md` §19): `domains` não importa 
 - `summary` e `description` em português.
 - Toda operação tem schema de request (quando aplicável) e schema de response explícito.
 - Toda rota Express 5 de negócio tem operação documentada e vice-versa (cobertura bidirecional).
-- Exceção à cobertura: rotas de infraestrutura (`/health`, `/api/v1/openapi.json`, `/api/v1/docs`) não têm operação e ficam fora do teste de cobertura.
+- Exceção à cobertura: rotas de infraestrutura (`/health`, `/api/v1/openapi.json`, `/api/v1/docs` e `/api/v1/docs/assets/standalone.js`) não têm operação e ficam fora da guarda de cobertura (`npm run contract:check`).
 - Exemplos obrigatórios em schemas e responses; **sem PII** (sem e-mail, nome, telefone ou dado real de pessoa).
 
 ## 5. Segurança
@@ -62,7 +62,9 @@ Aditivos permitidos (não quebram o cliente): `code` (snake_case estável), `req
 - `LegacyValidationError` — base + `fields` objeto indexado pelo caminho, para o `422` vigente do fluxo de requests durante a migração C2.
 - `ConflictError` — base + `currentStatusKey` e, opcionalmente, `currentStatusId`, para o `409` de concorrência (`docs/04-API-Conventions.md` §8.1).
 
-Cada resposta de erro referencia o componente do seu status; nenhuma resposta usa `ErrorEnvelope` como união de formatos. Quando o gerador existir, `src/docs/components.ts` será a única definição e `ErrorEnvelope` continuará sendo a base. O campo `code` referencia o componente `ErrorCode`, gerado de `core/errors/error-codes.ts`; no artefato, a lista é a do `docs/04-API-Conventions.md` §2.3, mais códigos de domínio conhecidos. `core/errors/internal-codes.ts` nunca é exposto. O `code` é opcional no envelope legado e clientes devem ter fallback para valores desconhecidos.
+Cada resposta de erro referencia o componente do seu status; nenhuma resposta usa `ErrorEnvelope` como união de formatos. `src/api-contract/components.ts` é a única definição, e `ErrorEnvelope` é a base. Os envelopes (`ErrorEnvelope`, `ValidationError`, `LegacyValidationError` e `ConflictError`) declaram `additionalProperties: true` no artefato para preservar a política de aditivos: cliente que valide estrito continua aceitando `code`, `requestId`, `fields` e futuros campos aditivos.
+
+O campo `code` referencia o componente `ErrorCode`, que **não é gerado automaticamente**: é montado em `components.ts` a partir de `EXPOSED_ERROR_CODES` (`core/errors/error-codes.ts`), a lista do `docs/04-API-Conventions.md` §2.3, mais os códigos de domínio conhecidos hoje — `not_the_assignee` e `invalid_status_transition`. Esses dois vêm do porte legado e estão hardcoded porque os domínios que os emitem ainda não foram implementados; cada um migra para `core/errors/error-codes.ts` junto com seu domínio e só então entra em `ErrorCode` pela lista exposta. `core/errors/internal-codes.ts` nunca é exposto. O `code` é opcional no envelope legado e clientes devem ter fallback para valores desconhecidos.
 
 A variante `LegacyValidationError` (`422`/objeto) será removida quando a migração C2 (`docs/04-API-Conventions.md` §3) concluir; até lá, as duas variantes coexistem e a escolha é pelo status da resposta.
 
@@ -72,7 +74,7 @@ A variante `LegacyValidationError` (`422`/objeto) será removida quando a migra�
 { "data": [], "page": 1, "pageSize": 20, "total": 0, "totalPages": 0 }
 ```
 
-No artefato (`openapi/openapi.json`), o componente `PaginatedResponse` é a definição; quando o gerador existir, `src/docs/components.ts` será a única definição. No request, o parâmetro `PageSize` tem default **20** e máximo **100**; acima do máximo é `400` `validation_error` (`docs/04-API-Conventions.md` §4.2). No response, `pageSize` é o tamanho efetivo e não declara default; `page` é a única clampada. Exceções registradas em `docs/04-API-Conventions.md` (timeline por cursor; auditoria padrão) são documentadas na spec de domínio correspondente.
+No artefato (`openapi/openapi.json`), o componente `PaginatedResponse` é a definição; `src/api-contract/components.ts` é a única definição no código. O componente segue a política de aditivos da §6 (`additionalProperties: true`). No request, o parâmetro `PageSize` tem default **20** e máximo **100**; acima do máximo é `400` `validation_error` (`docs/04-API-Conventions.md` §4.2). No response, `pageSize` é o tamanho efetivo e não declara default; `page` é a única clampada. Exceções registradas em `docs/04-API-Conventions.md` (timeline por cursor; auditoria padrão) são documentadas na spec de domínio correspondente.
 
 ## 8. Multipart
 
@@ -102,23 +104,25 @@ No artefato (`openapi/openapi.json`), o componente `PaginatedResponse` é a defi
 npm run docs:generate   # regenera openapi/openapi.json a partir dos schemas Zod
 npm run docs:lint       # spectral lint openapi/openapi.json
 npm run docs:check      # regenera e falha se o artefato estiver desatualizado
+npm run contract:check  # cobertura rota↔operação e matriz DOCS_ENABLED
 ```
 
-- Os scripts acima serão adicionados com a automação do contrato. Enquanto eles não existirem, a validação manual do artefato é `npx @stoplight/spectral-cli lint openapi/openapi.json`.
-- O artefato `openapi/openapi.json` é **commitado**. Enquanto o gerador não existir, ele é mantido manualmente; depois, edição manual é proibida e toda mudança passa por `docs:generate`.
-- Em CI, quando o gate existir: `docs:generate` → `docs:lint` → `docs:check`, mais `oasdiff breaking` contra a base.
+- Os três comandos `docs:*` são o único caminho de manutenção do artefato. O artefato `openapi/openapi.json` é **commitado** e a edição manual é proibida: toda mudança passa por `npm run docs:generate`.
+- O job `quality` do CI roda `docs:check`, `docs:lint` e `contract:check`, mais `contract:check --probe` para provar que a guarda rota↔operação falha quando deve. O gate `oasdiff breaking` contra a base continua pendente: ele só passa a morder quando `paths` deixar de estar vazio.
 
 ## 13. Exposição por ambiente
 
-- Documentação e UI desabilitadas em produção por padrão.
-- Habilitação em produção apenas com opt-in explícito (`DOCS_ENABLED=true`).
-- Em desenvolvimento e teste: habilitadas quando o router existir.
+- Documentação e UI habilitadas por padrão fora de produção.
+- `DOCS_ENABLED=false` desabilita em qualquer ambiente.
+- Em produção: desabilitadas por padrão; habilitação apenas com opt-in explícito (`DOCS_ENABLED=true`).
+- A UI é self-hosted: o HTML e o bundle UMD são servidos pelo backend, sem CDN em runtime.
 
 ## 14. Lint do spec
 
-- `spectral lint openapi/openapi.json` usa `spectral:oas`; `.spectral.yaml` eleva `operation-operationId` e `operation-tags` a erro.
+- `npm run docs:lint` roda `spectral lint openapi/openapi.json --fail-severity=warn` com `spectral:oas`: qualquer warning quebra o gate. `.spectral.yaml` eleva `operation-operationId` e `operation-tags` a erro.
+- `oas3-unused-component` fica desligado enquanto `paths` estiver vazio; todos os componentes do kernel ainda não têm operação. Reative a regra quando o primeiro domínio publicar rotas (#74).
 - Não há regras customizadas. As regras de `description`/`example` em schema e a verificação de PII serão adicionadas como regras customizadas.
-- Exemplos sem PII serão verificados por script auxiliar quando o gerador existir.
+- A verificação automatizada de PII é uma regra customizada futura; hoje os exemplos são revisados no checklist da §15.
 
 ## 15. Checklist de revisão (OpenAPI)
 
@@ -129,7 +133,8 @@ npm run docs:check      # regenera e falha se o artefato estiver desatualizado
 - [ ] Timestamps usam `z.iso.datetime()`; datas puras usam `z.iso.date()`.
 - [ ] Operações públicas declaram `security: []`.
 - [ ] Multipart documenta limites e `415`.
-- [ ] Artefato regenerado (`docs:check` verde, quando o script existir).
+- [ ] Artefato regenerado e `npm run docs:check` verde.
+- [ ] `npm run contract:check` verde: rota nova tem operação e a matriz `DOCS_ENABLED` continua válida.
 
 ## 16. Referências
 

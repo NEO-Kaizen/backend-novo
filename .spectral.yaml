@@ -2,3 +2,6 @@ extends: ["spectral:oas"]
 rules:
   operation-operationId: error
   operation-tags: error
+  # Enquanto `paths` estiver vazio, todos os componentes do kernel são "não usados".
+  # TODO(#74): reativar quando o primeiro domínio publicar operações.
+  oas3-unused-component: off

@@ -2,6 +2,7 @@ import cookieParser from "cookie-parser";
 import express from "express";
 import type { Express } from "express";
 import type { Container } from "./container.ts";
+import { API_BASE_PATH, HEALTH_PATH } from "./core/http/api-base-path.ts";
 import { createCorsMiddleware } from "./platform/http/cors.middleware.ts";
 import { createErrorHandler } from "./platform/http/error-handler.middleware.ts";
 import { createNotFoundMiddleware } from "./platform/http/not-found.middleware.ts";
@@ -27,9 +28,14 @@ export function createApp(container: Container): Express {
   app.use(cookieParser());
 
   // Sonda de infraestrutura: fora de `/api/v1` e sem autenticação.
-  app.get("/health", (_req, res) => {
+  app.get(HEALTH_PATH, (_req, res) => {
     res.status(200).json(HEALTH_STATUS);
   });
+
+  // Documentação é infraestrutura: fica fora do contrato e da cobertura de rotas.
+  if (container.apiContractRouter !== null) {
+    app.use(API_BASE_PATH, container.apiContractRouter);
+  }
 
   app.use(createNotFoundMiddleware());
   app.use(createErrorHandler(container.logger)); // quatro parâmetros, sempre por último

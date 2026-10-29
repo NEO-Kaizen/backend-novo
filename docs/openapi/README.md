@@ -2,7 +2,7 @@
 
 ## Artefato
 
-O contrato versionado vive em `openapi/openapi.json` (raiz do repositório) e é **commitado**. Enquanto o gerador não existir, ele é mantido manualmente; quando existir, passa a ser gerado a partir dos schemas Zod e dos metadados de rota, e a edição manual fica proibida.
+O contrato versionado vive em `openapi/openapi.json` (raiz do repositório) e é **commitado**. Ele é gerado a partir dos schemas Zod e dos metadados de rota por `npm run docs:generate`; a edição manual é proibida.
 
 `info.version` segue a regra de `04-HTTP-Contract.md` §11: versiona o contrato, não o `package.json`.
 
@@ -12,21 +12,22 @@ O contrato versionado vive em `openapi/openapi.json` (raiz do repositório) e é
 npm run docs:generate   # regenera openapi/openapi.json
 npm run docs:lint       # spectral lint openapi/openapi.json
 npm run docs:check      # regenera e falha se o artefato estiver desatualizado
+npm run contract:check  # cobertura rota↔operação e matriz DOCS_ENABLED
 ```
-
-Enquanto os scripts não existirem, a validação manual é `npx @stoplight/spectral-cli lint openapi/openapi.json`.
 
 ## Regra de artefato commitado
 
-- Quando o gerador existir, toda mudança de rota ou schema regenera o artefato no mesmo PR.
-- Quando o gate de CI existir, `docs:check` deve passar; diff inesperado quebra o build.
+- Toda mudança de rota ou schema regenera o artefato no mesmo PR via `npm run docs:generate`.
+- `npm run docs:check` deve passar; diff inesperado no artefato é erro.
+- O job `quality` do CI roda `docs:check`, `docs:lint` e `contract:check`, mais `contract:check --probe`.
 - Breaking change exige label `breaking-change` e plano de `/api/v2` (gate `oasdiff breaking` quando o workflow existir).
 
 ## Lint
 
-`spectral lint openapi/openapi.json` usa `spectral:oas`; `.spectral.yaml` eleva `operation-operationId` e `operation-tags` a erro. Não há regras customizadas; as regras de `description`/`example` em schema serão adicionadas depois. O artefato já traz exemplos em todos os schemas e parâmetros; a regra que os exige ainda não existe. Enquanto `paths` estiver vazio, os warnings de componente não usado e de `info` são esperados.
+`npm run docs:lint` usa `spectral:oas` com `--fail-severity=warn`: qualquer warning quebra o gate. `.spectral.yaml` eleva `operation-operationId` e `operation-tags` a erro e desliga `oas3-unused-component` enquanto `paths` estiver vazio — todos os componentes do kernel ainda não têm operação. Reative a regra quando o primeiro domínio publicar rotas (#74). Não há regras customizadas; as regras de `description`/`example` em schema serão adicionadas depois. O artefato já traz exemplos em todos os schemas e parâmetros; a regra que os exige ainda não existe.
 
 ## Exposição
 
-- Documentação e UI desabilitadas em produção por padrão; habilitação via `DOCS_ENABLED=true`.
-- UI (Scalar self-hosted) em `/api/v1/docs`; spec em `/api/v1/openapi.json`.
+- Exposição segue `04-HTTP-Contract.md` §13: fora de produção por padrão; produção só com `DOCS_ENABLED=true`, e `false` desliga em qualquer ambiente.
+- UI (Scalar via `@scalar/express-api-reference` + `@scalar/api-reference`) em `/api/v1/docs`; o HTML e o bundle UMD em `/api/v1/docs/assets/standalone.js` são servidos pelo backend.
+- Spec em `/api/v1/openapi.json`.

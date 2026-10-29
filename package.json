@@ -15,22 +15,30 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "check": "npm run typecheck && npm run lint && npm run format:check",
-    "test": "echo \"No tests configured yet — see test/README.md\""
+    "test": "echo \"No tests configured yet — see test/README.md\"",
+    "contract:check": "node src/api-contract/check-contract.ts",
+    "docs:generate": "node src/api-contract/generate-openapi.ts && prettier --write openapi/openapi.json",
+    "docs:lint": "spectral lint openapi/openapi.json --fail-severity=warn",
+    "docs:check": "npm run docs:generate && git diff --exit-code -- openapi/"
   },
   "engines": {
     "node": ">=24"
   },
   "dependencies": {
+    "@scalar/api-reference": "1.76.2",
+    "@scalar/express-api-reference": "^0.10.33",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
     "express": "^5.2.1",
     "knex": "^3.3.0",
     "multer": "^2.5.0",
     "pg": "^8.23.0",
-    "zod": "^4.5.4"
+    "zod": "^4.5.4",
+    "zod-openapi": "~6.0.2"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@stoplight/spectral-cli": "^6.17.0",
     "@types/cookie-parser": "^1.4.10",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",

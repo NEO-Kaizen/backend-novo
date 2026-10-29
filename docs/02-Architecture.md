@@ -137,7 +137,7 @@ seeds/<domain>/                # seeds donos por cada domínio
 knexfile.ts
 ```
 
-> Pastas e arquivos são criados conforme a necessidade. Um domínio sem tabelas próprias não tem `schema/`; um domínio sem rotas públicas não precisa de subpastas. O diretório `src/docs/` (composição do OpenAPI) está detalhado na §23.1.
+> Pastas e arquivos são criados conforme a necessidade. Um domínio sem tabelas próprias não tem `schema/`; um domínio sem rotas públicas não precisa de subpastas. O diretório `src/api-contract/` (composição do OpenAPI) está detalhado na §23.1.
 
 Schema e migrations pertencem ao domínio — a definição da tabela vive em `src/domains/<domínio>/schema/`, ao lado da regra que a usa. Ver [ADR-0004](./adr/0004-domain-owned-schema-and-migrations.md).
 
@@ -1476,7 +1476,7 @@ export function createApp(container: Container): Express {
 
 ## 16. Configuração
 
-A configuração é lida e validada **no boot**. Aplicação com configuração inválida não sobe. Variáveis planas; `toConfig` monta os objetos aninhados (`database`, `cors`, `uploads`).
+A configuração é lida e validada **no boot**. Aplicação com configuração inválida não sobe. Variáveis planas; `toConfig` monta os objetos aninhados (`database`, `cors`, `docs`, `uploads`).
 
 ```ts
 // src/platform/config/environment-schema.ts
@@ -1506,6 +1506,10 @@ export const EnvironmentSchema = z.strictObject({
   UPLOAD_MAX_FILE_BYTES: positiveInteger().default(10 * MEBIBYTE),
   UPLOAD_MAX_FILES: positiveInteger().default(5),
   JSON_BODY_MAX_BYTES: positiveInteger().default(MEBIBYTE),
+  DOCS_ENABLED: z
+    .enum(["true", "false"])
+    .transform((value) => value === "true")
+    .optional(),
 });
 ```
 
@@ -1529,6 +1533,7 @@ export interface Config {
   /** Espelha o bloco `DATABASE_*` do schema de ambiente. */
   readonly database: DatabaseConfig;
   readonly cors: { readonly origins: readonly string[] };
+  readonly docs: { readonly isEnabled: boolean };
   readonly jwtSecret: string;
   readonly jwtExpiresIn: string;
   readonly cookieName: string;
@@ -1543,18 +1548,19 @@ export interface Config {
 
 > **Seed-only.** `ADMIN_ROOT_EMAIL` e `ADMIN_ROOT_PASSWORD` são lidas pelo comando de seed, não pelo `EnvironmentSchema`; o boot da aplicação não as exige. A regra e o comportamento do seed estão em [`03-Data-Model.md` § 25.3](./03-Data-Model.md#253-admin-root).
 
-| Regra                                                                | Motivo                                                                                                                         |
-| -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| Segredo ausente ou curto demais derruba o boot em produção           | Falhar cedo é melhor que falhar no primeiro request                                                                            |
-| `.env.example` documenta as variáveis                                | Segredo nunca vai para o repositório                                                                                           |
-| Nenhum `process.env` fora de `platform/config`                       | Uma fonte de configuração                                                                                                      |
-| `Config` (interface) e `EnvironmentSchema` (Zod) têm nomes distintos | O schema valida; a interface é o contrato interno                                                                              |
-| Variáveis planas, `Config` aninhado                                  | `strictObject` sobre `process.env` rejeitaria PATH, HOME e afins; `loadConfig` seleciona as chaves conhecidas antes de validar |
-| `DATABASE_ENGINE` lista o alvo de portabilidade                      | Só `postgres` tem dialeto hoje; engine sem dialeto falha no boot com mensagem clara (§ 10.2)                                   |
-| `NODE_ENV` sem default                                               | Produção não cai em modo development por variável ausente                                                                      |
-| `DATABASE_PASSWORD` pode ser vazio                                   | Autenticação por trust local; a variável precisa existir                                                                       |
-| Pool e conexão têm timeout (`*_TIMEOUT_MS`)                          | Sem espera indefinida em aquisição, conexão ou query                                                                           |
-| `COOKIE_NAME` e `JWT_EXPIRES_IN` no schema                           | Requeridos pelo C6 (`04-API-Conventions.md` § 5)                                                                               |
+| Regra                                                                | Motivo                                                                                                                            |
+| -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| Segredo ausente ou curto demais derruba o boot em produção           | Falhar cedo é melhor que falhar no primeiro request                                                                               |
+| `.env.example` documenta as variáveis                                | Segredo nunca vai para o repositório                                                                                              |
+| Nenhum `process.env` fora de `platform/config`                       | Uma fonte de configuração                                                                                                         |
+| `Config` (interface) e `EnvironmentSchema` (Zod) têm nomes distintos | O schema valida; a interface é o contrato interno                                                                                 |
+| Variáveis planas, `Config` aninhado                                  | `strictObject` sobre `process.env` rejeitaria PATH, HOME e afins; `loadConfig` seleciona as chaves conhecidas antes de validar    |
+| `DATABASE_ENGINE` lista o alvo de portabilidade                      | Só `postgres` tem dialeto hoje; engine sem dialeto falha no boot com mensagem clara (§ 10.2)                                      |
+| `NODE_ENV` sem default                                               | Produção não cai em modo development por variável ausente                                                                         |
+| `DATABASE_PASSWORD` pode ser vazio                                   | Autenticação por trust local; a variável precisa existir                                                                          |
+| Pool e conexão têm timeout (`*_TIMEOUT_MS`)                          | Sem espera indefinida em aquisição, conexão ou query                                                                              |
+| `COOKIE_NAME` e `JWT_EXPIRES_IN` no schema                           | Requeridos pelo C6 (`04-API-Conventions.md` § 5)                                                                                  |
+| `DOCS_ENABLED` é opt-in de produção                                  | Docs e spec ficam ligadas por padrão fora de produção; produção exige `DOCS_ENABLED=true`, e `false` desliga em qualquer ambiente |
 
 ---
 
@@ -1571,16 +1577,16 @@ export interface Logger {
 }
 ```
 
-| Regra                                                                                                | Motivo                                 |
-| ---------------------------------------------------------------------------------------------------- | -------------------------------------- |
-| Log estruturado em JSON, com nível e campos estáveis                                                 | Parseável                              |
-| **Correlation id** (`correlationId`) em todo log, aceito de `x-request-id` apenas se for UUID válido | Correlação entre requisição e erro     |
-| Campos, não concatenação: `logger.info({ correlationId, userId }, "request loaded")`                 | Busca por campo funciona               |
-| Redação de `authorization`, `cookie`, `set-cookie`, `password`, `token` e `secret`                   | Segredo não vaza em log                |
-| PII não entra em log                                                                                 | Dado pessoal não é log                 |
-| A causa de um erro é logada **uma vez**, na borda                                                    | Camada interna não faz log-and-rethrow |
-| Método, rota, status e duração em todo log de requisição                                             | Métrica de saúde                       |
-| Requisição abortada registra `aborted: true`                                                         | Rastro de desconexão                   |
+| Regra                                                                                                                                              | Motivo                                 |
+| -------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| Log estruturado em JSON, com nível e campos estáveis                                                                                               | Parseável                              |
+| **Correlation id** (`correlationId`) em todo log, aceito de `x-request-id` apenas se for UUID válido                                               | Correlação entre requisição e erro     |
+| Campos, não concatenação: `logger.info({ correlationId, userId }, "request loaded")`                                                               | Busca por campo funciona               |
+| Redação de `authorization`, `cookie`, `set-cookie`, `password`, `token`, `secret`, `apiKey`, `x-api-key`, `jwt`, `session`, `csrf` e `private_key` | Segredo não vaza em log                |
+| PII não entra em log                                                                                                                               | Dado pessoal não é log                 |
+| A causa de um erro é logada **uma vez**, na borda                                                                                                  | Camada interna não faz log-and-rethrow |
+| Método, rota, status e duração em todo log de requisição                                                                                           | Métrica de saúde                       |
+| Requisição abortada registra `aborted: true`                                                                                                       | Rastro de desconexão                   |
 
 **Exceção:** 4xx não loga a causa — a `message` do parser pode ecoar trecho do body; a regra canônica está em `CODING_STANDARDS.md` §9.
 
@@ -1592,7 +1598,7 @@ O nível mínimo vem do ambiente: `development` e `production` registram a parti
 
 ## 18. Costuras de Testabilidade
 
-A arquitetura já expõe as costuras que a suíte de testes vai usar quando ela existir. Hoje **não há camada de testes** — a decisão é adiada, não as costuras.
+A arquitetura expõe as costuras que a suíte usa. A guarda do contrato roda por `npm run contract:check`, sem framework: ela compara rotas ↔ operações e a matriz `DOCS_ENABLED`. `npm test` segue stub, e a decisão do runner definitivo para a suíte completa segue em aberto e é issue própria — o que está decidido são as costuras.
 
 | Costura       | Interface              | Por quê                                                                       |
 | ------------- | ---------------------- | ----------------------------------------------------------------------------- |
@@ -1613,12 +1619,12 @@ Com `Clock` e `IdGenerator` injetados, o domínio é determinístico: nada de `M
 ## 19. Dependências Permitidas
 
 ```text
-core      → (nenhuma dependência interna)
-domains   → core
-domains   → outro domain: apenas via port publicada (import de tipo)
-platform  → core
-docs      → core + domains (metadados)
-container → core + platform + domains + docs
+core         → (nenhuma dependência interna)
+domains      → core
+domains      → outro domain: apenas via port publicada (import de tipo)
+platform     → core
+api-contract → core + domains (metadados)
+container    → core + platform + domains + api-contract
 ```
 
 | Proibição                                                                        | Por quê                                                                                                                                                |
@@ -1628,8 +1634,10 @@ container → core + platform + domains + docs
 | Um domínio **nunca** importa repositório, service ou controller de outro domínio | Fronteira entre áreas                                                                                                                                  |
 | Um service **nunca** recebe a porta `Database`                                   | A fábrica passa o banco ao repositório, não ao service ([§ 8.2](#82-fábrica-de-módulo)); sem a capacidade, o service não monta SQL fora do repositório |
 | `platform` **nunca** importa de `domains`                                        | Inclusive o _error handler_: ele recebe a porta `AttemptRecorder`, não o domínio                                                                       |
-| `docs` **não** é importado por `core`, `domains` ou `platform`                   | O spec é composto no container; o router recebe o documento pronto                                                                                     |
+| `api-contract` **não** é importado por `core`, `domains` ou `platform`           | O spec é composto no container; o router recebe o documento pronto                                                                                     |
 | `app.ts` e `server.ts` **nunca** criam dependência                               | Eles consomem o `Container`                                                                                                                            |
+
+Os scripts `src/api-contract/check-*.ts` são a exceção da primeira coluna: são CLIs de composição (rodados por `npm run contract:check`), montam `app.ts`, `container.ts` e `loadConfig` para cobrar o contrato real, e não são importados por nenhum módulo de `src/`.
 
 ---
 
@@ -1702,7 +1710,6 @@ As pendências de **schema** estão no [`03-Data-Model.md` § 21](./03-Data-Mode
 | Envelope de erro `{ error: { code, message, requestId } }` | Frontend precisa ajustar `readErrorMessage`                                                                                                                                                                                                           | Release coordenada com o frontend    |
 | Contratos publicados: ids numéricos e 4 perfis             | O frontend atual descarta id que não seja número em categorias e status                                                                                                                                                                               | Release coordenada; ver § 22.1       |
 | Suíte de testes automatizados                              | Rede de segurança ausente para a reescrita                                                                                                                                                                                                            | Ferramentas de teste decididas       |
-| Gerador OpenAPI e spike de compatibilidade                 | Sem gerador, o artefato é mantido manualmente e não há gate de drift                                                                                                                                                                                  | Adoção do gerador                    |
 | Credencial de runtime e de migração                        | O append-only por privilégio exige duas credenciais no Postgres/MySQL; hoje o schema de ambiente tem uma                                                                                                                                              | Implementação do deploy              |
 | Contrato da API de auditoria                               | A rota é montada; o formato de resposta não está acordado. O `Page<AuditEntry>` de [§ 9.3](#93-auditoria-de-alteração-por-eventos) é o contrato do service; a tradução para o formato da rota é do controller ([§ 6](#6-responsabilidades-de-camada)) | Formalização do domínio de auditoria |
 | RBAC configurável                                          | Desenho no Apêndice C; o Apêndice B continua sendo o contrato                                                                                                                                                                                         | Frontend consumir `permissions`      |
@@ -1723,27 +1730,35 @@ O banco nasce vazio, então não há dado a migrar; há **consumidores** a migra
 
 A release é um **cutover coordenado**, não um adapter numérico: devolver id numérico ao frontend reintroduziria a decisão que o ADR-0003 eliminou. A ordem segura é o frontend aceitar os dois formatos e passar a usar a `key` do status; depois o backend novo entra.
 
+O contrato HTTP não está mais entre as pendências: `npm run docs:generate`, `npm run docs:lint`, `npm run docs:check` e `npm run contract:check` existem e rodam no job `quality` do CI. O gate `oasdiff breaking` segue pendente até `paths` deixar de estar vazio.
+
 ---
 
 ## 23. Contrato HTTP (OpenAPI)
 
-O contrato HTTP será derivado dos schemas Zod e dos metadados de rota. A política normativa completa está em `docs/04-HTTP-Contract.md`; as convenções transversais (base path, envelope, paginação, sessão, autorização, etc.) estão em `docs/04-API-Conventions.md`.
+O contrato HTTP é derivado dos schemas Zod e dos metadados de rota. A política normativa completa está em `docs/04-HTTP-Contract.md`; as convenções transversais (base path, envelope, paginação, sessão, autorização, etc.) estão em `docs/04-API-Conventions.md`.
 
-### 23.1 Estrutura alvo
+### 23.1 Estrutura
 
 ```text
 src/
-├── docs/
-│   ├── openapi.ts          # compõe createDocument a partir dos *.openapi.ts
-│   ├── components.ts       # ErrorEnvelope, variantes de erro, PaginatedResponse, securitySchemes
-│   └── generate-openapi.ts  # escreve openapi/openapi.json
+├── api-contract/
+│   ├── openapi.ts               # compõe createDocument a partir dos *.openapi.ts
+│   ├── components.ts            # ErrorEnvelope, variantes de erro, PaginatedResponse, securitySchemes
+│   ├── generate-openapi.ts      # escreve openapi/openapi.json
+│   ├── route-coverage.ts        # guarda bidirecional rota↔operação
+│   ├── express-route-stack.ts   # fronteira com os internals do Express 5
+│   ├── check-contract.ts        # CLI de contract:check (orquestra cobertura, DOCS_ENABLED e --probe)
+│   ├── check-route-coverage.ts  # cobertura no app real
+│   ├── check-docs-exposure.ts   # matriz DOCS_ENABLED e ciclo do servidor
+│   └── probe-route-coverage.ts  # sondas da guarda
 ├── domains/
 │   └── <domínio>/
 │       ├── <domínio>.schema.ts   # schemas Zod (request/response)
 │       └── <domínio>.openapi.ts  # metadados de rota, sem import de platform
 └── platform/
     └── http/
-        └── docs-router.ts  # serve /api/v1/openapi.json e /api/v1/docs
+        └── api-contract-router.ts  # serve /api/v1/openapi.json e /api/v1/docs
 openapi/
 └── openapi.json            # artefato commitado
 docs/openapi/
@@ -1753,11 +1768,11 @@ docs/openapi/
 
 ### 23.2 Regras
 
-`*.openapi.ts` não importa `platform`; a composição é feita em `src/docs/openapi.ts` (regra de dependências em §19). `src/platform/http/docs-router.ts` é o único lugar que serve o spec e a UI.
+`*.openapi.ts` não importa `platform`; a composição é feita em `src/api-contract/openapi.ts` (regra de dependências em §19). `src/platform/http/api-contract-router.ts` é o único lugar que serve o spec e a UI. `src/api-contract/express-route-stack.ts` é a fronteira documentada com os internals do Express 5 (`router.stack`, `matchers`, `handle.stack` e `methods._all`); a guarda de cobertura consome apenas os acessores desse módulo.
 
 ### 23.3 Montagem
 
-Quando o kernel existir, o `container` vai compor o documento a partir dos `*.openapi.ts` e vai entregar o router de docs ao `app.ts`, que o registrará em `/api/v1`. A UI (Scalar self-hosted) consumirá `/api/v1/openapi.json`; o esquema de segurança é `sessionCookie` (`apiKey`, `in: cookie`, `name: session_id`) e operações públicas declaram `security: []`.
+O `container` compõe o documento; `src/api-contract/openapi.ts` é o ponto de agregação dos `*.openapi.ts` (hoje `paths` está vazio, porque nenhum domínio publicou operações) e entrega o router do contrato ao `app.ts`, que o registra em `/api/v1`. A UI (Scalar via `@scalar/express-api-reference` + `@scalar/api-reference`) consome `/api/v1/openapi.json` e carrega o bundle UMD servido localmente pelo backend em `/api/v1/docs/assets/standalone.js`; o esquema de segurança é `sessionCookie` (`apiKey`, `in: cookie`, `name: session_id`) e operações públicas declaram `security: []`. O router só é montado quando `config.docs.isEnabled` é verdadeiro; a regra de exposição por ambiente está em `04-HTTP-Contract.md` §13.
 
 Ver [ADR-0026](./adr/0026-openapi-generated-from-zod.md).
 
