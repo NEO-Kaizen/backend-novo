@@ -50,6 +50,8 @@ Resultados:
 
 O `6.0.3` **não está publicado no registry npm**; o pin é `~6.0.2`. Quando o TypeScript 7 for adotado, o spike é repetido e a saída é registrada aqui.
 
+O TypeScript 7.0 já está publicado, mas a adoção continua bloqueada: o 7.0 não expõe a API do compilador (ela chega no 7.1) e o `typescript-eslint` atual suporta `<6.1.0`. O upgrade só entra quando os dois gates abrirem; até lá, o pin `~6.0.3` permanece.
+
 ## Alternativas consideradas
 
 - **`swagger-ui-express` + `src/swagger.json` à mão (proposta do legado).** Cobre só 2 endpoints, fixa `http://localhost:3000` e declara `bearerAuth` (incorreto, a sessão é cookie). Rejeitado por incompleto e por drift.
