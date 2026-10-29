@@ -5,6 +5,16 @@ import {
   OPENAPI_SPEC_PUBLIC_PATH,
   SCALAR_BUNDLE_PUBLIC_PATH,
 } from "../core/http/api-base-path.ts";
+import {
+  declaresAllMethods,
+  declaresMethod,
+  readChildStack,
+  readFirstMatcher,
+  readRootStack,
+  readRoute,
+  type RouteLayer,
+  type RouteMatcher,
+} from "./express-route-stack.ts";
 
 /**
  * Cobertura bidirecional entre rotas Express e `openapi.paths`. A guarda falha
@@ -27,22 +37,6 @@ const EXCLUDED_PATHS: readonly string[] = [
 const ROUTE_PARAMETER = /:([A-Za-z0-9_]+)/g;
 const OPENAPI_PARAMETER = /\{([A-Za-z0-9_]+)\}/g;
 
-interface MatcherResult {
-  readonly path: string;
-}
-
-type RouteMatcher = (input: string) => MatcherResult | false;
-
-/** Recorte estrutural do Layer do Express 5; `stack` e `matchers` não são públicos. */
-interface RouteLayerLike {
-  readonly matchers?: readonly RouteMatcher[];
-  readonly route?: {
-    readonly path: string;
-    readonly methods: Readonly<Record<string, boolean>>;
-  };
-  readonly handle?: { readonly stack?: readonly RouteLayerLike[] };
-}
-
 interface CollectedRoute {
   readonly path: string;
   readonly methods: readonly HttpMethod[];
@@ -55,12 +49,13 @@ interface DocumentOperation {
   readonly method: HttpMethod;
 }
 
-export interface RouteCoverageDocument {
-  readonly paths?: Readonly<Record<string, Readonly<Partial<Record<HttpMethod, unknown>>>>>;
-}
+type DocumentPaths = Readonly<Record<string, Readonly<Partial<Record<HttpMethod, unknown>>>>>;
 
 /** Executa a guarda de cobertura; qualquer divergência lança com rota/operação no texto. */
-export function assertRouteCoverage(app: Express, document: RouteCoverageDocument): void {
+export function assertRouteCoverage(
+  app: Express,
+  document: { readonly paths?: DocumentPaths },
+): void {
   const routes = collectRoutes(readRootStack(app));
   const operations = collectOperations(document);
 
@@ -108,46 +103,33 @@ export function assertRouteCoverage(app: Express, document: RouteCoverageDocumen
   }
 }
 
-function readRootStack(app: Express): readonly RouteLayerLike[] {
-  const router = (app as unknown as { router?: { stack?: readonly RouteLayerLike[] } }).router;
-  const stack = router?.stack;
-
-  if (stack === undefined) {
-    fail("app Express sem router.stack");
-  }
-
-  return stack;
-}
-
 function collectRoutes(
-  stack: readonly RouteLayerLike[],
+  stack: readonly RouteLayer[],
   ancestors: readonly RouteMatcher[] = [],
 ): CollectedRoute[] {
   const routes: CollectedRoute[] = [];
 
   for (const layer of stack) {
-    const route = layer.route;
+    const route = readRoute(layer);
 
     if (route !== undefined) {
       routes.push({
         path: route.path,
-        // `router.all` registra `_all`; expandir força operação para cada método.
-        methods:
-          route.methods._all === true
-            ? HTTP_METHODS
-            : HTTP_METHODS.filter((method) => route.methods[method] === true),
-        matcher: layer.matchers?.[0],
+        methods: declaresAllMethods(route)
+          ? HTTP_METHODS
+          : HTTP_METHODS.filter((method) => declaresMethod(route, method)),
+        matcher: readFirstMatcher(layer),
         ancestors,
       });
       continue;
     }
 
-    const childStack = layer.handle?.stack;
+    const childStack = readChildStack(layer);
     if (childStack === undefined) {
       continue;
     }
 
-    const matcher = layer.matchers?.[0];
+    const matcher = readFirstMatcher(layer);
     routes.push(
       ...collectRoutes(childStack, matcher === undefined ? ancestors : [...ancestors, matcher]),
     );
@@ -156,7 +138,7 @@ function collectRoutes(
   return routes;
 }
 
-function collectOperations(document: RouteCoverageDocument): DocumentOperation[] {
+function collectOperations(document: { readonly paths?: DocumentPaths }): DocumentOperation[] {
   const operations: DocumentOperation[] = [];
 
   for (const [path, pathItem] of Object.entries(document.paths ?? {})) {

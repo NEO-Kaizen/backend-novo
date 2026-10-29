@@ -1637,7 +1637,7 @@ container    → core + platform + domains + api-contract
 | `api-contract` **não** é importado por `core`, `domains` ou `platform`           | O spec é composto no container; o router recebe o documento pronto                                                                                     |
 | `app.ts` e `server.ts` **nunca** criam dependência                               | Eles consomem o `Container`                                                                                                                            |
 
-`src/api-contract/check-contract.ts` é a exceção da primeira coluna: é um CLI de composição (rodado por `npm run contract:check`), monta `app.ts`, `container.ts` e `loadConfig` para cobrar o contrato real, e não é importado por nenhum módulo de `src/`.
+Os scripts `src/api-contract/check-*.ts` são a exceção da primeira coluna: são CLIs de composição (rodados por `npm run contract:check`), montam `app.ts`, `container.ts` e `loadConfig` para cobrar o contrato real, e não são importados por nenhum módulo de `src/`.
 
 ---
 
@@ -1747,7 +1747,11 @@ src/
 │   ├── components.ts       # ErrorEnvelope, variantes de erro, PaginatedResponse, securitySchemes
 │   ├── generate-openapi.ts  # escreve openapi/openapi.json
 │   ├── route-coverage.ts   # guarda bidirecional rota↔operação
-│   └── check-contract.ts   # CLI de contract:check (cobertura + DOCS_ENABLED + --probe)
+│   ├── express-route-stack.ts # fronteira com os internals do Express 5
+│   ├── check-contract.ts   # CLI de contract:check (orquestra cobertura, DOCS_ENABLED e --probe)
+│   ├── check-route-coverage.ts # cobertura no app real
+│   ├── check-docs-exposure.ts  # matriz DOCS_ENABLED e ciclo do servidor
+│   └── probe-route-coverage.ts # sondas da guarda
 ├── domains/
 │   └── <domínio>/
 │       ├── <domínio>.schema.ts   # schemas Zod (request/response)
@@ -1764,7 +1768,7 @@ docs/openapi/
 
 ### 23.2 Regras
 
-`*.openapi.ts` não importa `platform`; a composição é feita em `src/api-contract/openapi.ts` (regra de dependências em §19). `src/platform/http/api-contract-router.ts` é o único lugar que serve o spec e a UI.
+`*.openapi.ts` não importa `platform`; a composição é feita em `src/api-contract/openapi.ts` (regra de dependências em §19). `src/platform/http/api-contract-router.ts` é o único lugar que serve o spec e a UI. `src/api-contract/express-route-stack.ts` é a fronteira documentada com os internals do Express 5 (`router.stack`, `matchers`, `handle.stack` e `methods._all`); a guarda de cobertura consome apenas os acessores desse módulo.
 
 ### 23.3 Montagem
 
