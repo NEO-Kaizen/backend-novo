@@ -26,6 +26,8 @@ export interface UploadConfig {
   readonly maxFileBytes: number;
   readonly maxFiles: number;
   readonly jsonBodyMaxBytes: number;
+  /** Raiz do storage local (`UPLOADS_DIR`); `public/` e `private/` ficam abaixo. */
+  readonly directory: string;
 }
 
 /** Exposição do spec e da UI de documentação (`04-HTTP-Contract.md` §13). */
