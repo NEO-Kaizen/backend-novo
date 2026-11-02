@@ -79,6 +79,8 @@ export const EnvironmentSchema = z.strictObject({
   UPLOAD_MAX_FILE_BYTES: positiveInteger().default(10 * MEBIBYTE),
   UPLOAD_MAX_FILES: positiveInteger().default(5),
   JSON_BODY_MAX_BYTES: positiveInteger().default(MEBIBYTE),
+  // Raiz do storage local; `public/` e `private/` são criados abaixo dela.
+  UPLOADS_DIR: z.string({ error: "obrigatória" }).min(1, "não pode ser vazia").default("./uploads"),
 
   // Documentação HTTP: opt-in em produção; fora dela o default é habilitado.
   DOCS_ENABLED: z
@@ -115,6 +117,7 @@ export function toConfig(environment: EnvironmentVariables): Config {
       maxFileBytes: environment.UPLOAD_MAX_FILE_BYTES,
       maxFiles: environment.UPLOAD_MAX_FILES,
       jsonBodyMaxBytes: environment.JSON_BODY_MAX_BYTES,
+      directory: environment.UPLOADS_DIR,
     },
     docs: { isEnabled: environment.DOCS_ENABLED ?? !isProduction },
   };
