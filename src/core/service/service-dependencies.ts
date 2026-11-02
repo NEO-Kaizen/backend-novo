@@ -1,10 +1,10 @@
-import type { Logger } from "./logger.js";
-import type { Clock } from "./clock.js";
-import type { IdGenerator } from "./id-generator.js";
-import type { TransactionManager } from "../repository/transaction-manager.js";
-import type { DomainEventPublisher } from "../events/domain-event.js";
-import type { AuthorizationService } from "../authorization/authorization-service.js";
-import type { Database } from "../repository/database.js";
+import type { Logger } from "./logger.ts";
+import type { Clock } from "./clock.ts";
+import type { IdGenerator } from "./id-generator.ts";
+import type { TransactionManager } from "../repository/transaction-manager.ts";
+import type { DomainEventPublisher } from "../events/domain-event.ts";
+import type { AuthorizationService } from "../authorization/authorization-service.ts";
+import type { Database } from "../repository/database.ts";
 
 // Dependências que a classe BaseService exige
 export interface ServiceDependencies {
