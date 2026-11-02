@@ -95,6 +95,7 @@ src/
 │   ├── crypto/                # ProtocolGenerator
 │   ├── config/                # Config
 │   ├── events/                # DomainEvent, DomainEventPublisher
+│   ├── storage/               # FileStorage, tipos de arquivo e assinatura de conteúdo
 │   └── pagination/            # PageQuery, Page
 │
 ├── platform/                  # adaptadores concretos — conhecem core
@@ -105,6 +106,7 @@ src/
 │   ├── authorization/         # StaticAuthorizationService
 │   ├── clock/                 # SystemClock
 │   ├── ids/                   # UuidGenerator
+│   ├── storage/               # LocalFileStorage (UPLOADS_DIR/public e private)
 │   ├── crypto/                # hash de senha, gerador de protocolo
 │   └── config/                # leitura e validação de ambiente
 │
@@ -1506,6 +1508,7 @@ export const EnvironmentSchema = z.strictObject({
   UPLOAD_MAX_FILE_BYTES: positiveInteger().default(10 * MEBIBYTE),
   UPLOAD_MAX_FILES: positiveInteger().default(5),
   JSON_BODY_MAX_BYTES: positiveInteger().default(MEBIBYTE),
+  UPLOADS_DIR: z.string().min(1).default("./uploads"),
   DOCS_ENABLED: z
     .enum(["true", "false"])
     .transform((value) => value === "true")
@@ -1542,25 +1545,27 @@ export interface Config {
     readonly maxFileBytes: number;
     readonly maxFiles: number;
     readonly jsonBodyMaxBytes: number;
+    readonly directory: string;
   };
 }
 ```
 
 > **Seed-only.** `ADMIN_ROOT_EMAIL` e `ADMIN_ROOT_PASSWORD` são lidas pelo comando de seed, não pelo `EnvironmentSchema`; o boot da aplicação não as exige. A regra e o comportamento do seed estão em [`03-Data-Model.md` § 25.3](./03-Data-Model.md#253-admin-root).
 
-| Regra                                                                | Motivo                                                                                                                            |
-| -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| Segredo ausente ou curto demais derruba o boot em produção           | Falhar cedo é melhor que falhar no primeiro request                                                                               |
-| `.env.example` documenta as variáveis                                | Segredo nunca vai para o repositório                                                                                              |
-| Nenhum `process.env` fora de `platform/config`                       | Uma fonte de configuração                                                                                                         |
-| `Config` (interface) e `EnvironmentSchema` (Zod) têm nomes distintos | O schema valida; a interface é o contrato interno                                                                                 |
-| Variáveis planas, `Config` aninhado                                  | `strictObject` sobre `process.env` rejeitaria PATH, HOME e afins; `loadConfig` seleciona as chaves conhecidas antes de validar    |
-| `DATABASE_ENGINE` lista o alvo de portabilidade                      | Só `postgres` tem dialeto hoje; engine sem dialeto falha no boot com mensagem clara (§ 10.2)                                      |
-| `NODE_ENV` sem default                                               | Produção não cai em modo development por variável ausente                                                                         |
-| `DATABASE_PASSWORD` pode ser vazio                                   | Autenticação por trust local; a variável precisa existir                                                                          |
-| Pool e conexão têm timeout (`*_TIMEOUT_MS`)                          | Sem espera indefinida em aquisição, conexão ou query                                                                              |
-| `COOKIE_NAME` e `JWT_EXPIRES_IN` no schema                           | Requeridos pelo C6 (`04-API-Conventions.md` § 5)                                                                                  |
-| `DOCS_ENABLED` é opt-in de produção                                  | Docs e spec ficam ligadas por padrão fora de produção; produção exige `DOCS_ENABLED=true`, e `false` desliga em qualquer ambiente |
+| Regra                                                                | Motivo                                                                                                                                                 |
+| -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Segredo ausente ou curto demais derruba o boot em produção           | Falhar cedo é melhor que falhar no primeiro request                                                                                                    |
+| `.env.example` documenta as variáveis                                | Segredo nunca vai para o repositório                                                                                                                   |
+| Nenhum `process.env` fora de `platform/config`                       | Uma fonte de configuração                                                                                                                              |
+| `Config` (interface) e `EnvironmentSchema` (Zod) têm nomes distintos | O schema valida; a interface é o contrato interno                                                                                                      |
+| Variáveis planas, `Config` aninhado                                  | `strictObject` sobre `process.env` rejeitaria PATH, HOME e afins; `loadConfig` seleciona as chaves conhecidas antes de validar                         |
+| `DATABASE_ENGINE` lista o alvo de portabilidade                      | Só `postgres` tem dialeto hoje; engine sem dialeto falha no boot com mensagem clara (§ 10.2)                                                           |
+| `NODE_ENV` sem default                                               | Produção não cai em modo development por variável ausente                                                                                              |
+| `DATABASE_PASSWORD` pode ser vazio                                   | Autenticação por trust local; a variável precisa existir                                                                                               |
+| Pool e conexão têm timeout (`*_TIMEOUT_MS`)                          | Sem espera indefinida em aquisição, conexão ou query                                                                                                   |
+| `COOKIE_NAME` e `JWT_EXPIRES_IN` no schema                           | Requeridos pelo C6 (`04-API-Conventions.md` § 5)                                                                                                       |
+| `DOCS_ENABLED` é opt-in de produção                                  | Docs e spec ficam ligadas por padrão fora de produção; produção exige `DOCS_ENABLED=true`, e `false` desliga em qualquer ambiente                      |
+| `UPLOADS_DIR` fica fora do Git e é configurável                      | O arquivo enviado é conteúdo de runtime, não código; `uploads/` está no `.gitignore`, e o adapter local grava em `public/` e `private/` abaixo da raiz |
 
 ---
 
